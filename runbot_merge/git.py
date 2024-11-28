@@ -7,13 +7,30 @@ import resource
 import stat
 import subprocess
 from operator import methodcaller
-from typing import Optional, TypeVar, Union, Sequence, Tuple, Dict
+from typing import Optional, TypeVar, Union, Sequence, Tuple, Dict, Iterator
 from collections.abc import Iterable, Mapping, Callable
 
 from odoo.tools.appdirs import user_cache_dir
 from .github import MergeError, PrCommit
 
 _logger = logging.getLogger(__name__)
+
+try:
+    from opentelemetry import trace
+    from opentelemetry.propagate import inject
+    tracer = trace.get_tracer(__name__)
+
+    def git_tracing_params() -> Iterator[str]:
+        tracing = {}
+        inject(tracing)
+        return itertools.chain.from_iterable(
+            ('-c', f'http.extraHeader={k}:{v}')
+            for k, v in tracing.items()
+        )
+except ImportError:
+    trace = tracer = inject = None
+    def git_tracing_params() -> Iterator[str]:
+        return iter(())
 
 def source_url(repository) -> str:
     return 'https://{}@github.com/{}'.format(
@@ -39,7 +56,10 @@ def get_local(repository, *, clone: bool = True) -> 'Optional[Repo]':
         return git(repo_dir)
     elif clone:
         _logger.info("Cloning out %s to %s", repository.name, repo_dir)
-        subprocess.run(['git', 'clone', '--bare', source_url(repository), str(repo_dir)], check=True)
+        subprocess.run([
+            'git', *git_tracing_params(), 'clone', '--bare',
+            source_url(repository), str(repo_dir)
+        ], check=True)
         # bare repos don't have fetch specs by default, and fetching *into*
         # them is a pain in the ass, configure fetch specs so `git fetch`
         # works properly
@@ -72,7 +92,7 @@ def git(directory: str) -> 'Repo':
 
 Self = TypeVar("Self", bound="Repo")
 class Repo:
-    def __init__(self, directory, **config) -> None:
+    def __init__(self, directory: str, **config: object) -> None:
         self._directory = str(directory)
         config.setdefault('stderr', subprocess.PIPE)
         self._config = config
@@ -84,9 +104,12 @@ class Repo:
 
     def _run(self, *args, **kwargs) -> subprocess.CompletedProcess:
         opts = {**self._config, **kwargs}
-        args = ('git', '-C', self._directory)\
-            + tuple(itertools.chain.from_iterable(('-c', p) for p in self._params + ALWAYS))\
-            + args
+        args = tuple(itertools.chain(
+            ('git', '-C', self._directory),
+            itertools.chain.from_iterable(('-c', p) for p in self._params + ALWAYS),
+            git_tracing_params(),
+            args,
+        ))
         try:
             return self.runner(args, preexec_fn=_bypass_limits, **opts)
         except subprocess.CalledProcessError as e:
@@ -305,14 +328,21 @@ def check(p: subprocess.CompletedProcess) -> subprocess.CompletedProcess:
     _logger.info("rebase failed at %s\nstdout:\n%s\nstderr:\n%s", p.args, p.stdout, p.stderr)
     raise MergeError(p.stderr or 'merge conflict')
 
-
 @dataclasses.dataclass
 class GitCommand:
     repo: Repo
     name: str
 
-    def __call__(self, *args, **kwargs) -> subprocess.CompletedProcess:
-        return self.repo._run(self.name, *args, *self._to_options(kwargs))
+    if tracer:
+        def __call__(self, *args, **kwargs) -> subprocess.CompletedProcess:
+            with tracer.start_as_current_span(f"git.{self.name}", attributes={
+                "http.target": None,
+                "http.user_agent": "git",
+            }):
+                return self.repo._run(self.name, *args, *self._to_options(kwargs))
+    else:
+        def __call__(self, *args, **kwargs) -> subprocess.CompletedProcess:
+            return self.repo._run(self.name, *args, *self._to_options(kwargs))
 
     def _to_options(self, d):
         for k, v in d.items():

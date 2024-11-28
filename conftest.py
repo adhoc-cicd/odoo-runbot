@@ -40,7 +40,6 @@ Finally the tests aren't 100% reliable as they rely on quite a bit of network
 traffic, it's possible that the tests fail due to network issues rather than
 logic errors.
 """
-
 from __future__ import annotations
 
 import base64
@@ -71,6 +70,7 @@ import typing
 import uuid
 import warnings
 import xmlrpc.client
+from collections.abc import Iterator
 from contextlib import closing
 from dataclasses import dataclass
 from typing import Optional
@@ -108,7 +108,7 @@ def pytest_addoption(parser):
              "The tunneling script should respond gracefully to SIGINT and "
              "SIGTERM.")
 
-def is_manager(config):
+def is_manager(config: pytest.Config) -> bool:
     return not hasattr(config, 'workerinput')
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -123,7 +123,67 @@ def pytest_configure(config: pytest.Config) -> None:
         "expect_log_errors(reason): allow and require tracebacks in the log",
     )
 
-def pytest_unconfigure(config):
+    if not config.getoption('--export-traces', None):
+        return
+
+    from opentelemetry import trace
+    tracer = trace.get_tracer('mergebot-tests')
+
+    # if the pytest-opentelemetry plugin is enabled hook otel into the test suite APIs
+    # region enable requests for github calls
+    from opentelemetry.instrumentation.requests import RequestsInstrumentor
+    RequestsInstrumentor().instrument()
+    # endregion
+
+    # region hook opentelemetry into xmlrpc for Odoo RPC calls
+    from opentelemetry.propagate import inject
+    from opentelemetry.propagators.textmap import Setter
+    # the default setter assumes a dict, but xmlrpc uses headers lists
+    class ListSetter(Setter[list[tuple[str, str]]]):
+        def set(self, carrier: list[tuple[str, str]], key: str, value: str) -> None:
+            carrier.append((key, value))
+    list_setter = ListSetter()
+
+    wrapped_request = xmlrpc.client.Transport.request
+    @functools.wraps(wrapped_request)
+    def instrumented_request(self, host, handler, request_body, verbose=False):
+        m = re.search(
+            rb'<methodName>([^<]+)</methodName>',
+            request_body,
+        )
+        if m[1] == b'authenticate':
+            # ignore these because we spam authenticate to know when the server
+            # is up (alternatively find a way to remove the span on auth error response)
+            return wrapped_request(self, host, handler, request_body, verbose)
+        if m[1] in (b'execute_kw', b'execute'):
+            # dumbshit OdooRPC call, actual path is the combination of args 4 (object) and 5 (method)
+            (_, _, _, objname, method, *_), _ = xmlrpc.client.loads(
+                request_body,
+                use_datetime=True,
+                use_builtin_types=True,
+            )
+            span_name = f'{objname}.{method}()'
+        else:
+            span_name = m[1].decode()
+
+        with tracer.start_as_current_span(span_name, kind=trace.SpanKind.CLIENT):
+            return wrapped_request(self, host, handler, request_body, verbose)
+    xmlrpc.client.Transport.request = instrumented_request
+
+    # TODO: create a dedicated call span as the requests instrumentor does?
+    #
+    #       This is more complicated though because the request gets the
+    #       serialized body so we'd need to get the methodname back out of the
+    #       `request_body`... otoh that's just `<methodName>{name}</methodName>`
+    wrapped_send_headers = xmlrpc.client.Transport.send_headers
+    @functools.wraps(wrapped_send_headers)
+    def instrumented_send_headers(self, connection: http.client.HTTPConnection, headers: list[tuple[str, str]]) -> None:
+        inject(headers, setter=list_setter)
+        wrapped_send_headers(self, connection, headers)
+    xmlrpc.client.Transport.send_headers = instrumented_send_headers
+    # endregion
+
+def pytest_unconfigure(config: pytest.Config) -> None:
     if not is_manager(config):
         return
 
@@ -218,11 +278,11 @@ def setreviewers(partners):
     return _
 
 @pytest.fixture
-def users(partners, rolemap):
+def users(partners, rolemap) -> dict[str, str]:
     return {k: v['login'] for k, v in rolemap.items()}
 
 @pytest.fixture(scope='session')
-def tunnel(pytestconfig: pytest.Config, port: int):
+def tunnel(pytestconfig: pytest.Config, port: int) -> Iterator[str]:
     """ Creates a tunnel to localhost:<port>, should yield the
     publicly routable address & terminate the process at the end of the session
     """
@@ -289,7 +349,11 @@ class DbDict(dict):
         return db
 
 @pytest.fixture(scope='session')
-def dbcache(request, tmp_path_factory, addons_path):
+def dbcache(
+        request: pytest.FixtureRequest,
+        tmp_path_factory: pytest.TempPathFactory,
+        addons_path: str,
+) -> Iterator[DbDict]:
     """ Creates template DB once per run, then just duplicates it before
     starting odoo and running the testcase
     """
@@ -303,14 +367,20 @@ def dbcache(request, tmp_path_factory, addons_path):
     yield dbs
 
 @pytest.fixture
-def db(request, module, dbcache, tmpdir):
+def db(
+        request: pytest.FixtureRequest,
+        module: str,
+        dbcache: DbDict,
+        tmp_path: pathlib.Path,
+) -> Iterator[str]:
     template_db = dbcache[module]
     rundb = str(uuid.uuid4())
     subprocess.run(['createdb', '-T', template_db, rundb], check=True)
-    share = tmpdir.mkdir('share')
+    share = tmp_path.joinpath('share')
+    share.mkdir()
     shutil.copytree(
-        str(dbcache._shared_dir / f'shared-{module}'),
-        str(share),
+        dbcache._shared_dir / f'shared-{module}',
+        share,
         dirs_exist_ok=True,
     )
     (share / 'Odoo' / 'filestore' / template_db).rename(
@@ -324,7 +394,7 @@ def db(request, module, dbcache, tmpdir):
 def wait_for_hook():
     time.sleep(WEBHOOK_WAIT_TIME)
 
-def wait_for_server(db, port, proc, mod, timeout=120):
+def wait_for_server(db: str, port: int, proc: subprocess.Popen, mod: str, timeout: int = 120) -> None:
     """ Polls for server to be response & have installed our module.
 
     Raises socket.timeout on failure
@@ -369,84 +439,38 @@ def page(port):
         yield get
 
 @pytest.fixture(scope='session')
-def dummy_addons_path():
+def dummy_addons_path(pytestconfig: pytest.Config) -> Iterator[str]:
     with tempfile.TemporaryDirectory() as dummy_addons_path:
-        mod = pathlib.Path(dummy_addons_path, 'saas_worker')
-        mod.mkdir(0o700)
-        (mod / '__init__.py').write_text('''\
-import builtins
-import logging
-import threading
-
-import psycopg2
-
-import odoo
-from odoo import api, fields, models
-
-_logger = logging.getLogger(__name__)
-
-
-class Base(models.AbstractModel):
-    _inherit = 'base'
-
-    def run_crons(self):
-        builtins.current_date = self.env.context.get('current_date')
-        builtins.forwardport_merged_before = self.env.context.get('forwardport_merged_before')
-        self.env['ir.cron']._process_jobs(self.env.cr.dbname)
-        del builtins.forwardport_merged_before
-        return True
-
-
-class IrCron(models.Model):
-    _inherit = 'ir.cron'
-
-    @classmethod
-    def _process_jobs(cls, db_name):
-        t = threading.current_thread()
-        try:
-            db = odoo.sql_db.db_connect(db_name)
-            t.dbname = db_name
-            with db.cursor() as cron_cr:
-                # FIXME: override `_get_all_ready_jobs` to directly lock the cron?
-                while jobs := next((
-                    job
-                    for j in cls._get_all_ready_jobs(cron_cr)
-                    if (job := cls._acquire_one_job(cron_cr, (j['id'],)))
-                ), None):
-                    # take into account overridings of _process_job() on that database
-                    registry = odoo.registry(db_name)
-                    registry[cls._name]._process_job(db, cron_cr, job)
-                    cron_cr.commit()
-
-        except psycopg2.ProgrammingError as e:
-            raise
-        except Exception:
-            _logger.warning('Exception in cron:', exc_info=True)
-        finally:
-            if hasattr(t, 'dbname'):
-                del t.dbname
-''', encoding='utf-8')
-        (mod / '__manifest__.py').write_text(pprint.pformat({
-            'name': 'dummy saas_worker',
-            'version': '1.0',
-            'license': 'BSD-0-Clause',
-        }), encoding='utf-8')
-        (mod / 'util.py').write_text("""\
-def from_role(*_, **__):
-    return lambda fn: fn
-""", encoding='utf-8')
+        shutil.copytree(
+            pathlib.Path(__file__).parent / 'mergebot_test_utils/saas_worker',
+            pathlib.Path(dummy_addons_path, 'saas_worker'),
+        )
+        shutil.copytree(
+            pathlib.Path(__file__).parent / 'mergebot_test_utils/saas_tracing',
+            pathlib.Path(dummy_addons_path, 'saas_tracing'),
+        )
 
         yield dummy_addons_path
 
 @pytest.fixture(scope='session')
-def addons_path(request, dummy_addons_path):
+def addons_path(
+        request: pytest.FixtureRequest,
+        dummy_addons_path: str,
+) -> str:
     return ','.join(map(str, filter(None, [
         request.config.getoption('--addons-path'),
         dummy_addons_path,
     ])))
 
 @pytest.fixture
-def server(request, db, port, module, addons_path, tmpdir):
+def server(
+        request: pytest.FixtureRequest,
+        db: str,
+        port: int,
+        module: str,
+        addons_path: str,
+        tmp_path: pathlib.Path,
+) -> Iterator[tuple[subprocess.Popen, bytearray]]:
     log_handlers = [
         'odoo.modules.loading:WARNING',
         'py.warnings:ERROR',
@@ -482,20 +506,33 @@ def server(request, db, port, module, addons_path, tmpdir):
                 buf.extend(r)
         os.close(inpt)
 
+    CACHEDIR = tmp_path / 'cache'
+    CACHEDIR.mkdir()
+    subenv = {
+        **os.environ,
+        # stop putting garbage in the user dirs, and potentially creating conflicts
+        # TODO: way to override this with macOS?
+        'XDG_DATA_HOME': str(tmp_path / 'share'),
+        'XDG_CACHE_HOME': str(CACHEDIR),
+    }
+    serverwide = 'base,web'
+    if request.config.getoption('--export-traces', None):
+        serverwide = 'base,web,saas_tracing'
+        # Inject OTEL context into subprocess env, so it can be extracted by
+        # the server and the server setup (registry preload) is correctly nested
+        # inside the test setup.
+        from opentelemetry.propagate import inject
+        inject(subenv)
+
     p = subprocess.Popen([
         *cov,
         'odoo', '--http-port', str(port),
         '--addons-path', addons_path,
         '-d', db,
+        '--load', serverwide,
         '--max-cron-threads', '0', # disable cron threads (we're running crons by hand)
         *itertools.chain.from_iterable(('--log-handler', h) for h in log_handlers),
-    ], stderr=w, env={
-        **os.environ,
-        # stop putting garbage in the user dirs, and potentially creating conflicts
-        # TODO: way to override this with macOS?
-        'XDG_DATA_HOME': str(tmpdir / 'share'),
-        'XDG_CACHE_HOME': str(tmpdir.mkdir('cache')),
-    })
+    ], stderr=w, env=subenv)
     os.close(w)
     # start the reader thread here so `_move` can read `p` without needing
     # additional handholding
