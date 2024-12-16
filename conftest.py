@@ -160,8 +160,6 @@ def config(pytestconfig: pytest.Config) -> dict[str, dict[str, str]]:
 
 @pytest.fixture(scope='session')
 def rolemap(request, config):
-    # hack because capsys is not session-scoped
-    capmanager = request.config.pluginmanager.getplugin("capturemanager")
     # only fetch github logins once per session
     rolemap = {}
     for k, data in config.items():
@@ -172,8 +170,7 @@ def rolemap(request, config):
         else:
             continue
 
-        with capmanager.global_and_fixture_disabled():
-            r = _rate_limited(lambda: requests.get('https://api.github.com/user', headers={'Authorization': 'token %s' % data['token']}))
+        r = _rate_limited(lambda: requests.get('https://api.github.com/user', headers={'Authorization': 'token %s' % data['token']}))
         r.raise_for_status()
 
         user = rolemap[role] = r.json()
@@ -540,7 +537,7 @@ def check(response):
 # users is just so I can avoid autouse on toplevel users fixture b/c it (seems
 # to) break the existing local tests
 @pytest.fixture
-def make_repo(capsys, request, config, tunnel, users):
+def make_repo(request, config, tunnel, users):
     """Fixtures which creates a repository on the github side, plugs webhooks
     in, and registers the repository for deletion on cleanup (unless
     ``--no-delete`` is set)
@@ -551,8 +548,7 @@ def make_repo(capsys, request, config, tunnel, users):
 
     # check whether "owner" is a user or an org, as repo-creation endpoint is
     # different
-    with capsys.disabled():
-        q = _rate_limited(lambda: github.get('https://api.github.com/users/{}'.format(owner)))
+    q = _rate_limited(lambda: github.get('https://api.github.com/users/{}'.format(owner)))
     q.raise_for_status()
     if q.json().get('type') == 'Organization':
         endpoint = 'https://api.github.com/orgs/{}/repos'.format(owner)
