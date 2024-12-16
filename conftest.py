@@ -760,11 +760,15 @@ class Repo:
         # read tree's blobs
         tree = {}
         for t in r.json()['tree']:
-            if t['type'] != 'blob':
-                continue # only keep blobs
-            r = self._session.get('https://api.github.com/repos/{}/git/blobs/{}'.format(self.name, t['sha']))
-            assert 200 <= r.status_code < 300, r.text
-            tree[t['path']] = base64.b64decode(r.json()['content']).decode()
+            match t['type']:
+                case 'commit':
+                    tree[t['path']] = f"@{t['sha']}"
+                case 'blob':
+                    r = self._session.get('https://api.github.com/repos/{}/git/blobs/{}'.format(self.name, t['sha']))
+                    assert 200 <= r.status_code < 300, r.text
+                    tree[t['path']] = base64.b64decode(r.json()['content']).decode()
+                case 'tree' if not recursive:
+                    tree[t['path']] = t['sha']
 
         return tree
 
