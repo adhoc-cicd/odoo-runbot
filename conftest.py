@@ -558,7 +558,7 @@ def make_repo(request, config, tunnel, users):
         assert r.json()['login'] == owner
 
     repos = []
-    def repomaker(name):
+    def repomaker(name, *, hooks=True):
         name = 'ignore_%s_%s' % (name, base64.b64encode(os.urandom(6), b'-_').decode())
         fullname = '{}/{}'.format(owner, name)
         repo_url = 'https://api.github.com/repos/{}'.format(fullname)
@@ -584,17 +584,18 @@ def make_repo(request, config, tunnel, users):
 
         repo = Repo(github, fullname, repos)
 
-        # create webhook
-        check(github.post('{}/hooks'.format(repo_url), json={
-            'name': 'web',
-            'config': {
-                'url': '{}/runbot_merge/hooks'.format(tunnel),
-                'content_type': 'json',
-                'insecure_ssl': '1',
-            },
-            'events': ['pull_request', 'issue_comment', 'status', 'pull_request_review']
-        }))
-        time.sleep(1)
+        if hooks:
+            # create webhook
+            check(github.post('{}/hooks'.format(repo_url), json={
+                'name': 'web',
+                'config': {
+                    'url': '{}/runbot_merge/hooks'.format(tunnel),
+                    'content_type': 'json',
+                    'insecure_ssl': '1',
+                },
+                'events': ['pull_request', 'issue_comment', 'status', 'pull_request_review']
+            }))
+            time.sleep(1)
 
         check(github.put('{}/contents/{}'.format(repo_url, 'a'), json={
             'path': 'a',
