@@ -55,7 +55,6 @@ for _ in range(10):
     # check for weird responses
     r.raise_for_status()
 
-    print("opened tunnel", file=sys.stderr)
     print(r.json()['public_url'], flush=True)
     sys.stdout.close()
     break
@@ -92,5 +91,4 @@ def cleanup(_sig, _frame):
 signal.signal(signal.SIGTERM, cleanup)
 signal.signal(signal.SIGINT, cleanup)
 
-print("wait for signal", file=sys.stderr)
 shutdown.wait()
