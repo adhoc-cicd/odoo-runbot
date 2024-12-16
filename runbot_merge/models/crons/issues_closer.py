@@ -1,6 +1,6 @@
 import logging
 
-from odoo import models, fields
+from odoo import models, fields, api
 
 _logger = logging.getLogger(__name__)
 class BranchCleanup(models.Model):
@@ -9,6 +9,11 @@ class BranchCleanup(models.Model):
 
     repository_id = fields.Many2one('runbot_merge.repository', required=True)
     number = fields.Integer(required=True)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        self.env.ref('runbot_merge.issues_closer_cron')._trigger()
+        return super().create(vals_list)
 
     def _run(self):
         ghs = {}

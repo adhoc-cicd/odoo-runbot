@@ -2435,7 +2435,6 @@ class Stagings(models.Model):
                         })
                 if self.issues_to_close:
                     self.env['runbot_merge.issues_closer'].create(self.issues_to_close)
-                    self.env.ref('runbot_merge.issues_closer_cron')._trigger()
             finally:
                 self.write({'active': False})
         elif self.state == 'failure' or self.is_timed_out():
