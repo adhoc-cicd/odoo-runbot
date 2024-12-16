@@ -355,6 +355,11 @@ def test_conflict_deleted_deep(env, config, make_repo):
         prod.make_ref("heads/a", a)
         prod.make_ref("heads/b", b)
 
+    assert prod.read_tree(prod.commit('b')).keys() == {"foo"}
+    assert prod.read_tree(prod.commit('b'), recursive=True) == {
+        "foo/bar/qux": "2",
+    }
+
     project = env['runbot_merge.project'].create({
         'name': "test",
         'github_token': config['github']['token'],
