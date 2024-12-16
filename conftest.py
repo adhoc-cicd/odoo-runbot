@@ -1,14 +1,3 @@
-from __future__ import annotations
-
-import datetime
-import errno
-import select
-import shutil
-import threading
-import typing
-from dataclasses import dataclass
-from typing import Optional
-
 """
 Configuration:
 
@@ -51,11 +40,16 @@ Finally the tests aren't 100% reliable as they rely on quite a bit of network
 traffic, it's possible that the tests fail due to network issues rather than
 logic errors.
 """
+
+from __future__ import annotations
+
 import base64
 import collections
 import configparser
 import contextlib
 import copy
+import datetime
+import errno
 import fcntl
 import functools
 import http.client
@@ -64,15 +58,21 @@ import os
 import pathlib
 import pprint
 import re
+import select
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import typing
 import uuid
 import warnings
 import xmlrpc.client
 from contextlib import closing
+from dataclasses import dataclass
+from typing import Optional
 
 import pytest
 import requests
@@ -680,7 +680,7 @@ class Repo:
         s = self._session
         if token:
             s = requests.Session()
-            s.headers['Authorization'] = 'token %s' % token
+            s.headers['Authorization'] = f'token {token}'
         return s
 
     def delete(self):
@@ -843,7 +843,7 @@ class Repo:
             if commit.tree:
                 if commit.reset:
                     tree = None
-                r = self._session.post('https://api.github.com/repos/{}/git/trees'.format(self.name), json={
+                r = self._session.post(f'https://api.github.com/repos/{self.name}/git/trees', json={
                     'tree': [
                         {'path': k, 'mode': '100644', 'type': 'blob', 'content': v}
                         for k, v in commit.tree.items()
