@@ -1,13 +1,16 @@
+from __future__ import annotations
+
 import hashlib
 import hmac
 import logging
 import json
 from datetime import datetime, timedelta
+from typing import Callable
 
 import sentry_sdk
-import werkzeug.exceptions
 
-from odoo.http import Controller, request, route
+from odoo.api import Environment
+from odoo.http import Controller, request, route, Response
 
 from . import dashboard
 from . import reviewer_provisioning
@@ -72,9 +75,8 @@ class MergebotController(Controller):
             for staging in stagings
         ]
 
-
-    @route('/runbot_merge/hooks', auth='none', type='json', csrf=False, methods=['POST'])
-    def index(self):
+    @route('/runbot_merge/hooks', auth='none', type='http', csrf=False, methods=['POST'])
+    def index(self) -> Response:
         req = request.httprequest
         event = req.headers['X-Github-Event']
         with sentry_sdk.configure_scope() as scope:
@@ -87,10 +89,12 @@ class MergebotController(Controller):
 
         github._gh.info(self._format(req))
 
-        data = request.get_json_data()
-        repo = data.get('repository', {}).get('full_name')
         env = request.env(user=1)
+        data = request.get_json_data()
+        if event == 'ping':
+            return handle_ping(env, request.get_json_data())
 
+        repo = data.get('repository', {}).get('full_name')
         source = repo and env['runbot_merge.events_sources'].search([('repository', '=', repo)])
         if not source:
             _logger.warning(
@@ -98,7 +102,7 @@ class MergebotController(Controller):
                 req.headers.get("X-Github-Delivery"),
                 repo,
             )
-            return werkzeug.exceptions.Forbidden()
+            return Response(status=403, mimetype="text/plain")
         elif secret := source.secret:
             signature = 'sha256=' + hmac.new(secret.strip().encode(), req.get_data(), hashlib.sha256).hexdigest()
             if not hmac.compare_digest(signature, req.headers.get('X-Hub-Signature-256', '')):
@@ -110,7 +114,7 @@ class MergebotController(Controller):
                     signature,
                     req.headers,
                 )
-                return werkzeug.exceptions.Forbidden()
+                return Response(status=403, mimetype="text/plain")
         elif req.headers.get('X-Hub-Signature-256'):
             _logger.info("No secret for %s but received a signature in:\n%s", repo, req.headers)
         else:
@@ -119,7 +123,11 @@ class MergebotController(Controller):
         c = EVENTS.get(event)
         if not c:
             _logger.warning('Unknown event %s', event)
-            return 'Unknown event {}'.format(event)
+            return Response(
+                status=422,
+                mimetype="text/plain",
+                response="Not setup to receive event.",
+            )
 
         sentry_sdk.set_context('webhook', data)
         return c(env, data)
@@ -149,7 +157,11 @@ def handle_pr(env, event):
             event['pull_request']['base']['repo']['full_name'],
             event['pull_request']['number'],
         )
-        return 'Ignoring'
+        return Response(
+            status=200,
+            mimetype="text/plain",
+            response="Not setup to receive action.",
+        )
 
     pr = event['pull_request']
     r = pr['base']['repo']['full_name']
@@ -158,13 +170,11 @@ def handle_pr(env, event):
     repo = env['runbot_merge.repository'].search([('name', '=', r)])
     if not repo:
         _logger.warning("Received a PR for %s but not configured to handle that repo", r)
-        # sadly shit's retarded so odoo json endpoints really mean
-        # jsonrpc and it's LITERALLY NOT POSSIBLE TO REPLY WITH
-        # ACTUAL RAW HTTP RESPONSES and thus not possible to
-        # report actual errors to the webhooks listing thing on
-        # github (not that we'd be looking at them but it'd be
-        # useful for tests)
-        return "Not configured to handle {}".format(r)
+        return Response(
+            status=422,
+            mimetype="text/plain",
+            response="Not configured for repository.",
+        )
 
     # PRs to unmanaged branches are not necessarily abnormal and
     # we don't care
@@ -197,8 +207,13 @@ def handle_pr(env, event):
         # retargeting to un-managed => delete
         if not branch:
             pr = find(source_branch)
+            number = pr.number
             pr.unlink()
-            return 'Retargeted {} to un-managed branch {}, deleted'.format(pr.id, b)
+            return Response(
+                status=200,
+                mimetype="text/plain",
+                response=f'Retargeted {number} to un-managed branch {b}, deleted',
+            )
 
         # retargeting from un-managed => create
         if not source_branch:
@@ -218,8 +233,16 @@ def handle_pr(env, event):
         if updates:
             # copy because it updates the `updates` dict internally
             pr_obj.write(dict(updates))
-            return 'Updated {}'.format(', '.join(updates))
-        return "Nothing to update ({})".format(', '.join(event['changes'].keys()))
+            return Response(
+                status=200,
+                mimetype="text/plain",
+                response=f'Updated {", ".join(updates)}',
+            )
+        return Response(
+            status=200,
+            mimetype="text/plain",
+            response=f"Nothing to update ({', '.join(event['changes'])})",
+        )
 
     message = None
     if not branch:
@@ -240,7 +263,7 @@ def handle_pr(env, event):
         feedback(message=message)
 
     if not branch:
-        return "Not set up to care about {}:{}".format(r, b)
+        return Response(status=422, mimetype="text/plain", response=f"Not set up to care about {r}:{b}")
 
     headers = request.httprequest.headers if request else {}
     _logger.info(
@@ -263,12 +286,16 @@ def handle_pr(env, event):
         if not author:
             env['res.partner'].create({'name': author_name, 'github_login': author_name})
         pr_obj = env['runbot_merge.pull_requests']._from_gh(pr)
-        return "Tracking PR as {}".format(pr_obj.id)
+        return Response(status=201, mimetype="text/plain", response=f"Tracking PR as {pr_obj.display_name}")
 
     pr_obj = env['runbot_merge.pull_requests']._get_or_schedule(r, pr['number'], closing=event['action'] == 'closed')
     if not pr_obj:
         _logger.info("webhook %s on unknown PR %s#%s, scheduled fetch", event['action'], repo.name, pr['number'])
-        return "Unknown PR {}:{}, scheduling fetch".format(repo.name, pr['number'])
+        return Response(
+            status=202,  # actually we're ignoring the event so 202 might be wrong?
+            mimetype="text/plain",
+            response=f"Unknown PR {repo.name}:{pr['number']}, scheduling fetch",
+        )
     if event['action'] == 'synchronize':
         if pr_obj.head == pr['head']['sha']:
             _logger.warning(
@@ -277,11 +304,15 @@ def handle_pr(env, event):
                 pr_obj.head,
                 pr['head']['sha'],
             )
-            return 'No update to pr head'
+            return Response(mimetype="text/plain", response='No update to pr head')
 
         if pr_obj.state in ('closed', 'merged'):
             _logger.error("PR %s sync %s -> %s => failure (closed)", pr_obj.display_name, pr_obj.head, pr['head']['sha'])
-            return "It's my understanding that closed/merged PRs don't get sync'd"
+            return Response(
+                status=422,
+                mimetype="text/plain",
+                response="It's my understanding that closed/merged PRs don't get sync'd",
+            )
 
         _logger.info(
             "PR %s sync %s -> %s by %s => reset to 'open' and squash=%s",
@@ -304,14 +335,14 @@ def handle_pr(env, event):
             'head': pr['head']['sha'],
             'squash': pr['commits'] == 1,
         })
-        return f'Updated to {pr_obj.head}'
+        return Response(mimetype="text/plain", response=f'Updated to {pr_obj.head}')
 
     if event['action'] == 'ready_for_review':
         pr_obj.draft = False
-        return f'Updated {pr_obj.display_name} to ready'
+        return Response(mimetype="text/plain", response=f'Updated {pr_obj.display_name} to ready')
     if event['action'] == 'converted_to_draft':
         pr_obj.draft = True
-        return f'Updated {pr_obj.display_name} to draft'
+        return Response(mimetype="text/plain", response=f'Updated {pr_obj.display_name} to draft')
 
     # don't marked merged PRs as closed (!!!)
     if event['action'] == 'closed' and pr_obj.state != 'merged':
@@ -323,7 +354,7 @@ def handle_pr(env, event):
                 pr_obj.display_name,
                 oldstate,
             )
-            return 'Closed {}'.format(pr_obj.display_name)
+            return Response(mimetype="text/plain", response=f'Closed {pr_obj.display_name}')
 
         _logger.info(
             '%s tried to close %s (state=%s) but locking failed',
@@ -331,7 +362,11 @@ def handle_pr(env, event):
             pr_obj.display_name,
             oldstate,
         )
-        return 'Ignored: could not lock rows (probably being merged)'
+        return Response(
+            status=503,
+            mimetype="text/plain",
+            response='could not lock rows (probably being merged)',
+        )
 
     if event['action'] == 'reopened' :
         if pr_obj.merge_date:
@@ -349,12 +384,12 @@ def handle_pr(env, event):
                 'squash': pr['commits'] == 1,
             })
 
-            return 'Reopened {}'.format(pr_obj.display_name)
+            return Response(mimetype="text/plain", response=f'Reopened {pr_obj.display_name}')
 
     _logger.info("Ignoring event %s on PR %s", event['action'], pr['number'])
-    return "Not handling {} yet".format(event['action'])
+    return Response(status=200, mimetype="text/plain", response=f"Not handling {event['action']} yet")
 
-def handle_status(env, event):
+def handle_status(env: Environment, event: dict) -> Response:
     _logger.info(
         'status on %(sha)s %(context)s:%(state)s (%(target_url)s) [%(description)r]',
         event
@@ -379,11 +414,21 @@ def handle_status(env, event):
     """, [event['sha'], status_value], log_exceptions=False)
     env.ref("runbot_merge.process_updated_commits")._trigger()
 
-    return 'ok'
+    return Response(status=204)
 
-def handle_comment(env, event):
+def handle_comment(env: Environment, event: dict) -> Response:
     if 'pull_request' not in event['issue']:
-        return "issue comment, ignoring"
+        return Response(
+            status=200,
+            mimetype="text/plain",
+            response="issue comment, ignoring",
+        )
+    if event['action'] != 'created':
+        return Response(
+            status=200,
+            mimetype="text/plain",
+            response=f"Ignored: action ({event['action']!r}) is not 'created'",
+        )
 
     repo = event['repository']['full_name']
     issue = event['issue']['number']
@@ -391,36 +436,35 @@ def handle_comment(env, event):
     comment = event['comment']['body']
     if len(comment) > 5000:
         _logger.warning('comment(%s): %s %s#%s => ignored (%d characters)', event['comment']['html_url'], author, repo, issue, len(comment))
-        return "ignored: too big"
+        return Response(status=413, mimetype="text/plain", response="comment too large")
 
     _logger.info('comment[%s]: %s %s#%s %r', event['action'], author, repo, issue, comment)
-    if event['action'] != 'created':
-        return "Ignored: action (%r) is not 'created'" % event['action']
-
     return _handle_comment(env, repo, issue, event['comment'])
 
-def handle_review(env, event):
+def handle_review(env: Environment, event: dict) -> Response:
+    if event['action'] != 'submitted':
+        return Response(
+            status=200,
+            mimetype="text/plain",
+            response=f"Ignored: action ({event['action']!r}) is not 'submitted'",
+        )
+
     repo = event['repository']['full_name']
     pr = event['pull_request']['number']
     author = event['review']['user']['login']
     comment = event['review']['body'] or ''
     if len(comment) > 5000:
         _logger.warning('comment(%s): %s %s#%s => ignored (%d characters)', event['review']['html_url'], author, repo, pr, len(comment))
-        return "ignored: too big"
+        return Response(status=413, mimetype="text/plain", response="review too large")
 
     _logger.info('review[%s]: %s %s#%s %r', event['action'], author, repo, pr, comment)
-    if event['action'] != 'submitted':
-        return "Ignored: action (%r) is not 'submitted'" % event['action']
+    return _handle_comment(env, repo, pr, event['review'], target=event['pull_request']['base']['ref'])
 
-    return _handle_comment(
-        env, repo, pr, event['review'],
-        target=event['pull_request']['base']['ref'])
-
-def handle_ping(env, event):
+def handle_ping(env: Environment, event: dict) -> Response:
     _logger.info("Got ping! %s", event['zen'])
-    return "pong"
+    return Response(mimetype="text/plain", response="pong")
 
-EVENTS = {
+EVENTS: dict[str, Callable[[Environment, dict], Response]] = {
     'pull_request': handle_pr,
     'status': handle_status,
     'issue_comment': handle_comment,
@@ -428,16 +472,25 @@ EVENTS = {
     'ping': handle_ping,
 }
 
-def _handle_comment(env, repo, issue, comment, target=None):
+def _handle_comment(
+        env: Environment,
+        repo: str,
+        issue: int,
+        comment: dict,
+        target: str | None = None,
+) -> Response:
     repository = env['runbot_merge.repository'].search([('name', '=', repo)])
     if not repository.project_id._find_commands(comment['body'] or ''):
-        return "No commands, ignoring"
+        return Response(mimetype="text/plain", response="No commands, ignoring")
 
     pr = env['runbot_merge.pull_requests']._get_or_schedule(
         repo, issue, target=target, commenter=comment['user']['login'],
     )
     if not pr:
-        return "Unknown PR, scheduling fetch"
+        return Response(status=202, mimetype="text/plain", response="Unknown PR, scheduling fetch")
 
     partner = env['res.partner'].search([('github_login', '=', comment['user']['login'])])
-    return pr._parse_commands(partner, comment, comment['user']['login'])
+    return Response(
+        mimetype="text/plain",
+        response=pr._parse_commands(partner, comment, comment['user']['login']),
+    )

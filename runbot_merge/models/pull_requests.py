@@ -150,7 +150,7 @@ All substitutions are tentatively applied sequentially to the input.
                 'action': 'synchronize',
                 'pull_request': pr,
                 'sender': {'login': self.project_id.github_prefix}
-            })
+            }).get_data(True)
             edit = controllers.handle_pr(self.env, {
                 'action': 'edited',
                 'pull_request': pr,
@@ -160,14 +160,14 @@ All substitutions are tentatively applied sequentially to the input.
                     'body': {'from', ''.join(pr_id.message.splitlines(keepends=True)[2:])},
                 },
                 'sender': {'login': self.project_id.github_prefix},
-            })
+            }).get_data(True)
             edit2 = ''
             if pr_id.draft != pr['draft']:
                 edit2 = controllers.handle_pr(self.env, {
                     'action': 'converted_to_draft' if pr['draft'] else 'ready_for_review',
                     'pull_request': pr,
                     'sender': {'login': self.project_id.github_prefix}
-                }) + '. '
+                }).get_data(True) + '. '
             if pr_id.state != 'closed' and pr['state'] == 'closed':
                 # don't go through controller because try_closing does weird things
                 # for safety / race condition reasons which ends up committing
