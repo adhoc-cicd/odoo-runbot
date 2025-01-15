@@ -75,11 +75,11 @@ def parse_show(p: Patch) -> ParseResult:
             f"found {header}.\nOnly 'medium' and 'fuller' formats are supported")
 
     # skip possible extra headers before the message
-    while next(lines, ' \n') != ' \n':
+    while not next(lines, ' ').isspace():
         continue
 
     body = []
-    while (l := next(lines, ' \n')) != ' \n':
+    while (l := next(lines, '')) and l.startswith('    '):
         body.append(l.removeprefix('    '))
 
     # remainder should be the patch

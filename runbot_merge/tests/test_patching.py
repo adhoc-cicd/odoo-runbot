@@ -9,11 +9,11 @@ BASIC_UDIFF = """\
 commit 0000000000000000000000000000000000000000
 Author: 3 Discos Down <bar@example.org>
 Date:   2021-04-24T17:09:14Z
- 
+
     whop
     
     whop whop
- 
+
 diff --git a/b b/b
 index 000000000000..000000000000 100644
 --- a/b
