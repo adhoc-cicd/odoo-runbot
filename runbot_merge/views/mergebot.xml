@@ -357,19 +357,21 @@
                         </page>
                         <page string="Commits">
                             <group>
-                                <group string="Heads">
-                                    <field name="head_ids" colspan="2" nolabel="1" readonly="1">
-                                        <tree>
-                                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open head"/>
-                                            <field name="sha"/>
+                                <group string="merged commits">
+                                    <field name="commits" colspan="2" nolabel="1" readonly="1">
+                                        <tree order="repository_id" editable="bottom">
+                                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open commit"/>
+                                            <field name="repository_id"/>
+                                            <field name="commit_id"/>
                                         </tree>
                                     </field>
                                 </group>
-                                <group string="Commits">
-                                    <field name="commit_ids" colspan="2" nolabel="1" readonly="1">
-                                        <tree>
-                                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open commit"/>
-                                            <field name="sha"/>
+                                <group string="staged commits">
+                                    <field name="heads" colspan="2" nolabel="1" readonly="1">
+                                        <tree order="repository_id" editable="bottom">
+                                            <button type="object" name="get_formview_action" icon="fa-external-link" title="open head"/>
+                                            <field name="repository_id"/>
+                                            <field name="commit_id"/>
                                         </tree>
                                     </field>
                                 </group>
