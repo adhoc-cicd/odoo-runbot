@@ -27,8 +27,14 @@ def staging_dict(staging):
             'repository': p.repository.name,
             'number': p.number,
         }),
-        'merged': staging.commit_ids.mapped('sha'),
-        'staged': staging.head_ids.mapped('sha'),
+        'merged': {
+            c.repository_id.name: c.commit_id.sha
+            for c in staging.commits
+        },
+        'staged': {
+            h.repository_id.name: h.commit_id.sha
+            for h in staging.heads
+        },
     }
 
 class MergebotController(Controller):
