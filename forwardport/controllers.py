@@ -45,7 +45,6 @@ class Dashboard(MergebotDashboard):
                 'link': link,
             })
 
-        source_filter = [('merge_date', '<', datetime.datetime.now() - DEFAULT_DELTA)]
         partner_filter = []
         if partner or group:
             if partner:
@@ -56,15 +55,16 @@ class Dashboard(MergebotDashboard):
                 arg = group.id
 
             if authors:
-                partner_filter.append([(f'author{suffix}', '=', arg)])
+                partner_filter.append([(f'source_id.author{suffix}', '=', arg)])
             if reviewers:
-                partner_filter.append([(f'reviewed_by{suffix}', '=', arg)])
-
-            source_filter.extend(expression.OR(partner_filter))
+                partner_filter.append([(f'source_id.reviewed_by{suffix}', '=', arg)])
 
         outstanding = PullRequests.search([
+            ('source_id', '!=', False),
+            ('blocked', '!=', False),
             ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
-            ('source_id', 'in', PullRequests._search(source_filter)),
+            ('create_date', '<', datetime.datetime.now() - DEFAULT_DELTA),
+            *(partner_filter and expression.OR(partner_filter)),
         ])
 
         outstanding_per_group = collections.Counter()

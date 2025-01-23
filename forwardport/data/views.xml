@@ -10,12 +10,14 @@
         <xpath expr="//div[@id='alerts']" position="inside">
             <t t-if="env['runbot_merge.pull_requests'].check_access_rights('read', False)">
                 <t t-set="outstanding" t-value="env['runbot_merge.pull_requests'].search_count([
+                    ('source_id', '!=', False),
+                    ('blocked', '!=', False),
                     ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
-                    ('source_id.merge_date', '&lt;', datetime.datetime.now() - relativedelta(days=7)),
+                    ('create_date', '&lt;', datetime.datetime.now() - relativedelta(days=7)),
                 ])"/>
                 <div t-if="outstanding != 0" class="alert col-md-12 alert-warning mb-0">
                     <a href="/forwardport/outstanding">
-                        <t t-esc="outstanding"/> outstanding forward-ports (>1 week)
+                        <t t-out="outstanding"/> outstanding forward-ports (>1 week)
                     </a>
                 </div>
             </t>
