@@ -691,7 +691,7 @@ def add_self_references(
         ))
 
 BREAK = re.compile(r'''
-    [ ]{0,3} # 0-3 spaces of indentation
+    \N{SPACE}{0,3} # 0-3 spaces of indentation
     # followed by a sequence of three or more matching -, _, or * characters,
     # each followed optionally by any number of spaces or tabs
     # so needs to start with a _, - or *, then have at least 2 more such
@@ -701,9 +701,9 @@ BREAK = re.compile(r'''
     [ \t]*
 ''', flags=re.VERBOSE)
 SETEX_UNDERLINE = re.compile(r'''
-    [ ]{0,3} # no more than 3 spaces indentation
+    \N{SPACE}{0,3} # no more than 3 spaces indentation
     [-=]+ # a sequence of = characters or a sequence of - characters
-    [ ]* # any number of trailing spaces
+    \N{SPACE}* # any number of trailing spaces
     # we don't care about "a line containing a single -" because we want to
     # disambiguate SETEX headings from thematic breaks, and thematic breaks have
     # 3+ -. Doesn't look like GH interprets `- - -` as a line so yay...
