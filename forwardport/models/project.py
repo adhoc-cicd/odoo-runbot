@@ -36,7 +36,7 @@ from odoo.addons.runbot_merge.models.stagings_create import Message
 
 Conflict = tuple[str, str, str, list[str]]
 
-DEFAULT_DELTA = dateutil.relativedelta.relativedelta(days=3)
+DEFAULT_DELTA = dateutil.relativedelta.relativedelta(days=7)
 
 _logger = logging.getLogger('odoo.addons.forwardport')
 
@@ -183,7 +183,10 @@ class PullRequests(models.Model):
     merge_date: datetime.datetime
     parent_id: PullRequests
 
-    reminder_backoff_factor = fields.Integer(default=-4, group_operator=None)
+    reminder_next = fields.Datetime(
+        default=lambda self: self.env.cr.now() + datetime.timedelta(days=7),
+        index=True,
+    )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -518,41 +521,27 @@ stderr:
         # don't stringify so caller can still perform alterations
         return msg
 
-    def _outstanding(self, cutoff: str) -> typing.ItemsView[PullRequests, list[PullRequests]]:
-        """ Returns "outstanding" (unmerged and unclosed) forward-ports whose
-        source was merged before ``cutoff`` (all of them if not provided).
-
-        :param cutoff: a datetime (ISO-8601 formatted)
-        :returns: an iterator of (source, forward_ports)
-        """
-        return groupby(self.env['runbot_merge.pull_requests'].search([
-            # only FP PRs
-            ('source_id', '!=', False),
-            # active
-            ('state', 'not in', ['merged', 'closed']),
-            # not ready
-            ('blocked', '!=', False),
-            ('source_id.merge_date', '<', cutoff),
-        ], order='source_id, id'), lambda p: p.source_id)
-
     def _reminder(self):
-        cutoff = getattr(builtins, 'forwardport_updated_before', None) \
-              or fields.Datetime.to_string(datetime.datetime.now() - DEFAULT_DELTA)
-        cutoff_dt = fields.Datetime.from_string(cutoff)
-
-        for source, prs in self._outstanding(cutoff):
-            backoff = dateutil.relativedelta.relativedelta(days=2**source.reminder_backoff_factor)
-            if source.merge_date > (cutoff_dt - backoff):
-                continue
-            source.reminder_backoff_factor += 1
-
-            # only keep the PRs which don't have an attached descendant
+        for _, prs in groupby(self.search([
+            ('source_id', '!=', False),
+            ('blocked', '!=', False),
+            ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
+            ('reminder_next', '<', self.env.cr.now()),
+        ], order='source_id, id'), lambda p: p.source_id):
+            # only remind on the "tip" of every chain of descendants as they
+            # will most likely lead to their parent being validated (?)
             for pr in set(prs).difference(p.parent_id for p in prs):
+                # reminder every 7 days for the first 4 weeks, then every 4 weeks
+                if (pr.reminder_next - pr.create_date) < datetime.timedelta(days=28):
+                    pr.reminder_next += datetime.timedelta(days=7)
+                else:
+                    pr.reminder_next += datetime.timedelta(days=28)
+
                 self.env.ref('runbot_merge.forwardport.reminder')._send(
                     repository=pr.repository,
                     pull_request=pr.number,
                     token_field='fp_github_token',
-                    format_args={'pr': pr, 'source': source},
+                    format_args={'pr': pr, 'source': pr.source_id},
                 )
 
 

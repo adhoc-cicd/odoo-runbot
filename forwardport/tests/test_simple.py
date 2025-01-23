@@ -120,9 +120,10 @@ def test_straightforward_flow(env, config, make_repo, users):
         prod.post_status(pr1.head, 'success', 'legal/cla')
 
     env.run_crons()
-    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
-
     pr0_, pr1_, pr2 = env['runbot_merge.pull_requests'].search([], order='number')
+    pr2.reminder_next = datetime.now() - timedelta(days=1)
+    env.run_crons('forwardport.reminder')
+
 
     assert pr.comments == [
         (users['reviewer'], 'hansen r+ rebase-ff'),
@@ -323,8 +324,10 @@ def test_empty(env, config, make_repo, users):
     assert project.fp_github_name == users['other']
 
     # check reminder
-    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
-    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    fail_id.reminder_next = datetime.now() - timedelta(days=1)
+    env.run_crons('forwardport.reminder')
+    fail_id.reminder_next = datetime.now() - timedelta(days=1)
+    env.run_crons('forwardport.reminder')
 
     awaiting = (
         users['other'],
@@ -368,7 +371,8 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     # check that this stops if we close the PR
     with prod:
         fail_pr.close()
-    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    fail_id.reminder_next = datetime.now() - timedelta(days=1)
+    env.run_crons('forwardport.reminder')
     assert pr1.comments == [
         (users['reviewer'], 'hansen r+'),
         seen(env, pr1, users),
@@ -381,13 +385,15 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     with prod:
         prod.post_status(fail_id.head, 'success')
     assert fail_id.state == 'validated'
-    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    fail_id.reminder_next = datetime.now() - timedelta(days=1)
+    env.run_crons('forwardport.reminder')
     assert fail_pr.comments[2:] == [awaiting]*3, "check that message triggers again"
 
     with prod:
         fail_pr.post_comment('hansen r+', config['role_reviewer']['token'])
     assert fail_id.state == 'ready'
-    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    fail_id.reminder_next = datetime.now() - timedelta(days=1)
+    env.run_crons('forwardport.reminder')
     assert fail_pr.comments[2:] == [
         awaiting,
         awaiting,

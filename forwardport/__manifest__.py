@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'forward port bot',
-    'version': '1.4',
+    'version': '1.5',
     'summary': "A port which forward ports successful PRs.",
     'depends': ['runbot_merge'],
     'data': [

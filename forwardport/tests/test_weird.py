@@ -1209,7 +1209,8 @@ def test_reminder_detached(env, config, make_repo, users):
     pr_c = prod.get_pr(pr_c_id.number)
 
     # region sanity check
-    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    (pr_a_id | pr_b_id | pr_c_id).reminder_next = datetime.now() - timedelta(days=1)
+    env.run_crons('forwardport.reminder')
 
     assert pr_b.comments == [
         seen(env, pr_b, users),
@@ -1243,7 +1244,8 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 
     # region check detached
     pr_c_id.write({'parent_id': False, 'detach_reason': 'because'})
-    env.run_crons('forwardport.reminder', context={'forwardport_updated_before': FAKE_PREV_WEEK})
+    (pr_a_id | pr_b_id | pr_c_id).reminder_next = datetime.now() - timedelta(days=1)
+    env.run_crons('forwardport.reminder')
 
     assert pr_b.comments[2:] == [
         (users['user'], "@%s @%s child PR %s was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross." % (
