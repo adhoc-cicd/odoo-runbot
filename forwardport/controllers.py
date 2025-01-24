@@ -79,10 +79,12 @@ class Dashboard(MergebotDashboard):
             })
             if authors:
                 outstanding_per_author[source.author] += len(prs)
-                outstanding_per_group[source.author.commercial_partner_id] += len(prs)
-            if reviewers and source:
+            if reviewers:
                 outstanding_per_reviewer[source.reviewed_by] += len(prs)
-                outstanding_per_group[source.reviewed_by.commercial_partner_id] += len(prs)
+
+            # if both the source and reviewer have the same team, don't count the PRs twice
+            for team in source.author.commercial_partner_id | source.reviewed_by.commercial_partner_id:
+                outstanding_per_group[team] += len(prs)
 
         culprits = Partners.browse(p.id for p, _ in (outstanding_per_reviewer + outstanding_per_author).most_common())
         return request.render('forwardport.outstanding', {
