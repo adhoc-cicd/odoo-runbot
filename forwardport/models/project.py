@@ -14,6 +14,7 @@ it up), ...
 from __future__ import annotations
 
 import builtins
+import collections
 import datetime
 import itertools
 import json
@@ -24,6 +25,7 @@ import typing
 
 import dateutil.relativedelta
 import requests
+from markupsafe import Markup
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError
@@ -522,7 +524,8 @@ stderr:
         return msg
 
     def _reminder(self):
-        for _, prs in groupby(self.search([
+        emails = collections.defaultdict(self.browse)
+        for source, prs in groupby(self.search([
             ('source_id', '!=', False),
             ('blocked', '!=', False),
             ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
@@ -532,17 +535,48 @@ stderr:
             # will most likely lead to their parent being validated (?)
             for pr in set(prs).difference(p.parent_id for p in prs):
                 # reminder every 7 days for the first 4 weeks, then every 4 weeks
-                if (pr.reminder_next - pr.create_date) < datetime.timedelta(days=28):
+                age = pr.reminder_next - pr.create_date
+                if age < datetime.timedelta(days=28):
                     pr.reminder_next += datetime.timedelta(days=7)
                 else:
                     pr.reminder_next += datetime.timedelta(days=28)
 
+                # after 6 months, start sending emails
+                if age > datetime.timedelta(weeks=26):
+                    if author := source.author.email:
+                        emails[author] |= prs
+                    if reviewer := source.reviewed_by.email:
+                        emails[reviewer] |= prs
                 self.env.ref('runbot_merge.forwardport.reminder')._send(
                     repository=pr.repository,
                     pull_request=pr.number,
                     token_field='fp_github_token',
                     format_args={'pr': pr, 'source': pr.source_id},
                 )
+
+        try:
+            self.env['mail.mail'].sudo().create([
+                {
+                    'email_to': email,
+                    'subject': f"You have {len(prs)} outstanding forward ports",
+                    'body': Markup(
+                        "<p>The following forward-ports are more than 6 months old "
+                        "and were either created or approved by you.</p>"
+                        "<p>Please process them appropriately (merge or close them)"
+                        "at the earliest.</p>"
+                        "<ul>{}</ul>"
+                    ).format(Markup("").join(
+                        Markup('<li><a href="{link}">{name}</a></li>').format(
+                            name=pr.display_name,
+                            link=pr.github_url,
+                        )
+                        for pr in prs
+                    ))
+                }
+                for email, prs in emails.items()
+            ])
+        except Exception:
+            _logger.exception("Failed to create mail")
 
 
 map_author = operator.itemgetter('name', 'email', 'date')
