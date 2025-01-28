@@ -5,7 +5,7 @@ def module():
     return 'runbot_merge'
 
 @pytest.fixture
-def project(env, config):
+def project(env, config, rolemap):
     return env['runbot_merge.project'].create({
         'name': 'odoo',
         'github_token': config['github']['token'],
