@@ -146,7 +146,7 @@ def test_user_leaves_and_returns(env, port):
         "email": "bado@example.org",
         "sub": "123456",
     }]) == [1, 0]
-    p = env['res.partner'].search([('github_login', '=', "DouvyB")])
+    p = env.with_context(active_test=False)['res.partner'].search([('github_login', '=', "DouvyB")])
     assert (p.user_ids.groups_id & categories) == internal
 
     # bye bye 👋

@@ -74,8 +74,9 @@ def test_unreviewer(env, project, port):
         'name': 'a_test_repo',
         'status_ids': [(0, 0, {'context': 'status'})]
     })
-    p = env['res.partner'].create({
+    p = env['res.users'].create({
         'name': 'George Pearce',
+        'login': 'pewpew70',
         'github_login': 'emubitch',
         'review_rights': [(0, 0, {'repository_id': repo.id, 'review': True})]
     })
@@ -99,6 +100,8 @@ def test_unreviewer(env, project, port):
     r.raise_for_status()
     assert 'error' not in r.json()
 
+    assert not p.active
+    assert not p.email
     assert p.review_rights == env['res.partner.review']
 
 def test_staging_post_update(env, repo, users, config):

@@ -15,14 +15,10 @@ class MergebotReviewerProvisioning(Controller):
     @from_role('accounts', signed=True)
     @route('/runbot_merge/users', type='json', auth='public')
     def list_users(self):
-        env = request.env(su=True)
-        return [{
-                'github_login': u.github_login,
-                'email': u.email,
-            }
-            for u in env['res.users'].search([])
-            if u.github_login
-        ]
+        return request.env['res.users'].sudo().search_fetch(
+            [('github_login', '!=', False)],
+            ['github_login', 'email'],
+        )._read_format(['github_login', 'email'])
 
     @from_role('accounts', signed=True)
     @route('/runbot_merge/provision', type='json', auth='public')
@@ -79,8 +75,28 @@ class MergebotReviewerProvisioning(Controller):
             current = partners.get(new['github_login'].casefold()) or partners.get(new['email']) or Partners
             if not current.active:
                 to_activate |= current
-            # entry doesn't have user -> create user
-            if not current.user_ids:
+
+            # if partner has a user, update it (and re-enable it if necessary)
+            if user := current.user_ids:
+                if len(user) != 1:
+                    _logger.warning("Got %d users for partner %s, updating first.", len(user), current.display_name)
+                    user = user[:1]
+                new.setdefault("active", True)
+                update_vals = {
+                    k: v
+                    for k, v in new.items()
+                    if v != (user[k].id if k == 'oauth_provider_id' else user[k])
+                }
+                if user.has_group('base.group_portal'):
+                    update_vals['groups_id'] = [
+                        Command.unlink(portal.id),
+                        Command.link(internal.id),
+                    ]
+
+                if update_vals:
+                    user.write(update_vals)
+                    updated += 1
+            else:  # otherwise create it
                 if not new['email']:
                     _logger.info(
                         "Unable to create user for %s: no email in provisioning data",
@@ -114,28 +130,6 @@ class MergebotReviewerProvisioning(Controller):
                 if current:
                     new['partner_id'] = current.id
                 to_create.append(new)
-                continue
-
-            # otherwise update user (if there is anything to update)
-            user = current.user_ids
-            if len(user) != 1:
-                _logger.warning("Got %d users for partner %s, updating first.", len(user), current.display_name)
-                user = user[:1]
-            new.setdefault("active", True)
-            update_vals = {
-                k: v
-                for k, v in new.items()
-                if v != (user[k] if k != 'oauth_provider_id' else user[k].id)
-            }
-            if user.has_group('base.group_portal'):
-                update_vals['groups_id'] = [
-                    Command.unlink(portal.id),
-                    Command.link(internal.id),
-                ]
-
-            if update_vals:
-                user.write(update_vals)
-                updated += 1
 
         created = len(to_create)
         if to_create:
@@ -148,26 +142,29 @@ class MergebotReviewerProvisioning(Controller):
         _logger.info("Provisioning: created %d updated %d.", created, updated)
         return [created, updated]
 
+    # deprecated endpoint (redundant with /users)
     @from_role('accounts', signed=True)
     @route(['/runbot_merge/get_reviewers'], type='json', auth='public')
     def fetch_reviewers(self, **kwargs):
-        reviewers = request.env['res.partner.review'].sudo().search([
-            '|', ('review', '=', True), ('self_review', '=', True)
-        ]).mapped('partner_id.github_login')
-        return reviewers
+        return request.env['res.users'].sudo()\
+            .search_fetch([('github_login', '!=', False)], ['github_login'])\
+            .mapped('github_login')
 
     @from_role('accounts', signed=True)
-    @route(['/runbot_merge/remove_reviewers'], type='json', auth='public', methods=['POST'])
-    def update_reviewers(self, github_logins, **kwargs):
+    @route([
+        '/runbot_merge/disable_users',
+        '/runbot_merge/remove_reviewers', # deprecated URL
+    ], type='json', auth='public', methods=['POST'])
+    def remove_users(self, github_logins, **kwargs):
         partners = request.env['res.partner'].sudo().search([('github_login', 'in', github_logins)])
         partners.write({
             'email': False,
             'review_rights': [Command.clear()],
             'delegate_reviewer': [Command.clear()],
         })
-
-        # Assign the linked users as portal users
-        partners.mapped('user_ids').write({
+        partners.user_ids.write({
+            'active': False,
             'groups_id': [Command.set([request.env.ref('base.group_portal').id])]
         })
+
         return True
