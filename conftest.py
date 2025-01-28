@@ -1238,10 +1238,16 @@ class Environment:
         self._password = None
         self._object = xmlrpc.client.ServerProxy(f'http://localhost:{port}/xmlrpc/2/object')
         self.login('admin', 'admin')
+        self._context = {}
 
     def with_user(self, login, password):
         env = copy.copy(self)
         env.login(login, password)
+        return env
+
+    def with_context(self, **kw):
+        env = copy.copy(self)
+        env._context = {**self._context, **kw}
         return env
 
     def login(self, login, password):
@@ -1251,6 +1257,7 @@ class Environment:
         ).authenticate(self._db, login, password, {})
 
     def __call__(self, model, method, *args, **kwargs):
+        kwargs['context'] = {**self._context, **kwargs.get('context', {})}
         return self._object.execute_kw(
             self._db, self._uid, self._password,
             model, method,
