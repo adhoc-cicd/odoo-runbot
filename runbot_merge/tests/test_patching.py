@@ -15,7 +15,7 @@ Date:   2021-04-24T17:09:14Z
     whop whop
 
 diff --git a/b b/b
-index 000000000000..000000000000 100644
+index d00491fd7e5b..0cfbf08886fc 100644
 --- a/b
 +++ b/b
 @@ -1,1 +1,1 @@
@@ -35,7 +35,7 @@ whop whop
  1 file changed, 1 insertion(+), 1 deletion(-)
  
 diff --git a/b b/b
-index 000000000000..000000000000 100644
+index d00491fd7e5b..0cfbf08886fc 100644
 --- a/b
 +++ b/b
 @@ -1,1 +1,1 @@
@@ -47,7 +47,7 @@ index 000000000000..000000000000 100644
 
 # slightly different format than the one I got, possibly because older?
 FORMAT_PATCH_MAT = """\
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 3000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: 3 Discos Down <bar@example.org>
 Date: Sat, 24 Apr 2021 17:09:14 +0000
 Subject: [PATCH 1/1] [I18N] whop
@@ -58,7 +58,7 @@ whop whop
  1 file changed, 1 insertion(+), 1 deletion(-)
  
 diff --git b b
-index 000000000000..000000000000 100644
+index d00491fd7e5b..0cfbf08886fc 100644
 --- b
 +++ b
 @@ -1,1 +1,1 @@
@@ -268,3 +268,73 @@ def test_patch_conflict(env, project, repo, users):
     ), (
         False, '', [('active', 1, 0)]
     )]
+
+CREATE_FILE_FORMAT_PATCH = """\
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 3 Discos Down <bar@example.org>
+Date: Sat, 24 Apr 2021 17:09:14 +0000
+Subject: [PATCH] [I18N] whop
+
+whop whop
+---
+ x | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 100644 b
+
+diff --git a/x b/x
+new file mode 100644
+index 000000000000..d00491fd7e5b
+--- /dev/null
++++ b/x
+@@ -0,0 +1 @@
++1
+-- 
+2.48.1
+"""
+
+CREATE_FILE_SHOW = """\
+commit 0000000000000000000000000000000000000000
+Author: 3 Discos Down <bar@example.org>
+Date:   2021-04-24T17:09:14Z
+
+    [I18N] whop
+    
+    whop whop
+
+diff --git a/x b/x
+new file mode 100644
+index 000000000000..d00491fd7e5b
+--- /dev/null
++++ b/x
+@@ -0,0 +1 @@
++1
+"""
+
+@pytest.mark.parametrize('patch', [
+    pytest.param(CREATE_FILE_SHOW, id='show'),
+    pytest.param(CREATE_FILE_FORMAT_PATCH, id='format-patch'),
+])
+def test_apply_creation(env, project, repo, users, patch):
+    assert repo.read_tree(repo.commit('master')) == {
+        'a': '2',
+        'b': '1\n',
+    }
+
+    env['runbot_merge.patch'].create({
+        'target': project.branch_ids.id,
+        'repository': project.repo_ids.id,
+        'patch': patch,
+    })
+    # trying to check the list of files doesn't work, even using web_read
+
+    env.run_crons()
+
+    HEAD = repo.commit('master')
+    assert repo.read_tree(HEAD) == {
+        'a': '2',
+        'b': '1\n',
+        'x': '1\n',
+    }
+    assert HEAD.message == "[I18N] whop\n\nwhop whop"
+    assert HEAD.author['name'] == "3 Discos Down"
+    assert HEAD.author['email'] == "bar@example.org"

@@ -6,6 +6,7 @@ overhead, or FBI backdoors oh wait forget about that last one.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import pathlib
 import re
@@ -179,7 +180,7 @@ class Patch(models.Model):
                         p.committer = f"{name} <{email}>"
                         p.commitdate = date
                 p.file_ids = File.concat(*(
-                    File.new({'name': m['file_from']})
+                    File.new({'name': m['file_to']})
                     for m in FILE_PATTERN.finditer(p.patch)
                 ))
                 p.message = r.message
@@ -233,7 +234,7 @@ class Patch(models.Model):
             has_files = False
             for m in FILE_PATTERN.finditer(patch.patch):
                 has_files = True
-                if m['file_from'] != m['file_to']:
+                if m['file_from'] != m['file_to'] and m['file_from'] != '/dev/null':
                     raise ValidationError("Only patches updating a file in place are supported, not creation, removal, or renaming.")
             if not has_files:
                 raise ValidationError("Patches should have files they patch, found none.")
@@ -321,25 +322,32 @@ class Patch(models.Model):
 
     def _apply_patch(self, r: git.Repo) -> str:
         p = self._parse_patch()
-        files = {}
         def reader(_r, f):
             return pathlib.Path(tmpdir, f).read_text(encoding="utf-8")
 
         prefix = 0
+        read = set()
+        patched = {}
         for m in FILE_PATTERN.finditer(p.patch):
-            if not prefix and m['prefix_a'] and m['prefix_b']:
+            if not prefix and (m['prefix_a'] or m['file_from'] == '/dev/null') and m['prefix_b']:
                 prefix = 1
 
-            files[m['file_to']] = reader
+            if m['file_from'] != '/dev/null':
+                read.add(m['file_from'])
+            patched[m['file_to']] = reader
 
         archiver = r.stdout(True)
         # if the parent is checked then we can't get rid of the kwarg and popen doesn't support it
         archiver._config.pop('check', None)
         archiver.runner = subprocess.Popen
-        with archiver.archive(self.target.name, *files) as out, \
-             tarfile.open(fileobj=out.stdout, mode='r|') as tf,\
+        with contextlib.ExitStack() as stack,\
              tempfile.TemporaryDirectory() as tmpdir:
-            tf.extractall(tmpdir)
+            # if there's no file to *update*, `archive` will extract the entire
+            # tree which is unnecessary
+            if read:
+                out = stack.enter_context(archiver.archive(self.target.name, *read))
+                tf = stack.enter_context(tarfile.open(fileobj=out.stdout, mode='r|'))
+                tf.extractall(tmpdir)
             patch = subprocess.run(
                 ['patch', f'-p{prefix}', '--directory', tmpdir, '--verbose'],
                 input=p.patch,
@@ -349,7 +357,7 @@ class Patch(models.Model):
             )
             if patch.returncode:
                 raise PatchFailure("\n---------\n".join(filter(None, [p.patch, patch.stdout.strip(), patch.stderr.strip()])))
-            new_tree = r.update_tree(self.target.name, files)
+            new_tree = r.update_tree(self.target.name, patched)
 
         sha = r.stdout().with_config(encoding='utf-8')\
             .show('--no-patch', '--pretty=%H', self.target.name)\

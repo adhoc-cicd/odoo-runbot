@@ -263,12 +263,17 @@ class Repo:
                 f, _, local = f.rpartition("/")
                 # tree to update, `{tree}:` works as an alias for tree
                 lstree = repo.ls_tree(f"{tree}:{f}").stdout.splitlines(keepends=False)
-                new_tree = "".join(
+                new_tree = []
+                seen = False
+                for mode, typ, sha, name in map(methodcaller("split", None, 3), lstree):
+                    if name == local:
+                        sha = oid
+                        seen = True
                     # tab before name is critical to the format
-                    f"{mode} {typ} {oid if name == local else sha}\t{name}\n"
-                    for mode, typ, sha, name in map(methodcaller("split", None, 3), lstree)
-                )
-                oid = repo.with_config(input=new_tree, check=True).mktree().stdout.strip()
+                    new_tree.append(f"{mode} {typ} {sha}\t{name}\n")
+                if not seen:
+                    new_tree.append(f"100644 blob {oid}\t{local}\n")
+                oid = repo.with_config(input="".join(new_tree), check=True).mktree().stdout.strip()
             tree = oid
         return tree
 
