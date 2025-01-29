@@ -155,10 +155,11 @@ class MergebotReviewerProvisioning(Controller):
         '/runbot_merge/disable_users',
         '/runbot_merge/remove_reviewers', # deprecated URL
     ], type='json', auth='public', methods=['POST'])
-    def remove_users(self, github_logins, **kwargs):
+    def disable_users(self, github_logins, **kwargs):
         partners = request.env['res.partner'].sudo().search([('github_login', 'in', github_logins)])
         partners.write({
             'email': False,
+            'parent_id': False,
             'review_rights': [Command.clear()],
             'delegate_reviewer': [Command.clear()],
         })
