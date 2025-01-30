@@ -731,6 +731,7 @@ class PullRequests(models.Model):
         source_author = self.source_id._pr_acl(author).is_author
         # nota: 15.0 `has_group` completely doesn't work if the recordset is empty
         super_admin = is_admin and author.user_ids and author.user_ids.has_group('runbot_merge.group_admin')
+        is_employee = (is_author or source_author) and author.user_ids and author.user_ids.has_group('base.group_user')
 
         help_list: list[type(commands.Command)] = list(filter(None, [
             commands.Help,
@@ -743,7 +744,7 @@ class PullRequests(models.Model):
             is_author and commands.Limit,
             source_author and self.source_id and commands.Close,
 
-            is_reviewer and commands.MergeMethod,
+            (is_reviewer or is_employee) and commands.MergeMethod,
             is_reviewer and commands.Delegate,
 
             is_admin and commands.Priority,
@@ -854,7 +855,7 @@ For your own safety I've ignored *everything in your entire comment*.
                         self.unstage("unreviewed (r-) by %s", login)
                     else:
                         msg = "r- makes no sense in the current PR state."
-                case commands.MergeMethod() if is_reviewer:
+                case commands.MergeMethod() if (is_reviewer or is_employee):
                     self.merge_method = command.value
                     explanation = next(label for value, label in type(self).merge_method.selection if value == command.value)
                     self.env.ref("runbot_merge.command.method")._send(
