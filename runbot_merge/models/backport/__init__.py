@@ -83,11 +83,7 @@ class PullRequestBackport(models.TransientModel):
             self.target.name,
         )
 
-        bp_branch = "%s-%s-%s-bp" % (
-            self.target.name,
-            self.pr_id.refname,
-            secrets.token_urlsafe(3),
-        )
+        bp_branch = f"{self.target.name}-{self.pr_id.refname}-{self.pr_id.batch_id.id}-bp"
         repo_id = self.pr_id.repository
         repo = git.get_local(repo_id)
 

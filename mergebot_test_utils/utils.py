@@ -12,8 +12,8 @@ MESSAGE_TEMPLATE = """{message}
 closes {repo}#{number}
 
 {headers}Signed-off-by: {name} <{email}>"""
-# target branch '-' source branch '-' base64 unique '-fw'
-REF_PATTERN = r'{target}-{source}-[a-zA-Z0-9_-]{{4}}-fw'
+# target branch '-' source branch '-' batch id '-fw'
+REF_PATTERN = r'{target}-{source}-\d+-fw'
 
 class Commit:
     def __init__(self, message, *, author=None, committer=None, tree, reset=False):

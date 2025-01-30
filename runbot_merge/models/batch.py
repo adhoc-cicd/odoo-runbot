@@ -315,14 +315,8 @@ class Batch(models.Model):
             )
             return
 
-        # the base PR is the PR with the "oldest" target
-        base = max(all_sources, key=lambda p: (p.target.sequence, p.target.name))
-        # take only the branch bit
-        new_branch = '%s-%s-%s-fw' % (
-            target.name,
-            base.refname,
-            secrets.token_urlsafe(3),
-        )
+        refname = self.genealogy_ids[0].name.split(':', 1)[-1]
+        new_branch = f'{target.name}-{refname}-{self.id}-fw'
         conflicts = {}
         for pr in prs:
             repo = git.get_local(pr.repository)
