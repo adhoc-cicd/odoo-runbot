@@ -893,7 +893,7 @@ For your own safety I've ignored *everything in your entire comment*.
                     self.batch_id.skipchecks = True
                     self.reviewed_by = author
                     if not (self.squash or self.merge_method):
-                        self.env.ref('runbot_merge.check_linked_prs_status')._trigger()
+                        self.env.ref('runbot_merge.check_merge_method')._trigger()
 
                     for p in self.batch_id.prs - self:
                         if not p.reviewed_by:
@@ -1165,7 +1165,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 format_args={'user': login, 'pr': self},
             )
         if not (self.squash or self.merge_method):
-            self.env.ref('runbot_merge.check_linked_prs_status')._trigger()
+            self.env.ref('runbot_merge.check_merge_method')._trigger()
         return None
 
     def _pr_acl(self, user) -> ACL:
@@ -1516,6 +1516,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 if commit:
                     self.env.cr.commit()
 
+    def _check_merge_method_configuration(self, commit=False):
         # send feedback for multi-commit PRs without a merge_method (which
         # we've not warned yet)
         methods = ''.join(

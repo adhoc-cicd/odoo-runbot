@@ -157,6 +157,10 @@ vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
         )
 
 def handle_pr(env, event):
+    pr = event['pull_request']
+    squash = pr['commits'] == 1
+    r = pr['base']['repo']['full_name']
+
     if event['action'] in [
         'assigned', 'unassigned', 'review_requested', 'review_request_removed',
         'labeled', 'unlabeled'
@@ -167,14 +171,19 @@ def handle_pr(env, event):
             event['pull_request']['base']['repo']['full_name'],
             event['pull_request']['number'],
         )
+        if pr := env['runbot_merge.pull_requests'].search_fetch([
+            ('repository.name', '=', r),
+            ('number', '=', pr['number']),
+            ('squash', '!=', squash),
+        ]):
+            pr.squash = squash
+
         return Response(
             status=200,
             mimetype="text/plain",
             response="Not setup to receive action.",
         )
 
-    pr = event['pull_request']
-    r = pr['base']['repo']['full_name']
     b = pr['base']['ref']
 
     repo = env['runbot_merge.repository'].search([('name', '=', r)])
@@ -234,7 +243,7 @@ def handle_pr(env, event):
         if source_branch != branch:
             if branch != pr_obj.target:
                 updates['target'] = branch.id
-                updates['squash'] = pr['commits'] == 1
+                updates['squash'] = squash
 
         if 'title' in event['changes'] or 'body' in event['changes']:
             updates['message'] = utils.make_message(pr)
@@ -330,7 +339,7 @@ def handle_pr(env, event):
             pr_obj.head,
             pr['head']['sha'],
             event['sender']['login'],
-            pr['commits'] == 1
+            squash,
         )
         if pr['base']['ref'] != pr_obj.target.name:
             env['runbot_merge.fetch_job'].create({
@@ -343,9 +352,13 @@ def handle_pr(env, event):
             'reviewed_by': False,
             'error': False,
             'head': pr['head']['sha'],
-            'squash': pr['commits'] == 1,
+            'squash': squash,
         })
         return Response(mimetype="text/plain", response=f'Updated to {pr_obj.head}')
+
+    if event['action'] not in ('closed', 'reopened'):
+        if pr_obj.squash != squash:
+            pr_obj.squash = squash
 
     if event['action'] == 'ready_for_review':
         pr_obj.draft = False
