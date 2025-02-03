@@ -248,7 +248,7 @@ class PullRequests(models.Model):
                 vals['detach_reason'] = f"Head updated from {self.head} to {newhead}"
             # if any children, this is an FP PR being updated, enqueue
             # updating children
-            if self.search_count([('parent_id', '=', self.id)]):
+            if self.search_count([('parent_id', '=', self.id)], limit=1):
                 self.env['forwardport.updates'].create({
                     'original_root': self.root_id.id,
                     'new_root': self.id
