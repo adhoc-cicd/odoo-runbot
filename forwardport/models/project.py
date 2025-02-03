@@ -242,7 +242,6 @@ class PullRequests(models.Model):
             if p.state not in ('merged', 'closed')
             if p.parent_id
         }
-        closed_fp = self.filtered(lambda p: p.state == 'closed' and p.source_id)
         if newhead and not self.env.context.get('ignore_head_update') and newhead != self.head:
             vals.setdefault('parent_id', False)
             if with_parents and vals['parent_id'] is False:

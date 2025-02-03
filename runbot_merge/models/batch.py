@@ -257,7 +257,6 @@ class Batch(models.Model):
             )
             return
 
-        all_sources = [(p.source_id or p) for p in self.prs]
         all_targets = [p._find_next_target() for p in self.prs]
 
         if all(t is None for t in all_targets):
