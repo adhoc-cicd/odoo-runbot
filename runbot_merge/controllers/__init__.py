@@ -171,7 +171,7 @@ def handle_pr(env, event):
             event['pull_request']['base']['repo']['full_name'],
             event['pull_request']['number'],
         )
-        if pr := env['runbot_merge.pull_requests'].search_fetch([
+        if pr := env['runbot_merge.pull_requests'].search([
             ('repository.name', '=', r),
             ('number', '=', pr['number']),
             ('squash', '!=', squash),
