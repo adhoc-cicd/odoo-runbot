@@ -73,6 +73,7 @@ import xmlrpc.client
 from contextlib import closing
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlsplit
 
 import pytest
 import requests
@@ -236,7 +237,10 @@ def tunnel(pytestconfig: pytest.Config, port: int):
         ) as p:
             # read() blocks forever and I don't know why, read things about the
             # write end of the stdout pipe still being open here?
-            yield p.stdout.readline().strip()
+            result = p.stdout.readline().strip()
+            url = urlsplit(result)
+            assert url.scheme and url.netloc
+            yield url.geturl()
             p.terminate()
             p.wait(30)
     else:
