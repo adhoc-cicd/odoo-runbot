@@ -3577,6 +3577,7 @@ Currently available commands:
 |`fw=no`|does not forward-port this PR|
 |`fw=default`|forward-ports this PR normally|
 |`fw=skipci`|does not wait for a forward-port's statuses to succeed before creating the next one|
+|`fw=skipmerge`|does not wait for the source to be merged before creating forward ports|
 |`up to <branch>`|only ports this PR forward to the specified branch (included)|
 |`merge`|integrate the PR with a simple merge commit, using the PR description as message|
 |`rebase-merge`|rebases the PR on top of the target branch the integrates with a merge commit, using the PR description as message|
@@ -3607,6 +3608,7 @@ Currently available commands:
 |`fw=no`|does not forward-port this PR|
 |`fw=default`|forward-ports this PR normally|
 |`fw=skipci`|does not wait for a forward-port's statuses to succeed before creating the next one|
+|`fw=skipmerge`|does not wait for the source to be merged before creating forward ports|
 |`up to <branch>`|only ports this PR forward to the specified branch (included)|
 |`merge`|integrate the PR with a simple merge commit, using the PR description as message|
 |`rebase-merge`|rebases the PR on top of the target branch the integrates with a merge commit, using the PR description as message|

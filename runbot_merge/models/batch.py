@@ -70,6 +70,7 @@ class Batch(models.Model):
         ('no', "Do not port forward"),
         ('default', "Default"),
         ('skipci', "Skip CI"),
+        ('skipmerge', "Skip merge"),
     ], required=True, default="default", string="Forward Port Policy", tracking=True)
 
     merge_date = fields.Datetime(tracking=True)
@@ -316,6 +317,8 @@ class Batch(models.Model):
 
         refname = self.genealogy_ids[0].name.split(':', 1)[-1]
         new_branch = f'{target.name}-{refname}-{self.id}-fw'
+        _logger.info("Forward-porting %s to %s (using branch %r)", self, target.name, new_branch)
+
         conflicts = {}
         for pr in prs:
             repo = git.get_local(pr.repository)
@@ -365,18 +368,20 @@ class Batch(models.Model):
             _logger.info("Created forward-port PR %s", new_pr)
             new_batch |= new_pr
 
+            report_conflicts = has_conflicts and self.fw_policy != 'skipmerge'
+
             # allows PR author to close or skipci
             new_pr.write({
                 'merge_method': pr.merge_method,
                 'source_id': source.id,
                 # only link to previous PR of sequence if cherrypick passed
-                'parent_id': pr.id if not has_conflicts else False,
+                'parent_id': pr.id if not report_conflicts else False,
                 'detach_reason': "conflicts:\n{}".format('\n\n'.join(
                     f"{out}\n{err}".strip()
                     for _, out, err, _ in filter(None, conflicts.values())
-                )) if has_conflicts else None,
+                )) if report_conflicts else None,
             })
-            if has_conflicts and pr.parent_id and pr.state not in ('merged', 'closed'):
+            if report_conflicts and pr.parent_id and pr.state not in ('merged', 'closed'):
                 self.env.ref('runbot_merge.forwardport.failure.conflict')._send(
                     repository=pr.repository,
                     pull_request=pr.number,
@@ -398,6 +403,7 @@ class Batch(models.Model):
 
         new_batch = new_batch.batch_id
         new_batch.parent_id = self
+        new_batch.fw_policy = self.fw_policy
         # try to schedule followup
         new_batch._schedule_fp_followup()
         return new_batch
@@ -407,6 +413,7 @@ class Batch(models.Model):
         # if the PR has a parent and is CI-validated, enqueue the next PR
         scheduled = self.browse(())
         for batch in self:
+            force_fw = force_fw or batch.fw_policy == 'skipmerge'
             prs = ', '.join(batch.prs.mapped('display_name'))
             _logger.info('Checking if forward-port %s (%s)', batch, prs)
             # in cas of conflict or update individual PRs will "lose" their
@@ -417,10 +424,10 @@ class Batch(models.Model):
             # same thing as all the PRs having a source, kinda, but cheaper,
             # it's not entirely true as technically the user could have added a
             # PR to the forward ported batch
-            if not (batch.parent_id and force_fw or all(p.parent_id for p in batch.prs)):
+            if not (batch.parent_id and (force_fw or all(p.parent_id for p in batch.prs))):
                 _logger.info('-> no parent %s (%s)', batch, prs)
                 continue
-            if not force_fw and batch.source.fw_policy != 'skipci' \
+            if not force_fw and batch.source.fw_policy not in ('skipci', 'skipmerge') \
                     and (invalid := batch.prs.filtered(lambda p: p.status != 'success')):
                 _logger.info(
                     '-> wrong state %s (%s)',

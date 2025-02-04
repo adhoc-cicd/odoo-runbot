@@ -935,23 +935,28 @@ For your own safety I've ignored *everything in your entire comment*.
                 case commands.FW():
                     message = None
                     match command:
+                        case _ if self.batch_id.fw_policy == 'skipmerge' and command != commands.FW.SKIPMERGE:
+                            msg = "a pull request set to skip merge can not be reverted to other fw methods"
                         case commands.FW.NO if is_author or source_author:
                             message = "Disabled forward-porting."
                         case commands.FW.DEFAULT if is_author or source_author:
                             message = "Waiting for CI to create followup forward-ports."
                         case commands.FW.SKIPCI if is_reviewer:
                             message = "Not waiting for CI to create followup forward-ports."
-                        # case commands.FW.SKIPMERGE if is_reviewer:
-                        #     message = "Not waiting for merge to create followup forward-ports."
+                        case commands.FW.SKIPMERGE if is_reviewer:
+                            if self.source_id or self.merge_date:
+                                msg = "the source is already merged"
+                            else:
+                                message = "Not waiting for merge to create followup forward-ports."
                         case _:
                             msg = f"you don't have the right to {command}."
                     if message:
                         # TODO: feedback?
                         if self.source_id:
                             "if the pr is not a source, ignore (maybe?)"
-                        elif not self.merge_date:
-                            "if the PR is not merged, it'll be fw'd normally"
-                        elif self.batch_id.fw_policy != 'no' or command == commands.FW.NO:
+                        elif not (self.merge_date or command == commands.FW.SKIPMERGE):
+                            "if the PR is not merged or bypassing merge, it'll be fw'd normally"
+                        elif command != commands.FW.SKIPMERGE and (self.batch_id.fw_policy != 'no' or command == commands.FW.NO):
                             "if the policy is not being flipped from no to something else, nothing to do"
                         elif branch_key(self.limit_id) <= branch_key(self.target):
                             "if the limit is lower than current (old style ignore) there's nothing to do"

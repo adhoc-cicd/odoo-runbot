@@ -192,7 +192,7 @@ class FW(enum.Enum):
     DEFAULT = enum.auto()
     NO = enum.auto()
     SKIPCI = enum.auto()
-    # SKIPMERGE = enum.auto()
+    SKIPMERGE = enum.auto()
 
     def __str__(self) -> str:
         return f'fw={self.name.lower()}'
@@ -203,6 +203,7 @@ class FW(enum.Enum):
         yield str(cls.DEFAULT), "forward-ports this PR normally"
         if is_reviewer:
             yield str(cls.SKIPCI), "does not wait for a forward-port's statuses to succeed before creating the next one"
+            yield str(cls.SKIPMERGE), "does not wait for the source to be merged before creating forward ports"
 
 
 @dataclass
