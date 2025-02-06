@@ -912,21 +912,22 @@ class Repo:
         s = self._get_session(token)
 
         r = s.post(f'https://api.github.com/repos/{self.name}/forks')
-        assert 200 <= r.status_code < 300, r.text
+        assert r.ok, r.text
 
-        repo_name = r.json()['full_name']
-        repo_url = 'https://api.github.com/repos/' + repo_name
+        response = r.json()
+        repo_name = response['full_name']
+        repo_url = response['url']
         # poll for end of fork
         limit = time.time() + 60
         while s.head(repo_url, timeout=5).status_code != 200:
             if time.time() > limit:
-                raise TimeoutError("No response for repo %s over 60s" % repo_name)
+                raise TimeoutError(f"No response for repo {repo_name} over 60s")
             time.sleep(1)
 
         # wait for the branches (which should have been copied over) to be visible
         while not s.get(f'{repo_url}/branches').json():
             if time.time() > limit:
-                raise TimeoutError("No response for repo %s over 60s" % repo_name)
+                raise TimeoutError(f"No response for repo {repo_name} over 60s")
             time.sleep(1)
 
         return Repo(s, repo_name, self._repos)
