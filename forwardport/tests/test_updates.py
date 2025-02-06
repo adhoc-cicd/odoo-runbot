@@ -110,7 +110,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     with pr_repo:
         # force-push correct commit to PR's branch
         [new_c] = pr_repo.make_commits(
-            pr1_id.target.name,
+            prod.commit(pr1_id.target.name).id,
             Commit('whop whop', tree={'x': '5'}),
             ref='heads/%s' % pr_ref,
             make=False
@@ -265,7 +265,7 @@ def test_update_merged(env, make_repo, config, users):
     repo, ref = prod.get_pr(pr1_id.number).branch
     with repo:
         repo.make_commits(
-            pr1_id.target.name,
+            prod.commit(pr1_id.target.name).id,
             Commit('2', tree={'0': '0', '1': '1'}),
             ref='heads/%s' % ref,
             make=False
@@ -441,7 +441,7 @@ def test_subsequent_conflict(env, make_repo, config, users):
     pr2 = repo.get_pr(pr2_id.number)
     t = {**repo.read_tree(repo.commit(pr2_id.head)), 'h': 'conflict!'}
     with fork:
-        fork.make_commits(pr2_id.target.name, Commit('newfiles', tree=t), ref=pr2.ref, make=False)
+        fork.make_commits(repo.commit(pr2_id.target.name).id, Commit('newfiles', tree=t), ref=pr2.ref, make=False)
     env.run_crons()
 
     assert repo.read_tree(repo.commit(pr3_id.head)) == {

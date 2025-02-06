@@ -50,7 +50,7 @@ def test_single_updated(env, config, make_repo):
     repo, ref = r2.get_pr(pr21_id.number).branch
     with repo:
         repo.make_commits(
-            pr21_id.target.name,
+            r2.commit(pr21_id.target.name).id,
             Commit('Whops', tree={'2': '1'}),
             ref='heads/' + ref,
             make=False
@@ -180,7 +180,7 @@ def test_add_pr_during_fp(env, config, make_repo, users):
     [pr1_b_id] = pr1_a_id.forwardport_ids
 
     with r2, fork2:
-        fork2.make_commits('b', Commit('2', tree={'2': '0'}), ref=f'heads/{pr1_b_id.refname}')
+        fork2.make_commits(r2.commit('b').id, Commit('2', tree={'2': '0'}), ref=f'heads/{pr1_b_id.refname}')
         pr2_b = r2.make_pr(title="B", target='b', head=f'{fork2.owner}:{pr1_b_id.refname}')
     env.run_crons()
 
@@ -265,7 +265,7 @@ def test_add_to_forward_ported(env, config, make_repo, users):
     # new PR must be in fork for labels to actually match
     with r2, fork2:
         # branch in fork has no owner prefix, but HEAD for cross-repo PR does
-        fork2.make_commits("b", Commit('b', tree={'b': 'b'}), ref=f'heads/{pr1_b_id.refname}')
+        fork2.make_commits(r2.commit("b").id, Commit('b', tree={'b': 'b'}), ref=f'heads/{pr1_b_id.refname}')
         pr2_b = r2.make_pr(title="b", target="b", head=pr1_b_id.label)
         r2.post_status(pr2_b.head, 'success')
     env.run_crons()
@@ -348,7 +348,7 @@ def test_add_to_forward_port_conflict(env, config, make_repo, users):
     # new PR must be in fork for labels to actually match
     with r2, fork2:
         # branch in fork has no owner prefix, but HEAD for cross-repo PR does
-        fork2.make_commits("b", Commit('b', tree={'b': 'b'}), ref=f'heads/{pr1_b_id.refname}')
+        fork2.make_commits(r2.commit("b").id, Commit('b', tree={'b': 'b'}), ref=f'heads/{pr1_b_id.refname}')
         pr2_b = r2.make_pr(title="b", target="b", head=pr1_b_id.label)
         r2.post_status(pr2_b.head, 'success')
     env.run_crons()

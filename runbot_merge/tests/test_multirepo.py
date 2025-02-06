@@ -1013,7 +1013,7 @@ class TestSubstitutions:
             repo_a.make_commits('master', repo_a.Commit('bop', tree={'a': '1'}), ref='heads/abranch')
             pra = repo_a.make_pr(target='master', head='abranch')
         with repo_b, repo_b.fork() as b_fork:
-            b_fork.make_commits('master', b_fork.Commit('pob', tree={'b': '1'}), ref='heads/abranch')
+            b_fork.make_commits(repo_b.commit('master').id, b_fork.Commit('pob', tree={'b': '1'}), ref='heads/abranch')
             prb = repo_b.make_pr(
                 title="a pr",
                 target='master', head='%s:abranch' % b_fork.owner
@@ -1098,7 +1098,7 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
     assert r1_dev.owner == r2_dev.owner
 
     with r1, r1_dev:
-        r1_dev.make_commits('default', Commit('new', tree={'a': 'b'}), ref='heads/other')
+        r1_dev.make_commits(r1.commit('default').id, Commit('new', tree={'a': 'b'}), ref='heads/other')
 
         # create, validate, and approve pr1
         pr1 = r1.make_pr(title='pr 1', target='default', head=r1_dev.owner + ':other')
@@ -1106,7 +1106,7 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
         pr1.post_comment('hansen r+', config['role_reviewer']['token'])
 
     with r2, r2_dev:
-        r2_dev.make_commits('default', Commit('new', tree={'b': 'b'}), ref='heads/other')
+        r2_dev.make_commits(r2.commit('default').id, Commit('new', tree={'b': 'b'}), ref='heads/other')
 
         # create second PR with the same label *in a different project*, don't
         # approve it

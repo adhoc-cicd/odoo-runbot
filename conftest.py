@@ -911,7 +911,9 @@ class Repo:
     def fork(self, *, token=None):
         s = self._get_session(token)
 
-        r = s.post(f'https://api.github.com/repos/{self.name}/forks')
+        r = s.post(f'https://api.github.com/repos/{self.name}/forks', json={
+            'default_branch_only': True,
+        })
         assert r.ok, r.text
 
         response = r.json()

@@ -114,7 +114,7 @@ def test_unignore(env, config, make_repo, users, page):
     token = config['role_other']['token']
     fork = prod.fork(token=token)
     with prod, fork:
-        [c] = fork.make_commits('a', Commit('c', tree={'0': '0'}), ref='heads/mybranch')
+        [c] = fork.make_commits(prod.commit('a').id, Commit('c', tree={'0': '0'}), ref='heads/mybranch')
         pr = prod.make_pr(target='a', head=f'{fork.owner}:mybranch', title="title", token=token)
         prod.post_status(c, 'success')
     env.run_crons()
@@ -302,7 +302,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     # update pr2 to detach it from pr1
     with other:
         other.make_commits(
-            p2.target.name,
+            prod.commit(p2.target.name).id,
             Commit('updated', tree={'1': '1'}),
             ref=pr2.ref,
             make=False

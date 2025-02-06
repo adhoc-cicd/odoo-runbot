@@ -54,7 +54,7 @@ def test_override_inherited(env, config, make_repo, users):
     pr_repo, pr_ref = pr1.branch
     with pr_repo:
         pr_repo.make_commits(
-            pr1_id.target.name,
+            repo.commit(pr1_id.target.name).id,
             Commit('wop wop', tree={'a': '1'}),
             ref=f'heads/{pr_ref}',
             make=False
@@ -117,7 +117,7 @@ def test_override_combination(env, config, make_repo, users):
     pr_repo, pr_ref = repo.get_pr(pr1_id.number).branch
     with pr_repo:
         pr_repo.make_commits(
-            pr1_id.target.name,
+            repo.commit(pr1_id.target.name).id,
             Commit('wop wop', tree={'a': '1'}),
             ref=f'heads/{pr_ref}',
             make=False

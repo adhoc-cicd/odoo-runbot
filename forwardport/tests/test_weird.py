@@ -141,7 +141,7 @@ def test_fw_retry(env, config, make_repo, users):
     other_token = config['role_other']['token']
     fork = prod.fork(token=other_token)
     with prod, fork:
-        fork.make_commits('a', Commit('c', tree={'a': '0'}), ref='heads/abranch')
+        fork.make_commits(prod.commit('a').id, Commit('c', tree={'a': '0'}), ref='heads/abranch')
         pr1 = prod.make_pr(
             title="whatever",
             target='a',
@@ -274,7 +274,7 @@ class TestNotAllBranches:
         """
         project, a, a_dev, b, _ = repos
         with a, a_dev:
-            [c] = a_dev.make_commits('a', Commit('pr', tree={'pr': '1'}), ref='heads/change')
+            [c] = a_dev.make_commits(a.commit('a').id, Commit('pr', tree={'pr': '1'}), ref='heads/change')
             pr = a.make_pr(target='a', title="a pr", head=a_dev.owner + ':change')
             a.post_status(c, 'success', 'ci/runbot')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -321,7 +321,7 @@ class TestNotAllBranches:
         """
         project, a, _, b, b_dev = repos
         with b, b_dev:
-            [c] = b_dev.make_commits('a', Commit('pr', tree={'pr': '1'}), ref='heads/change')
+            [c] = b_dev.make_commits(b.commit('a').id, Commit('pr', tree={'pr': '1'}), ref='heads/change')
             pr = b.make_pr(target='a', title="a pr", head=b_dev.owner + ':change')
             b.post_status(c, 'success', 'ci/runbot')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -355,12 +355,12 @@ class TestNotAllBranches:
         """
         project, a, a_dev, b, b_dev = repos
         with a, a_dev:
-            [c_a] = a_dev.make_commits('a', Commit('pr a', tree={'pr': 'a'}), ref='heads/change')
+            [c_a] = a_dev.make_commits(a.commit('a').id, Commit('pr a', tree={'pr': 'a'}), ref='heads/change')
             pr_a = a.make_pr(target='a', title='a pr', head=a_dev.owner + ':change')
             a.post_status(c_a, 'success', 'ci/runbot')
             pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
         with b, b_dev:
-            [c_b] = b_dev.make_commits('a', Commit('pr b', tree={'pr': 'b'}), ref='heads/change')
+            [c_b] = b_dev.make_commits(b.commit('a').id, Commit('pr b', tree={'pr': 'b'}), ref='heads/change')
             pr_b = b.make_pr(target='a', title='b pr', head=b_dev.owner + ':change')
             b.post_status(c_b, 'success', 'ci/runbot')
             pr_b.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -592,7 +592,7 @@ def test_author_can_close_via_fwbot(env, config, make_repo):
     other = prod.fork(token=other_token)
 
     with prod, other:
-        [c] = other.make_commits('a', Commit('c', tree={'0': '0'}), ref='heads/change')
+        [c] = other.make_commits(prod.commit('a').id, Commit('c', tree={'0': '0'}), ref='heads/change')
         pr = prod.make_pr(
             target='a', title='my change',
             head=other_user['user'] + ':change',
@@ -1005,17 +1005,17 @@ def test_disable_branch_with_batches(env, config, make_repo, users):
 
     # region set up forward ported batches
     with repo, fork, repo2, fork2:
-        fork.make_commits("a", Commit("x", tree={"x": "1"}), ref="heads/x")
+        fork.make_commits(repo.commit("a").id, Commit("x", tree={"x": "1"}), ref="heads/x")
         pr1_a = repo.make_pr(title="X", target="a", head=f"{fork.owner}:x")
         pr1_a.post_comment("hansen r+", config['role_reviewer']['token'])
         repo.post_status(pr1_a.head, "success")
 
-        fork2.make_commits("a", Commit("x", tree={"x": "1"}), ref="heads/x")
+        fork2.make_commits(repo2.commit("a").id, Commit("x", tree={"x": "1"}), ref="heads/x")
         pr2_a = repo2.make_pr(title="X", target="a", head=f"{fork2.owner}:x")
         pr2_a.post_comment("hansen r+", config['role_reviewer']['token'])
         repo2.post_status(pr2_a.head, "success")
 
-        fork.make_commits("a", Commit("y", tree={"y": "1"}), ref="heads/y")
+        fork.make_commits(repo.commit("a").id, Commit("y", tree={"y": "1"}), ref="heads/y")
         pr3_a = repo.make_pr(title="Y", target="a", head=f"{fork.owner}:y")
         pr3_a.post_comment("hansen r+", config['role_reviewer']['token'])
         repo.post_status(pr3_a.head, 'success')

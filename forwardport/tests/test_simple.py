@@ -40,7 +40,7 @@ def test_straightforward_flow(env, config, make_repo, users):
     with prod, other_user_repo:
         # create PR as a user with no access to prod (or other)
         [_, p_1] = other_user_repo.make_commits(
-            'a',
+            prod.commit('a').id,
             Commit('p_0', tree={'x': '0'}),
             Commit('p_1', tree={'x': '1'}),
             ref='heads/hugechange'
@@ -515,7 +515,7 @@ def test_access_rights(env, config, make_repo, users, author, reviewer, delegate
     author_token = config['role_' + author]['token']
     fork = prod.fork(token=author_token)
     with prod, fork:
-        [c] = fork.make_commits('a', Commit('c_0', tree={'y': '0'}), ref='heads/accessrights')
+        [c] = fork.make_commits(prod.commit('a').id, Commit('c_0', tree={'y': '0'}), ref='heads/accessrights')
         pr = prod.make_pr(
             target='a', title='my change',
             head=users[author] + ':accessrights',
@@ -584,7 +584,7 @@ def test_disapproval(env, config, make_repo, users):
     author_token = config['role_other']['token']
     fork = prod.fork(token=author_token)
     with prod, fork:
-        [c] = fork.make_commits('a', Commit('c_0', tree={'y': '0'}), ref='heads/accessrights')
+        [c] = fork.make_commits(prod.commit('a').id, Commit('c_0', tree={'y': '0'}), ref='heads/accessrights')
         pr0 = prod.make_pr(
             target='a', title='my change',
             head=users['other'] + ':accessrights',
@@ -655,7 +655,7 @@ def test_delegate_fw(env, config, make_repo, users):
     author_token = config['role_self_reviewer']['token']
     fork = prod.fork(token=author_token)
     with prod, fork:
-        [c] = fork.make_commits('a', Commit('c_0', tree={'y': '0'}), ref='heads/accessrights')
+        [c] = fork.make_commits(prod.commit('a').id, Commit('c_0', tree={'y': '0'}), ref='heads/accessrights')
         pr = prod.make_pr(
             target='a', title='my change',
             head=users['self_reviewer'] + ':accessrights',
@@ -781,7 +781,7 @@ def test_batched(env, config, make_repo, users):
 
     with main1, other1:
         [c1] = other1.make_commits(
-            'a', Commit('commit repo 1', tree={'1': 'a'}),
+            main1.commit('a').id, Commit('commit repo 1', tree={'1': 'a'}),
             ref='heads/contribution'
         )
         pr1 = main1.make_pr(
@@ -795,7 +795,7 @@ def test_batched(env, config, make_repo, users):
         pr1.post_comment('hansen r+', config['role_reviewer']['token'])
     with main2, other2:
         [c2] = other2.make_commits(
-            'a', Commit('commit repo 2', tree={'2': 'a'}),
+            main2.commit('a').id, Commit('commit repo 2', tree={'2': 'a'}),
             ref='heads/contribution' # use same ref / label as pr1
         )
         pr2 = main2.make_pr(
@@ -1074,7 +1074,7 @@ class TestBranchDeletion:
         """
         prod, other = make_basic(env, config, make_repo)
         with prod, other:
-            [c] = other.make_commits('a', Commit('c', tree={'0': '0'}), ref='heads/abranch')
+            [c] = other.make_commits(prod.commit('a').id, Commit('c', tree={'0': '0'}), ref='heads/abranch')
             pr = prod.make_pr(
                 target='a', head='%s:abranch' % other.owner,
                 title="a pr",
@@ -1105,22 +1105,23 @@ class TestBranchDeletion:
         """
         prod, other = make_basic(env, config, make_repo)
         with prod, other:
-            [c] = other.make_commits('a', Commit('c1', tree={'1': '0'}), ref='heads/abranch')
+            a_ref = prod.commit('a').id
+            [c] = other.make_commits(a_ref, Commit('c1', tree={'1': '0'}), ref='heads/abranch')
             pr1 = prod.make_pr(target='a', head='%s:abranch' % other.owner, title='a')
             prod.post_status(c, 'success', 'legal/cla')
             prod.post_status(c, 'success', 'ci/runbot')
             pr1.post_comment('hansen r+', config['role_reviewer']['token'])
 
-            other.make_commits('a', Commit('c2', tree={'2': '0'}), ref='heads/bbranch')
+            other.make_commits(a_ref, Commit('c2', tree={'2': '0'}), ref='heads/bbranch')
             pr2 = prod.make_pr(target='a', head='%s:bbranch' % other.owner, title='b')
             pr2.close()
 
-            [c] = other.make_commits('a', Commit('c3', tree={'3': '0'}), ref='heads/cbranch')
+            [c] = other.make_commits(a_ref, Commit('c3', tree={'3': '0'}), ref='heads/cbranch')
             pr3 = prod.make_pr(target='a', head='%s:cbranch' % other.owner, title='c')
             prod.post_status(c, 'success', 'legal/cla')
             prod.post_status(c, 'success', 'ci/runbot')
 
-            other.make_commits('a', Commit('c3', tree={'4': '0'}), ref='heads/dbranch')
+            other.make_commits(a_ref, Commit('c3', tree={'4': '0'}), ref='heads/dbranch')
             pr4 = prod.make_pr(target='a', head='%s:dbranch' % other.owner, title='d')
             pr4.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()

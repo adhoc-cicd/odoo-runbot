@@ -127,7 +127,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         pr_repo.make_commits(
             # if just given a branch name, goes and gets it from pr_repo whose
             # "b" was cloned before that branch got rolled back
-            'c',
+            prod.commit('c').id,
             Commit('h should indeed be xxx', tree={'h': 'xxx'}),
             ref='heads/%s' % pr_ref,
             make=False,
