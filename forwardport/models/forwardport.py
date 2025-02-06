@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import builtins
+import collections
 import logging
 import re
+from collections.abc import Mapping
 from contextlib import ExitStack
 from datetime import datetime, timedelta
 
@@ -289,6 +291,8 @@ class UpdateQueue(models.Model, Queue):
         previous = self.new_root
         sentry_sdk.set_tag("update-root", self.new_root.display_name)
         with ExitStack() as s:
+            # dict[repo: [ref, old_head, new_head]
+            updates: Mapping[str, list[str, str, str]] = collections.defaultdict(list)
             for child in self.new_root._iter_descendants():
                 self.env.cr.execute("""
                     SELECT id
@@ -346,22 +350,17 @@ class UpdateQueue(models.Model, Queue):
                     # 'state': 'opened',
                     'squash': commits_count == 1,
                 })
-                # then update the child's branch to the new head
-                repo.push(
-                    f'--force-with-lease={child.refname}:{old_head}',
-                    git.fw_url(child.repository),
-                    f"{new_head}:refs/heads/{child.refname}")
-
-                # committing here means github could technically trigger its
-                # webhook before sending a response, but committing before
-                # would mean we can update the PR in database but fail to
-                # update on github, which is probably worse?
-                # alternatively we can commit, push, and rollback if the push
-                # fails
-                # FIXME: handle failures (especially on non-first update)
-                self.env.cr.commit()
+                updates[child.repository].append((child.refname, old_head, new_head))
 
                 previous = child
+
+            for repository, refs in updates.items():
+                # then update the child branches to the new heads
+                repo.push(
+                    *(f'--force-with-lease={ref}:{old}' for ref, old, _new in refs),
+                    git.fw_url(repository),
+                    *(f"{new}:refs/heads/{ref}" for ref, _old, new in refs)
+                )
 
 _deleter = _logger.getChild('deleter')
 class DeleteBranches(models.Model, Queue):
