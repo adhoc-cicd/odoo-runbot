@@ -11,21 +11,19 @@ def test_no_token(env, config, make_repo):
     log
     """
     # create project configured with remotes on the repo but no token
-    prod, _ = make_basic(env, config, make_repo, fp_token=False, fp_remote=True)
+    prod, _ = make_basic(env, config, make_repo, fp_token=False, fp_remote=True, statuses='default')
 
     with prod:
         prod.make_commits(
             'a', Commit('c0', tree={'a': '0'}), ref='heads/abranch'
         )
         pr = prod.make_pr(target='a', head='abranch')
-        prod.post_status(pr.head, 'success', 'legal/cla')
-        prod.post_status(pr.head, 'success', 'ci/runbot')
+        prod.post_status(pr.head, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
 
     # wanted to use capfd, however it's not compatible with the subprocess
     # being created beforehand and server() depending on capfd() would remove
@@ -41,85 +39,75 @@ def test_no_token(env, config, make_repo):
         "should not have created forward port"
 
 def test_remove_token(env, config, make_repo):
-    prod, _ = make_basic(env, config, make_repo)
-    env['runbot_merge.project'].search([]).fp_github_token = False
+    prod, _ = make_basic(env, config, make_repo, statuses='default', fp_token=False)
 
     with prod:
         prod.make_commits(
             'a', Commit('c0', tree={'a': '0'}), ref='heads/abranch'
         )
         pr = prod.make_pr(target='a', head='abranch')
-        prod.post_status(pr.head, 'success', 'legal/cla')
-        prod.post_status(pr.head, 'success', 'ci/runbot')
+        prod.post_status(pr.head, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
 
     env.run_crons()
     assert len(env['runbot_merge.pull_requests'].search([], order='number')) == 1,\
         "should not have created forward port"
 
 def test_no_target(env, config, make_repo):
-    prod, _ = make_basic(env, config, make_repo, fp_remote=False)
+    prod, _ = make_basic(env, config, make_repo, fp_remote=False, statuses='default')
 
     with prod:
         prod.make_commits(
             'a', Commit('c0', tree={'a': '0'}), ref='heads/abranch'
         )
         pr = prod.make_pr(target='a', head='abranch')
-        prod.post_status(pr.head, 'success', 'legal/cla')
-        prod.post_status(pr.head, 'success', 'ci/runbot')
+        prod.post_status(pr.head, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
 
     env.run_crons()
     assert len(env['runbot_merge.pull_requests'].search([], order='number')) == 1,\
         "should not have created forward port"
 
 def test_failed_staging(env, config, make_repo):
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
 
     reviewer = config['role_reviewer']['token']
     with prod:
         prod.make_commits('a', Commit('c', tree={'a': '0'}), ref='heads/abranch')
         pr1 = prod.make_pr(target='a', head='abranch')
-        prod.post_status(pr1.head, 'success', 'legal/cla')
-        prod.post_status(pr1.head, 'success', 'ci/runbot')
+        prod.post_status(pr1.head, 'success')
         pr1.post_comment('hansen r+', reviewer)
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     pr1_id, pr2_id = env['runbot_merge.pull_requests'].search([], order='number')
     assert pr2_id.parent_id == pr2_id.source_id == pr1_id
     with prod:
-        prod.post_status(pr2_id.head, 'success', 'legal/cla')
-        prod.post_status(pr2_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr2_id.head, 'success')
     env.run_crons()
 
-    pr1_id, pr2_id, pr3_id = env['runbot_merge.pull_requests'].search([], order='number')
+    _pr1_id, _pr2_id, pr3_id = env['runbot_merge.pull_requests'].search([], order='number')
     pr3 = prod.get_pr(pr3_id.number)
     with prod:
-        prod.post_status(pr3_id.head, 'success', 'legal/cla')
-        prod.post_status(pr3_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr3_id.head, 'success')
         pr3.post_comment('hansen r+', reviewer)
     env.run_crons()
 
     prod.commit('staging.c')
 
     with prod:
-        prod.post_status('staging.b', 'success', 'legal/cla')
-        prod.post_status('staging.b', 'success', 'ci/runbot')
-        prod.post_status('staging.c', 'failure', 'ci/runbot')
+        prod.post_status('staging.b', 'success')
+        prod.post_status('staging.c', 'failure')
     env.run_crons()
 
     pr3_head = env['runbot_merge.commit'].search([('sha', '=', pr3_id.head)])
@@ -128,8 +116,7 @@ def test_failed_staging(env, config, make_repo):
     # send a new status to the PR, as if somebody had rebuilt it or something
     with prod:
         pr3.post_comment('hansen retry', reviewer)
-        prod.post_status(pr3_id.head, 'success', 'foo/bar')
-        prod.post_status(pr3_id.head, 'success', 'legal/cla')
+        prod.post_status(pr3_id.head, 'success')
     assert pr3_head.to_check, "check that the commit was updated as to process"
     env.run_crons()
     assert not pr3_head.to_check, "check that the commit was processed"
@@ -255,13 +242,13 @@ class TestNotAllBranches:
         repo_a = env['runbot_merge.repository'].create({
             'project_id': project.id,
             'name': a.name,
-            'required_statuses': 'ci/runbot',
+            'required_statuses': 'default',
             'fp_remote_target': a_dev.name,
         })
         repo_b = env['runbot_merge.repository'].create({
             'project_id': project.id,
             'name': b.name,
-            'required_statuses': 'ci/runbot',
+            'required_statuses': 'default',
             'fp_remote_target': b_dev.name,
             'branch_filter': '[("name", "in", ["a", "c"])]',
         })
@@ -272,32 +259,32 @@ class TestNotAllBranches:
     def test_single_first(self, env, repos, config):
         """ A merge in A.a should be forward-ported to A.b and A.c
         """
-        project, a, a_dev, b, _ = repos
+        _project, a, a_dev, b, _ = repos
         with a, a_dev:
             [c] = a_dev.make_commits(a.commit('a').id, Commit('pr', tree={'pr': '1'}), ref='heads/change')
             pr = a.make_pr(target='a', title="a pr", head=a_dev.owner + ':change')
-            a.post_status(c, 'success', 'ci/runbot')
+            a.post_status(c, 'success')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
         p = to_pr(env, pr)
         env.run_crons()
         assert p.staging_id
         with a, b:
-            for repo in a, b:
-                repo.post_status('staging.a', 'success', 'ci/runbot')
+            a.post_status('staging.a', 'success')
+            b.post_status('staging.a', 'success')
         env.run_crons()
 
         a_head = a.commit('a')
         assert a_head.message.startswith('pr\n\n')
         assert a.read_tree(a_head) == {'a': '2', 'pr': '1'}
 
-        pr0, pr1 = env['runbot_merge.pull_requests'].search([], order='number')
+        _pr0, pr1 = env['runbot_merge.pull_requests'].search([], order='number')
         with a:
-            a.post_status(pr1.head, 'success', 'ci/runbot')
+            a.post_status(pr1.head, 'success')
         env.run_crons()
 
         pr0, pr1, pr2 = env['runbot_merge.pull_requests'].search([], order='number')
         with a:
-            a.post_status(pr2.head, 'success', 'ci/runbot')
+            a.post_status(pr2.head, 'success')
             a.get_pr(pr2.number).post_comment(
                 'hansen r+',
                 config['role_reviewer']['token'])
@@ -305,9 +292,9 @@ class TestNotAllBranches:
         assert pr1.staging_id
         assert pr2.staging_id
         with a, b:
-            a.post_status('staging.b', 'success', 'ci/runbot')
-            a.post_status('staging.c', 'success', 'ci/runbot')
-            b.post_status('staging.c', 'success', 'ci/runbot')
+            a.post_status('staging.b', 'success')
+            a.post_status('staging.c', 'success')
+            b.post_status('staging.c', 'success')
         env.run_crons()
 
         assert pr0.state == 'merged'
@@ -319,31 +306,31 @@ class TestNotAllBranches:
     def test_single_second(self, env, repos, config):
         """ A merge in B.a should "skip ahead" to B.c
         """
-        project, a, _, b, b_dev = repos
+        _project, a, _, b, b_dev = repos
         with b, b_dev:
             [c] = b_dev.make_commits(b.commit('a').id, Commit('pr', tree={'pr': '1'}), ref='heads/change')
             pr = b.make_pr(target='a', title="a pr", head=b_dev.owner + ':change')
-            b.post_status(c, 'success', 'ci/runbot')
+            b.post_status(c, 'success')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with a, b:
-            a.post_status('staging.a', 'success', 'ci/runbot')
-            b.post_status('staging.a', 'success', 'ci/runbot')
+            a.post_status('staging.a', 'success')
+            b.post_status('staging.a', 'success')
         env.run_crons()
 
         assert b.read_tree(b.commit('a')) == {'a': 'z', 'pr': '1'}
 
         pr0, pr1 = env['runbot_merge.pull_requests'].search([], order='number')
         with b:
-            b.post_status(pr1.head, 'success', 'ci/runbot')
+            b.post_status(pr1.head, 'success')
             b.get_pr(pr1.number).post_comment(
                 'hansen r+',
                 config['role_reviewer']['token'])
         env.run_crons()
         with a, b:
-            a.post_status('staging.c', 'success', 'ci/runbot')
-            b.post_status('staging.c', 'success', 'ci/runbot')
+            a.post_status('staging.c', 'success')
+            b.post_status('staging.c', 'success')
         env.run_crons()
 
         assert pr0.state == 'merged'
@@ -353,22 +340,22 @@ class TestNotAllBranches:
     def test_both_first(self, env, repos, config, users):
         """ A merge in A.a, B.a should... not be forward-ported at all?
         """
-        project, a, a_dev, b, b_dev = repos
+        _project, a, a_dev, b, b_dev = repos
         with a, a_dev:
             [c_a] = a_dev.make_commits(a.commit('a').id, Commit('pr a', tree={'pr': 'a'}), ref='heads/change')
             pr_a = a.make_pr(target='a', title='a pr', head=a_dev.owner + ':change')
-            a.post_status(c_a, 'success', 'ci/runbot')
+            a.post_status(c_a, 'success')
             pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
         with b, b_dev:
             [c_b] = b_dev.make_commits(b.commit('a').id, Commit('pr b', tree={'pr': 'b'}), ref='heads/change')
             pr_b = b.make_pr(target='a', title='b pr', head=b_dev.owner + ':change')
-            b.post_status(c_b, 'success', 'ci/runbot')
+            b.post_status(c_b, 'success')
             pr_b.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with a, b:
             for repo in a, b:
-                repo.post_status('staging.a', 'success', 'ci/runbot')
+                repo.post_status('staging.a', 'success')
         env.run_crons()
 
         pr_a_id = to_pr(env, pr_a)
@@ -404,11 +391,8 @@ def test_new_intermediate_branch(env, config, make_repo):
     1.0, 2.0 and master, if a branch 3.0 is forked off from master and inserted
     before it, we need to create a new *intermediate* forward port PR
     """
-    def validate(repo, commit):
-        repo.post_status(commit, 'success', 'ci/runbot')
-        repo.post_status(commit, 'success', 'legal/cla')
-    prod, _ = make_basic(env, config, make_repo)
-    prod2, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
+    prod2, _ = make_basic(env, config, make_repo, statuses='default')
     project = env['runbot_merge.project'].search([])
     assert len(project.repo_ids) == 2
 
@@ -419,7 +403,7 @@ def test_new_intermediate_branch(env, config, make_repo):
             prod.make_commits('a', Commit(i, tree={i:i}), ref='heads/branch%s' % i)
             pr = prod.make_pr(target='a', head='branch%s' % i)
             prs.append(pr)
-            validate(prod, pr.head)
+            prod.post_status(pr.head, 'success')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
         # also add a PR targeting b forward-ported to c, in order to check
@@ -429,15 +413,15 @@ def test_new_intermediate_branch(env, config, make_repo):
         prod2.make_commits('b', Commit('x2', tree={'x': 'x2'}), ref='heads/branchx')
         prx = prod.make_pr(target='b', head='branchx')
         prx2 = prod2.make_pr(target='b', head='branchx')
-        validate(prod, prx.head)
-        validate(prod2, prx2.head)
+        prod.post_status(prx.head, 'success')
+        prod2.post_status(prx2.head, 'success')
         prx.post_comment('hansen r+', config['role_reviewer']['token'])
         prx2.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     with prod, prod2:
         for r in [prod, prod2]:
-            validate(r, 'staging.a')
-            validate(r, 'staging.b')
+            r.post_status('staging.a', 'success')
+            r.post_status('staging.b', 'success')
     env.run_crons()
 
     # should have merged pr1, pr2 and prx and created their forward ports, now
@@ -450,7 +434,7 @@ def test_new_intermediate_branch(env, config, make_repo):
     assert pr0_fp_id
     assert pr0_fp_id.target.name == 'b'
     with prod:
-        validate(prod, pr0_fp_id.head)
+        prod.post_status(pr0_fp_id.head, 'success')
     env.run_crons()
     assert pr0_fp_id.state == 'validated'
     original0 = PRs.search([('parent_id', '=', pr0_fp_id.id)])
@@ -549,7 +533,8 @@ def test_new_intermediate_branch(env, config, make_repo):
     fps = PRs.search([('source_id', 'in', sources), ('target.name', '=', ['new', 'c'])])
     with prod, prod2:
         for fp in fps:
-            validate(get_repo(fp), fp.head)
+            repo = get_repo(fp)
+            repo.post_status(fp.head, 'success')
     env.run_crons()
     # now fps should be the last PR of each sequence, and thus r+-able (via
     # fwbot so preceding PR is also r+'d)
@@ -568,8 +553,8 @@ def test_new_intermediate_branch(env, config, make_repo):
         "enabled branches should have been staged"
     with prod, prod2:
         for target in ['new', 'c']:
-            validate(prod, f'staging.{target}')
-            validate(prod2, f'staging.{target}')
+            prod.post_status(f'staging.{target}', 'success')
+            prod2.post_status(f'staging.{target}', 'success')
     env.run_crons()
     assert all(p.state == 'merged' for p in PRs.search([('target.name', '!=', 'b')])), \
         "All PRs except disabled branch should be merged now"
@@ -586,7 +571,7 @@ def test_new_intermediate_branch(env, config, make_repo):
     }, "check that new got all the updates (should be in the same state as c really)"
 
 def test_author_can_close_via_fwbot(env, config, make_repo):
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
     other_user = config['role_other']
     other_token = other_user['token']
     other = prod.fork(token=other_token)
@@ -601,16 +586,14 @@ def test_author_can_close_via_fwbot(env, config, make_repo):
         # should be able to close and open own PR
         pr.close(other_token)
         pr.open(other_token)
-        prod.post_status(c, 'success', 'legal/cla')
-        prod.post_status(c, 'success', 'ci/runbot')
+        prod.post_status(c, 'success')
         pr.post_comment('hansen close', other_token)
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     assert pr.state == 'open'
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     pr0_id, pr1_id = env['runbot_merge.pull_requests'].search([], order='number')
@@ -629,21 +612,19 @@ def test_author_can_close_via_fwbot(env, config, make_repo):
     assert pr1_id.state == 'closed'
 
 def test_skip_ci_all(env, config, make_repo):
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
 
     with prod:
         prod.make_commits('a', Commit('x', tree={'x': '0'}), ref='heads/change')
         pr = prod.make_pr(target='a', head='change')
-        prod.post_status(pr.head, 'success', 'legal/cla')
-        prod.post_status(pr.head, 'success', 'ci/runbot')
+        prod.post_status(pr.head, 'success')
         pr.post_comment('hansen fw=skipci', config['role_reviewer']['token'])
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     assert to_pr(env, pr).batch_id.fw_policy == 'skipci'
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     # run cron a few more times for the fps
@@ -658,19 +639,17 @@ def test_skip_ci_all(env, config, make_repo):
     assert pr2_id.source_id == pr0_id
 
 def test_skip_ci_next(env, config, make_repo):
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
 
     with prod:
         prod.make_commits('a', Commit('x', tree={'x': '0'}), ref='heads/change')
         pr = prod.make_pr(target='a', head='change')
-        prod.post_status(pr.head, 'success', 'legal/cla')
-        prod.post_status(pr.head, 'success', 'ci/runbot')
+        prod.post_status(pr.head, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     pr0_id, pr1_id = env['runbot_merge.pull_requests'].search([], order='number')
@@ -696,13 +675,12 @@ def test_retarget_after_freeze(env, config, make_repo, users):
     latter port. In that case the reinsertion task should just do nothing, and
     the retargeted PR should be forward-ported normally once merged.
     """
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
     project = env['runbot_merge.project'].search([])
     with prod:
         [c] = prod.make_commits('b', Commit('thing', tree={'x': '1'}), ref='heads/mypr')
         pr = prod.make_pr(target='b', head='mypr')
-        prod.post_status(c, 'success', 'ci/runbot')
-        prod.post_status(c, 'success', 'legal/cla')
+        prod.post_status(c, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -711,8 +689,7 @@ def test_retarget_after_freeze(env, config, make_repo, users):
     assert original_pr_id.staging_id
 
     with prod:
-        prod.post_status('staging.b', 'success', 'ci/runbot')
-        prod.post_status('staging.b', 'success', 'legal/cla')
+        prod.post_status('staging.b', 'success')
     env.run_crons()
     # should have created a pr targeted to C
     port_id = env['runbot_merge.pull_requests'].search([('state', 'not in', ('merged', 'closed'))])
@@ -755,13 +732,11 @@ def test_retarget_after_freeze(env, config, make_repo, users):
 
     # merge the retargered PR
     with prod:
-        prod.post_status(port_pr.head, 'success', 'ci/runbot')
-        prod.post_status(port_pr.head, 'success', 'legal/cla')
+        prod.post_status(port_pr.head, 'success')
         port_pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     with prod:
-        prod.post_status('staging.bprime', 'success', 'ci/runbot')
-        prod.post_status('staging.bprime', 'success', 'legal/cla')
+        prod.post_status('staging.bprime', 'success')
     env.run_crons()
 
     # #2 batch 6 (???)
@@ -773,7 +748,7 @@ def test_retarget_after_freeze(env, config, make_repo, users):
     assert new_pr_id.target == branch_c
 
 def test_approve_draft(env, config, make_repo, users):
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
 
     with prod:
         prod.make_commits('a', Commit('x', tree={'x': '0'}), ref='heads/change')

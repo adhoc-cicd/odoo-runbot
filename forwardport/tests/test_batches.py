@@ -1,6 +1,4 @@
-import re
-
-from utils import Commit, make_basic, to_pr, seen, matches
+from utils import Commit, make_basic, to_pr, seen
 
 
 def test_single_updated(env, config, make_repo):
@@ -9,28 +7,24 @@ def test_single_updated(env, config, make_repo):
 
     See test_update_pr for a simpler (single-PR) version
     """
-    r1, _ = make_basic(env, config, make_repo, reponame='repo-1')
-    r2, _ = make_basic(env, config, make_repo, reponame='repo-2')
+    r1, _ = make_basic(env, config, make_repo, reponame='repo-1', statuses='default')
+    r2, _ = make_basic(env, config, make_repo, reponame='repo-2', statuses='default')
 
     with r1:
         r1.make_commits('a', Commit('1', tree={'1': '0'}), ref='heads/aref')
         pr1 = r1.make_pr(target='a', head='aref')
-        r1.post_status('aref', 'success', 'legal/cla')
-        r1.post_status('aref', 'success', 'ci/runbot')
+        r1.post_status('aref', 'success')
         pr1.post_comment('hansen r+', config['role_reviewer']['token'])
     with r2:
         r2.make_commits('a', Commit('2', tree={'2': '0'}), ref='heads/aref')
         pr2 = r2.make_pr(target='a', head='aref')
-        r2.post_status('aref', 'success', 'legal/cla')
-        r2.post_status('aref', 'success', 'ci/runbot')
+        r2.post_status('aref', 'success')
         pr2.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
     with r1, r2:
-        r1.post_status('staging.a', 'success', 'legal/cla')
-        r1.post_status('staging.a', 'success', 'ci/runbot')
-        r2.post_status('staging.a', 'success', 'legal/cla')
-        r2.post_status('staging.a', 'success', 'ci/runbot')
+        r1.post_status('staging.a', 'success')
+        r2.post_status('staging.a', 'success')
     env.run_crons()
 
     pr1_id, pr11_id, pr2_id, pr21_id = pr_ids = env['runbot_merge.pull_requests'].search([]).sorted('display_name')
@@ -60,11 +54,9 @@ def test_single_updated(env, config, make_repo):
     assert not pr21_id.parent_id
 
     with r1, r2:
-        r1.post_status(pr11_id.head, 'success', 'legal/cla')
-        r1.post_status(pr11_id.head, 'success', 'ci/runbot')
+        r1.post_status(pr11_id.head, 'success')
         r1.get_pr(pr11_id.number).post_comment('hansen r+', config['role_reviewer']['token'])
-        r2.post_status(pr21_id.head, 'success', 'legal/cla')
-        r2.post_status(pr21_id.head, 'success', 'ci/runbot')
+        r2.post_status(pr21_id.head, 'success')
         r2.get_pr(pr21_id.number).post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -74,10 +66,8 @@ def test_single_updated(env, config, make_repo):
         "(%s)" % prs_again.mapped('display_name')
 
     with r1, r2:
-        r1.post_status('staging.b', 'success', 'legal/cla')
-        r1.post_status('staging.b', 'success', 'ci/runbot')
-        r2.post_status('staging.b', 'success', 'legal/cla')
-        r2.post_status('staging.b', 'success', 'ci/runbot')
+        r1.post_status('staging.b', 'success')
+        r2.post_status('staging.b', 'success')
     env.run_crons()
 
     new_prs = env['runbot_merge.pull_requests'].search([]).sorted('display_name') - pr_ids
@@ -94,9 +84,8 @@ def test_closing_during_fp(env, config, make_repo, users):
     """ Closing a PR after it's been ported once should not port it further, but
     the rest of the batch should carry on
     """
-    r1, _ = make_basic(env, config, make_repo)
-    r2, _ = make_basic(env, config, make_repo)
-    env['runbot_merge.repository'].search([]).required_statuses = 'default'
+    r1, _ = make_basic(env, config, make_repo, statuses='default')
+    r2, _ = make_basic(env, config, make_repo, statuses='default')
 
     with r1, r2:
         r1.make_commits('a', Commit('1', tree={'1': '0'}), ref='heads/aref')

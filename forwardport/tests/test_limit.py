@@ -10,7 +10,7 @@ from utils import seen, Commit, make_basic, to_pr
     pytest.param('b', 'a', 0, id='earlier'),
 ])
 def test_configure_fp_limit(env, config, make_repo, source, limit, count, page):
-    prod, other = make_basic(env, config, make_repo, statuses="default")
+    prod, _other = make_basic(env, config, make_repo, statuses="default")
     with prod:
         [c] = prod.make_commits(
             source, Commit('c', tree={'f': 'g'}),
@@ -170,25 +170,21 @@ def test_disable(env, config, make_repo, users):
     * forward-port over a disabled branch
     * request a disabled target as limit
     """
-    prod, other = make_basic(env, config, make_repo)
-    project = env['runbot_merge.project'].search([])
+    prod, _other = make_basic(env, config, make_repo, statuses='default')
     with prod:
         [c] = prod.make_commits('a', Commit('c 0', tree={'0': '0'}), ref='heads/branch0')
         pr = prod.make_pr(target='a', head='branch0')
-        prod.post_status(c, 'success', 'legal/cla')
-        prod.post_status(c, 'success', 'ci/runbot')
+        prod.post_status(c, 'success')
         pr.post_comment('hansen r+ up to b', config['role_reviewer']['token'])
 
         [c] = prod.make_commits('a', Commit('c 1', tree={'1': '1'}), ref='heads/branch1')
         pr = prod.make_pr(target='a', head='branch1')
-        prod.post_status(c, 'success', 'legal/cla')
-        prod.post_status(c, 'success', 'ci/runbot')
+        prod.post_status(c, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     # disable branch b
     env['runbot_merge.branch'].search([('name', '=', 'b')]).active = False
     env.run_crons()
@@ -201,8 +197,7 @@ def test_disable(env, config, make_repo, users):
     with prod:
         [c] = prod.make_commits('a', Commit('c 2', tree={'2': '2'}), ref='heads/branch2')
         pr = prod.make_pr(target='a', head='branch2')
-        prod.post_status(c, 'success', 'legal/cla')
-        prod.post_status(c, 'success', 'ci/runbot')
+        prod.post_status(c, 'success')
         pr.post_comment('hansen r+ up to', config['role_reviewer']['token'])
         pr.post_comment('hansen up to b', config['role_reviewer']['token'])
         pr.post_comment('hansen up to foo', config['role_reviewer']['token'])
@@ -255,21 +250,18 @@ Note: this help text is dynamic and will change with the state of the PR.
 
 
 def test_limit_after_merge(env, config, make_repo, users):
-    prod, other = make_basic(env, config, make_repo)
+    prod, other = make_basic(env, config, make_repo, statuses='default')
     reviewer = config['role_reviewer']['token']
     branch_b = env['runbot_merge.branch'].search([('name', '=', 'b')])
-    branch_c = env['runbot_merge.branch'].search([('name', '=', 'c')])
     with prod:
         [c] = prod.make_commits('a', Commit('c', tree={'0': '0'}), ref='heads/abranch')
         pr1 = prod.make_pr(target='a', head='abranch')
-        prod.post_status(c, 'success', 'legal/cla')
-        prod.post_status(c, 'success', 'ci/runbot')
+        prod.post_status(c, 'success')
         pr1.post_comment('hansen r+', reviewer)
     env.run_crons()
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     p1, p2 = env['runbot_merge.pull_requests'].search([], order='number')
@@ -321,13 +313,11 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         (users['user'], "Forward-porting to 'c'."),
     ]
     with prod:
-        prod.post_status(p2.head, 'success', 'legal/cla')
-        prod.post_status(p2.head, 'success', 'ci/runbot')
+        prod.post_status(p2.head, 'success')
         pr2.post_comment('hansen r+', reviewer)
     env.run_crons()
     with prod:
-        prod.post_status('staging.b', 'success', 'legal/cla')
-        prod.post_status('staging.b', 'success', 'ci/runbot')
+        prod.post_status('staging.b', 'success')
     env.run_crons()
 
     _, _, p3 = env['runbot_merge.pull_requests'].search([], order='number')
@@ -371,7 +361,7 @@ def test_post_merge(
         limit: int,
 ):
     PRs = env['runbot_merge.pull_requests']
-    project, prod, _ = post_merge
+    _project, prod, _ = post_merge
     reviewer = config['role_reviewer']['token']
 
     # fetch source PR
@@ -435,7 +425,7 @@ def test_resume_fw(env, post_merge, users, config, branches, mode):
     """
 
     PRs = env['runbot_merge.pull_requests']
-    project, prod, _ = post_merge
+    _project, prod, _ = post_merge
     reviewer = config['role_reviewer']['token']
 
     # fetch source PR
@@ -467,7 +457,6 @@ def test_resume_fw(env, post_merge, users, config, branches, mode):
         env.run_crons()
         with prod:
             for target in numbers:
-                pr = PRs.search([('target.name', '=', str(target))])
                 prod.post_status(f'staging.{target}', 'success')
         env.run_crons()
         for number in numbers:

@@ -14,11 +14,6 @@ import odoo
 from utils import _simple_init, seen, matches, get_partner, Commit, pr_page, to_pr, part_of, ensure_one, read_tracking_value
 
 
-@pytest.fixture(autouse=True)
-def _configure_statuses(request, project, repo):
-    if 'defaultstatuses' not in request.keywords:
-        project.repo_ids.required_statuses = 'legal/cla,ci/runbot'
-
 @pytest.fixture(autouse=True, params=["statuses", "rpc"])
 def stagings(request, env, project, repo):
     """Hook in support for validating stagings via RPC calls instead of CI
@@ -54,7 +49,8 @@ def stagings(request, env, project, repo):
         with mock.patch.object(RepoType, "post_status", _post_status):
             yield
 
-def test_trivial_flow(env, repo, page, users, config):
+def test_trivial_flow(env, repo, page, users, config, project):
+    project.repo_ids.required_statuses = 'legal/cla,ci/runbot'
     # create base branch
     with repo:
         [m] = repo.make_commits(None, Commit("initial", tree={'a': 'some content'}), ref='heads/master')
@@ -85,8 +81,8 @@ def test_trivial_flow(env, repo, page, users, config):
     assert [it.get('class') for it in s] == ['fail', 'fail', ''],\
         "merge method unset, review missing, no CI"
     assert dict(zip(
-        [e.text_content() for e in pr_dashboard.cssselect('dl.runbot-merge-fields dt')],
-        [e.text_content() for e in pr_dashboard.cssselect('dl.runbot-merge-fields dd')],
+        (e.text_content() for e in pr_dashboard.cssselect('dl.runbot-merge-fields dt')),
+        (e.text_content() for e in pr_dashboard.cssselect('dl.runbot-merge-fields dd')),
     )) == {
         'label': f"{config['github']['owner']}:other",
         'head': c2,
@@ -209,14 +205,12 @@ class TestCommitMessage:
             c2 = repo.make_commit(c1, 'simple commit message', None, tree={'f': 'm2'})
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-            repo.post_status(prx.head, 'success', 'ci/runbot')
-            repo.post_status(prx.head, 'success', 'legal/cla')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -233,14 +227,12 @@ class TestCommitMessage:
             c2 = repo.make_commit(c1, 'simple commit message that closes #1', None, tree={'f': 'm2'})
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-            repo.post_status(prx.head, 'success', 'ci/runbot')
-            repo.post_status(prx.head, 'success', 'legal/cla')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -258,14 +250,12 @@ class TestCommitMessage:
             c2 = repo.make_commit(c1, 'simple commit message that closes odoo/enterprise#1', None, tree={'f': 'm2'})
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-            repo.post_status(prx.head, 'success', 'ci/runbot')
-            repo.post_status(prx.head, 'success', 'legal/cla')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -283,14 +273,12 @@ class TestCommitMessage:
             c2 = repo.make_commit(c1, 'simple commit message that closes #11', None, tree={'f': 'm2'})
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-            repo.post_status(prx.head, 'success', 'ci/runbot')
-            repo.post_status(prx.head, 'success', 'legal/cla')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -313,15 +301,13 @@ class TestCommitMessage:
             c2 = repo.make_commit(c1, 'simple commit message', None, tree={'f': 'm2'})
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-            repo.post_status(prx.head, 'success', 'ci/runbot')
-            repo.post_status(prx.head, 'success', 'legal/cla')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen delegate=%s' % users['other'], config["role_reviewer"]["token"])
             prx.post_comment('hansen r+', config['role_other']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -346,14 +332,12 @@ Co-authored-by: Bob <bob@example.com>
 Fixes a thing''', None, tree={'f': 'm2'})
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-            repo.post_status(prx.head, 'success', 'ci/runbot')
-            repo.post_status(prx.head, 'success', 'legal/cla')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -424,8 +408,7 @@ def test_staging_ongoing(env, repo, config):
         c0 = repo.make_commit(m, 'replace file contents', None, tree={'a': 'some other content'})
         c1 = repo.make_commit(c0, 'add file', None, tree={'a': 'some other content', 'b': 'a second file'})
         pr1 = repo.make_pr(title="gibberish", body="blahblah", target='master', head=c1)
-        repo.post_status(c1, 'success', 'legal/cla')
-        repo.post_status(c1, 'success', 'ci/runbot')
+        repo.post_status(c1, 'success')
         pr1.post_comment("hansen r+ rebase-merge", config['role_reviewer']['token'])
     env.run_crons()
     pr1 = to_pr(env, pr1)
@@ -436,23 +419,20 @@ def test_staging_ongoing(env, repo, config):
         c2 = repo.make_commit(m, 'other', None, tree={'a': 'some content', 'c': 'ccc'})
         c3 = repo.make_commit(c2, 'other', None, tree={'a': 'some content', 'c': 'ccc', 'd': 'ddd'})
         pr2 = repo.make_pr(title='gibberish', body='blahblah', target='master', head=c3)
-        repo.post_status(c3, 'success', 'legal/cla')
-        repo.post_status(c3, 'success', 'ci/runbot')
+        repo.post_status(c3, 'success')
         pr2.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
     env.run_crons()
     p_2 = to_pr(env, pr2)
     assert p_2.state == 'ready', "PR2 should not have been staged since there is a pending staging for master"
 
     with repo:
-        repo.post_status('staging.master', 'success', 'ci/runbot')
-        repo.post_status('staging.master', 'success', 'legal/cla')
+        repo.post_status('staging.master', 'success')
     env.run_crons()
     assert pr1.state == 'merged'
     assert p_2.staging_id
 
     with repo:
-        repo.post_status('staging.master', 'success', 'ci/runbot')
-        repo.post_status('staging.master', 'success', 'legal/cla')
+        repo.post_status('staging.master', 'success')
     env.run_crons()
     assert p_2.state == 'merged'
 
@@ -471,15 +451,13 @@ def test_staging_concurrent(env, repo, config):
         c10 = repo.make_commit(m, 'AAA', None, tree={'m': 'm', 'a': 'a'})
         c11 = repo.make_commit(c10, 'BBB', None, tree={'m': 'm', 'a': 'a', 'b': 'b'})
         pr1 = repo.make_pr(title='t1', body='b1', target='1.0', head=c11)
-        repo.post_status(pr1.head, 'success', 'ci/runbot')
-        repo.post_status(pr1.head, 'success', 'legal/cla')
+        repo.post_status(pr1.head, 'success')
         pr1.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
 
         c20 = repo.make_commit(m, 'CCC', None, tree={'m': 'm', 'c': 'c'})
         c21 = repo.make_commit(c20, 'DDD', None, tree={'m': 'm', 'c': 'c', 'd': 'd'})
         pr2 = repo.make_pr(title='t2', body='b2', target='2.0', head=c21)
-        repo.post_status(pr2.head, 'success', 'ci/runbot')
-        repo.post_status(pr2.head, 'success', 'legal/cla')
+        repo.post_status(pr2.head, 'success')
         pr2.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -501,8 +479,7 @@ def test_staging_conflict_first(env, repo, users, config, page):
         c1 = repo.make_commit(m1, 'other second', None, tree={'f': 'c1'})
         c2 = repo.make_commit(c1, 'third', None, tree={'f': 'c2'})
         pr = repo.make_pr(title='title', body='body', target='master', head=c2)
-        repo.post_status(pr.head, 'success', 'ci/runbot')
-        repo.post_status(pr.head, 'success', 'legal/cla')
+        repo.post_status(pr.head, 'success')
         pr.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -531,15 +508,13 @@ def test_staging_conflict_second(env, repo, users, config):
     with repo:
         repo.make_commits(m, Commit('first pr', tree={'a': '2'}), ref='heads/pr0')
         pr0 = repo.make_pr(target='master', head='pr0')
-        repo.post_status(pr0.head, 'success', 'ci/runbot')
-        repo.post_status(pr0.head, 'success', 'legal/cla')
+        repo.post_status(pr0.head, 'success')
         pr0.post_comment('hansen r+', config['role_reviewer']['token'])
 
     with repo:
         repo.make_commits(m, Commit('second pr', tree={'a': '3'}), ref='heads/pr1')
         pr1 = repo.make_pr(target='master', head='pr1')
-        repo.post_status(pr1.head, 'success', 'ci/runbot')
-        repo.post_status(pr1.head, 'success', 'legal/cla')
+        repo.post_status(pr1.head, 'success')
         pr1.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -552,14 +527,12 @@ def test_staging_conflict_second(env, repo, users, config):
     # merge the staging, this should try to stage pr1, fail, and put it in error
     # as it now conflicts with the master proper
     with repo:
-        repo.post_status('staging.master', 'success', 'ci/runbot')
-        repo.post_status('staging.master', 'success', 'legal/cla')
+        repo.post_status('staging.master', 'success')
     env.run_crons()
 
     assert pr1_id.state == 'error', "now pr1 should be in error"
 
 
-@pytest.mark.defaultstatuses
 @pytest.mark.parametrize('update_op', [
     pytest.param(
         lambda _: {'timeout_limit': datetime.datetime.now().isoformat(" ", "seconds")},
@@ -600,7 +573,8 @@ def test_staging_ci_timeout(env, repo, config, page, update_op: Callable[[int], 
     assert dangerbox
     assert dangerbox[0].text == 'timed out (>60 minutes)'
 
-def test_timeout_bump_on_pending(env, repo, config):
+def test_timeout_bump_on_pending(env, repo, config, project):
+    project.repo_ids.required_statuses = 'legal/cla,ci/runbot'
     with repo:
         [m, c] = repo.make_commits(
             None,
@@ -642,8 +616,7 @@ def test_staging_ci_failure_single(env, repo, users, config, page):
         c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
         c2 = repo.make_commit(c1, 'second', None, tree={'m': 'c2'})
         pr = repo.make_pr(title='title', body='body', target='master', head=c2)
-        repo.post_status(pr.head, 'success', 'ci/runbot')
-        repo.post_status(pr.head, 'success', 'legal/cla')
+        repo.post_status(pr.head, 'success')
         pr.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
     env.run_crons()
     pr_id = to_pr(env, pr)
@@ -651,8 +624,7 @@ def test_staging_ci_failure_single(env, repo, users, config, page):
 
     with repo:
         repo.post_status('staging.master', 'failure', 'a/b')
-        repo.post_status('staging.master', 'success', 'legal/cla')
-        repo.post_status('staging.master', 'failure', 'ci/runbot') # stable genius
+        repo.post_status('staging.master', 'failure') # stable genius
     env.run_crons()
     assert pr_id.state == 'error'
 
@@ -660,12 +632,12 @@ def test_staging_ci_failure_single(env, repo, users, config, page):
         (users['reviewer'], 'hansen r+ rebase-merge'),
         seen(env, pr, users),
         (users['user'], "Merge method set to rebase and merge, using the PR as merge commit message."),
-        (users['user'], '@%(user)s @%(reviewer)s staging failed: ci/runbot' % users)
+        (users['user'], '@%(user)s @%(reviewer)s staging failed: default' % users)
     ]
 
     dangerbox = pr_page(page, pr).cssselect('.alert-danger span')
     assert dangerbox
-    assert dangerbox[0].text == 'ci/runbot'
+    assert dangerbox[0].text == 'default'
 
 
 def test_ff_failure(env, repo, config, page):
@@ -677,8 +649,7 @@ def test_ff_failure(env, repo, config, page):
         c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
         c2 = repo.make_commit(c1, 'second', None, tree={'m': 'c2'})
         prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-        repo.post_status(prx.head, 'success', 'legal/cla')
-        repo.post_status(prx.head, 'success', 'ci/runbot')
+        repo.post_status(prx.head, 'success')
         prx.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
     env.run_crons()
     st = to_pr(env, prx).staging_id
@@ -689,10 +660,9 @@ def test_ff_failure(env, repo, config, page):
     assert repo.commit('heads/master').id == m2
 
     # report staging success & run cron to merge
-    staging = repo.commit('heads/staging.master')
+    staging = repo.commit('staging.master')
     with repo:
-        repo.post_status('staging.master', 'success', 'legal/cla')
-        repo.post_status('staging.master', 'success', 'ci/runbot')
+        repo.post_status('staging.master', 'success')
     env.run_crons()
 
     assert st.reason == 'update is not a fast forward'
@@ -704,7 +674,7 @@ def test_ff_failure(env, repo, config, page):
     assert 'fast forward failed (update is not a fast forward)' in prev.get('title')
 
     assert to_pr(env, prx).staging_id, "merge should not have succeeded"
-    assert repo.commit('heads/staging.master').id != staging.id,\
+    assert repo.commit('staging.master').id != staging.id,\
         "PR should be staged to a new commit"
 
 
@@ -717,24 +687,21 @@ def test_ff_failure_batch(env, repo, users, config):
         a2 = repo.make_commit(a1, 'a2', None, tree={'m': 'm', 'a': '2'})
         repo.make_ref('heads/A', a2)
         A = repo.make_pr(title='A', body=None, target='master', head='A')
-        repo.post_status(A.head, 'success', 'legal/cla')
-        repo.post_status(A.head, 'success', 'ci/runbot')
+        repo.post_status(A.head, 'success')
         A.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
 
         b1 = repo.make_commit(m, 'b1', None, tree={'m': 'm', 'b': '1'})
         b2 = repo.make_commit(b1, 'b2', None, tree={'m': 'm', 'b': '2'})
         repo.make_ref('heads/B', b2)
         B = repo.make_pr(title='B', body=None, target='master', head='B')
-        repo.post_status(B.head, 'success', 'legal/cla')
-        repo.post_status(B.head, 'success', 'ci/runbot')
+        repo.post_status(B.head, 'success')
         B.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
 
         c1 = repo.make_commit(m, 'c1', None, tree={'m': 'm', 'c': '1'})
         c2 = repo.make_commit(c1, 'c2', None, tree={'m': 'm', 'c': '2'})
         repo.make_ref('heads/C', c2)
         C = repo.make_pr(title='C', body=None, target='master', head='C')
-        repo.post_status(C.head, 'success', 'legal/cla')
-        repo.post_status(C.head, 'success', 'ci/runbot')
+        repo.post_status(C.head, 'success')
         C.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -744,7 +711,7 @@ def test_ff_failure_batch(env, repo, users, config):
 
     messages = [
         c['commit']['message']
-        for c in repo.log('heads/staging.master')
+        for c in repo.log('staging.master')
     ]
     assert part_of('a2', pr_a) in messages
     assert part_of('b2', pr_b) in messages
@@ -754,20 +721,18 @@ def test_ff_failure_batch(env, repo, users, config):
     with repo:
         repo.make_commit('heads/master', 'NO!', None, tree={'m': 'm2'})
 
-    old_staging = repo.commit('heads/staging.master')
+    old_staging = repo.commit('staging.master')
     # confirm staging
     with repo:
-        repo.post_status('heads/staging.master', 'success', 'legal/cla')
-        repo.post_status('heads/staging.master', 'success', 'ci/runbot')
+        repo.post_status('staging.master', 'success')
     env.run_crons()
-    new_staging = repo.commit('heads/staging.master')
+    new_staging = repo.commit('staging.master')
 
     assert new_staging.id != old_staging.id
 
     # confirm again
     with repo:
-        repo.post_status('heads/staging.master', 'success', 'legal/cla')
-        repo.post_status('heads/staging.master', 'success', 'ci/runbot')
+        repo.post_status('staging.master', 'success')
     env.run_crons()
     messages = {
         c['commit']['message']
@@ -803,8 +768,7 @@ class TestPREdition:
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             c2 = repo.make_commit(c1, 'second', None, tree={'m': 'c2'})
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen rebase-ff r+', config['role_reviewer']['token'])
         env.run_crons()
 
@@ -921,8 +885,7 @@ def test_close_staged(env, repo, config, page):
 
         c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
         prx = repo.make_pr(title='title', body='body', target='master', head=c)
-        repo.post_status(prx.head, 'success', 'legal/cla')
-        repo.post_status(prx.head, 'success', 'ci/runbot')
+        repo.post_status(prx.head, 'success')
         prx.post_comment('hansen r+', config['role_reviewer']['token'])
     pr = to_pr(env, prx)
     env.run_crons()
@@ -963,16 +926,14 @@ def test_forward_port(env, repo, config):
 
     with repo:
         pr = repo.make_pr(title='PR', body=None, target='master', head=head)
-        repo.post_status(pr.head, 'success', 'legal/cla')
-        repo.post_status(pr.head, 'success', 'ci/runbot')
+        repo.post_status(pr.head, 'success')
         pr.post_comment('hansen r+ merge', config['role_reviewer']['token'])
     env.run_crons()
 
     st = repo.commit('staging.master')
 
     with repo:
-        repo.post_status('staging.master', 'success', 'legal/cla')
-        repo.post_status('staging.master', 'success', 'ci/runbot')
+        repo.post_status('staging.master', 'success')
     env.run_crons()
 
     h = repo.commit('master')
@@ -1010,15 +971,13 @@ def test_rebase_failure(env, repo, users, config):
         commit_a = repo.make_commit(m, 'A', None, tree={'m': 'm', 'a': 'a'})
         repo.make_ref('heads/a', commit_a)
         pr_a = repo.make_pr(title='A', body=None, target='master', head='a')
-        repo.post_status(pr_a.head, 'success', 'ci/runbot')
-        repo.post_status(pr_a.head, 'success', 'legal/cla')
+        repo.post_status(pr_a.head, 'success')
         pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
 
         commit_b = repo.make_commit(m, 'B', None, tree={'m': 'm', 'b': 'b'})
         repo.make_ref('heads/b', commit_b)
         pr_b = repo.make_pr(title='B', body=None, target='master', head='b')
-        repo.post_status(pr_b.head, 'success', 'ci/runbot')
-        repo.post_status(pr_b.head, 'success', 'legal/cla')
+        repo.post_status(pr_b.head, 'success')
         pr_b.post_comment('hansen r+', config['role_reviewer']['token'])
 
     from odoo.addons.runbot_merge.github import GH
@@ -1043,7 +1002,7 @@ def test_rebase_failure(env, repo, users, config):
         (users['reviewer'], 'hansen r+'),
         seen(env, pr_b, users),
     ]
-    assert repo.read_tree(repo.commit('heads/staging.master')) == {
+    assert repo.read_tree(repo.commit('staging.master')) == {
         'm': 'm',
         'b': 'b',
     }
@@ -1064,14 +1023,12 @@ def test_reopen_merged_pr(env, repo, config, users):
             ref='heads/abranch'
         )
         prx = repo.make_pr(target='master', head='abranch')
-        repo.post_status(c, 'success', 'legal/cla')
-        repo.post_status(c, 'success', 'ci/runbot')
+        repo.post_status(c, 'success')
         prx.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
     with repo:
-        repo.post_status('staging.master', 'success', 'legal/cla')
-        repo.post_status('staging.master', 'success', 'ci/runbot')
+        repo.post_status('staging.master', 'success')
     env.run_crons()
     pr = to_pr(env, prx)
     assert prx.state == 'closed'
@@ -1090,7 +1047,6 @@ def test_reopen_merged_pr(env, repo, config, users):
     ]
 
 class TestNoRequiredStatus:
-    @pytest.mark.defaultstatuses
     def test_basic(self, env, repo, config):
         """ check that mergebot can work on a repo with no CI at all
         """
@@ -1113,7 +1069,6 @@ class TestNoRequiredStatus:
         assert st.state == 'success'
         assert pr_id.state == 'merged'
 
-    @pytest.mark.defaultstatuses
     def test_updated(self, env, repo, config):
         env['runbot_merge.repository'].search([('name', '=', repo.name)]).status_ids = False
         with repo:
@@ -1149,38 +1104,6 @@ class TestNoRequiredStatus:
         assert pr_id.state == 'ready'
 
 class TestRetry:
-    @pytest.mark.xfail(reason="This may not be a good idea as it could lead to tons of rebuild spam")
-    def test_auto_retry_push(self, env, repo, config):
-        prx = _simple_init(repo)
-        repo.post_status(prx.head, 'success', 'ci/runbot')
-        repo.post_status(prx.head, 'success', 'legal/cla')
-        prx.post_comment('hansen r+', config['role_reviewer']['token'])
-        env.run_crons()
-        assert to_pr(env, prx).staging_id
-
-        staging_head = repo.commit('heads/staging.master')
-        repo.post_status('staging.master', 'success', 'legal/cla')
-        repo.post_status('staging.master', 'failure', 'ci/runbot')
-        env.run_crons()
-        pr = to_pr(env, prx)
-        assert pr.state == 'error'
-
-        repo.update_ref(prx.ref, repo.make_commit(prx.head, 'third', None, tree={'m': 'c3'}), force=True)
-        assert pr.state == 'approved'
-        env['runbot_merge.project']._check_progress()
-        assert pr.state == 'approved'
-        repo.post_status(prx.head, 'success', 'ci/runbot')
-        repo.post_status(prx.head, 'success', 'legal/cla')
-        env.run_crons()
-        assert pr.state == 'ready'
-
-        staging_head2 = repo.commit('heads/staging.master')
-        assert staging_head2 != staging_head
-        repo.post_status('staging.master', 'success', 'legal/cla')
-        repo.post_status('staging.master', 'success', 'ci/runbot')
-        env.run_crons()
-        assert pr.state == 'merged'
-
     @pytest.mark.parametrize('retrier', ['user', 'other', 'reviewer'])
     def test_retry_comment(self, env, repo, retrier, users, config):
         """ An accepted but failed PR should be re-tried when the author or a
@@ -1188,18 +1111,16 @@ class TestRetry:
         """
         with repo:
             pr = _simple_init(repo)
-            repo.post_status(pr.head, 'success', 'ci/runbot')
-            repo.post_status(pr.head, 'success', 'legal/cla')
+            repo.post_status(pr.head, 'success')
             pr.post_comment(f'hansen r+ delegate={users["other"]} rebase-merge',
                             config["role_reviewer"]['token'])
         env.run_crons()
         pr_id = to_pr(env, pr)
         assert pr_id.staging_id
 
-        staging_head = repo.commit('heads/staging.master')
+        staging_head = repo.commit('staging.master')
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'failure', 'ci/runbot')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
         assert pr_id.state == 'error'
 
@@ -1211,7 +1132,7 @@ class TestRetry:
             (users['reviewer'], f'hansen r+ delegate={users["other"]} rebase-merge'),
             seen(env, pr, users),
             (users['user'], 'Merge method set to rebase and merge, using the PR as merge commit message.'),
-            (users['user'], '@{user} @{reviewer} staging failed: ci/runbot'.format_map(users)),
+            (users['user'], '@{user} @{reviewer} staging failed: default'.format_map(users)),
             (users['reviewer'], 'hansen r+ rebase-ff'),
             (users['user'], "This PR is already reviewed, it's in error, you might want to `retry` it instead "
                             "(if you have already confirmed the error is not legitimate)."),
@@ -1224,11 +1145,10 @@ class TestRetry:
         assert pr_id.state == 'ready'
         env.run_crons(None)
 
-        staging_head2 = repo.commit('heads/staging.master')
+        staging_head2 = repo.commit('staging.master')
         assert staging_head2 != staging_head
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'success', 'ci/runbot')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
         assert pr_id.state == 'merged'
 
@@ -1238,8 +1158,7 @@ class TestRetry:
         """
         with repo:
             pr = _simple_init(repo)
-            repo.post_status(pr.head, 'success', 'ci/runbot')
-            repo.post_status(pr.head, 'success', 'legal/cla')
+            repo.post_status(pr.head, 'success')
             pr.post_comment('hansen r+ delegate=%s rebase-merge' % users['other'],
                              config["role_reviewer"]['token'])
         env.run_crons()
@@ -1247,8 +1166,7 @@ class TestRetry:
         assert pr_id.staging_id
 
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'failure', 'ci/runbot',
+            repo.post_status('staging.master', 'failure',
                              target_url='https://example.com/whocares')
         env.run_crons()
         assert pr_id.state == 'error'
@@ -1258,15 +1176,14 @@ class TestRetry:
         env.run_crons(None)
 
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'failure', 'ci/runbot',
+            repo.post_status('staging.master', 'failure',
                              target_url='https://example.com/ohno')
         env.run_crons()
         assert pr_id.state == 'error'
 
         dangerbox = pr_page(page, pr).cssselect('.alert-danger span')
         assert dangerbox
-        assert dangerbox[0].text == 'ci/runbot (view more at https://example.com/ohno)'
+        assert dangerbox[0].text == 'default (view more at https://example.com/ohno)'
 
     def test_retry_ignored(self, env, repo, users, config):
         """ Check feedback in case of ignored retry command on a non-error PR.
@@ -1285,7 +1202,6 @@ class TestRetry:
             (users['user'], "@{reviewer} retry makes no sense when the PR is not in error.".format_map(users)),
         ]
 
-    @pytest.mark.defaultstatuses
     @pytest.mark.parametrize('disabler', ['user', 'other', 'reviewer'])
     def test_retry_disable(self, env, repo, disabler, users, config):
         with repo:
@@ -1331,15 +1247,14 @@ class TestMergeMethod:
 
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         assert to_pr(env, prx).squash
 
         env.run_crons()
         assert to_pr(env, prx).staging_id
 
-        staging = repo.commit('heads/staging.master')
+        staging = repo.commit('staging.master')
         assert not repo.is_ancestor(prx.head, of=staging.id),\
             "the pr head should not be an ancestor of the staging branch in a squash merge"
         assert repo.read_tree(staging) == {
@@ -1349,8 +1264,7 @@ class TestMergeMethod:
             "dummy commit aside, the previous master's tip should be the sole parent of the staging commit"
 
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'success', 'ci/runbot')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
         pr = to_pr(env, prx)
         assert pr.state == 'merged'
@@ -1373,8 +1287,7 @@ class TestMergeMethod:
 
             [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             pr = repo.make_pr(target='master', head=c1)
-            repo.post_status(pr.head, 'success', 'legal/cla')
-            repo.post_status(pr.head, 'success', 'ci/runbot')
+            repo.post_status(pr.head, 'success')
             pr.post_comment('hansen delegate+', config['role_reviewer']['token'])
             pr.post_comment('hansen merge', config['role_user']['token'])
         env.run_crons()
@@ -1447,8 +1360,7 @@ class TestMergeMethod:
                 Commit('B1', tree={'b': '1'}),
             )
             prx = repo.make_pr(title='title', body='body', target='master', head=b1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
@@ -1480,8 +1392,7 @@ commits, I need to know how to merge it:
             prx = repo.make_pr(title='title', body='body', target='master', head=b1)
         pr = to_pr(env, prx)
         with repo:
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
 
             prx.post_comment('hansen rebase-merge', config['role_reviewer']['token'])
         assert pr.merge_method == 'rebase-merge'
@@ -1549,14 +1460,13 @@ commits, I need to know how to merge it:
             b0 = repo.make_commit(m1, 'B0', author=author0, committer=committer, tree={'m': '1', 'b': '0'})
             b1 = repo.make_commit(b0, 'B1', author=author1, committer=committer, tree={'m': '1', 'b': '1'})
             prx = repo.make_pr(title='title', body='body', target='master', head=b1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
         env.run_crons()
 
         pr_id = to_pr(env, prx)
         # create a dag (msg:str, parents:set) from the log
-        staging = log_to_node(repo.log('heads/staging.master'))
+        staging = log_to_node(repo.log('staging.master'))
         # then compare to the dag version of the right graph
         nm2 = node('M2', node('M1', node('M0')))
         nb1 = node(part_of('B1', pr_id), node(part_of('B0', pr_id), nm2))
@@ -1582,8 +1492,7 @@ commits, I need to know how to merge it:
         assert pr_id.staging_id, "PR should immediately be re-stageable"
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         pr = to_pr(env, prx)
@@ -1644,14 +1553,13 @@ commits, I need to know how to merge it:
             )
 
             prx = repo.make_pr(title='title', body='body', target='master', head=b1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+ rebase-ff', config['role_reviewer']['token'])
         env.run_crons()
 
         pr_id = to_pr(env, prx)
         # create a dag (msg:str, parents:set) from the log
-        staging = log_to_node(repo.log('heads/staging.master'))
+        staging = log_to_node(repo.log('staging.master'))
         # then compare to the dag version of the right graph
         nm2 = node('M2', node('M1', node('M0')))
         reviewer = get_partner(env, users["reviewer"]).formatted_email
@@ -1660,8 +1568,7 @@ commits, I need to know how to merge it:
         assert staging == nb1
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         pr = to_pr(env, prx)
@@ -1724,14 +1631,12 @@ commits, I need to know how to merge it:
         env.run_crons(None)
 
         with repo:
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+ merge', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -1763,14 +1668,12 @@ commits, I need to know how to merge it:
         env.run_crons(None)
 
         with repo:
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+ merge', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -1800,14 +1703,12 @@ commits, I need to know how to merge it:
             repo.make_commits(root, Commit('C', tree={'a': 'b'}), ref='heads/change')
             pr = repo.make_pr(title="title", body=f'first\n{separator}\nsecond',
                               target='master', head='change')
-            repo.post_status(pr.head, 'success', 'legal/cla')
-            repo.post_status(pr.head, 'success', 'ci/runbot')
+            repo.post_status(pr.head, 'success')
             pr.post_comment('hansen r+ merge', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         head = repo.commit('heads/master')
@@ -1840,14 +1741,12 @@ This is more text
 removed
 """,
                               target='master', head='change')
-            repo.post_status(pr.head, 'success', 'legal/cla')
-            repo.post_status(pr.head, 'success', 'ci/runbot')
+            repo.post_status(pr.head, 'success')
             pr.post_comment('hansen r+ merge', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         head = repo.commit('heads/master')
@@ -1877,14 +1776,12 @@ removed
             repo.make_commits(root, Commit('Commit\n\nfirst\n***\nsecond', tree={'a': 'b'}), ref='heads/change')
             pr = repo.make_pr(title="PR", body='first\n***\nsecond',
                               target='master', head='change')
-            repo.post_status(pr.head, 'success', 'legal/cla')
-            repo.post_status(pr.head, 'success', 'ci/runbot')
+            repo.post_status(pr.head, 'success')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         head = repo.commit('heads/master')
@@ -1914,8 +1811,7 @@ removed
                 ref='heads/change')
 
             pr = repo.make_pr(target='master', head='change')
-            repo.post_status(pr.head, 'success', 'legal/cla')
-            repo.post_status(pr.head, 'success', 'ci/runbot')
+            repo.post_status(pr.head, 'success')
             pr.post_comment('hansen rebase-ff r+', config['role_reviewer']['token'])
         env.run_crons()
 
@@ -1962,14 +1858,12 @@ Signed-off-by: {reviewer}"""
         env.run_crons()
 
         with repo:
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+ merge', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -2005,14 +1899,12 @@ Signed-off-by: {reviewer}"""
         env.run_crons()
 
         with repo:
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+ merge', config['role_reviewer']['token'])
         env.run_crons()
 
         with repo:
-            repo.post_status('heads/staging.master', 'success', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         master = repo.commit('heads/master')
@@ -2047,8 +1939,7 @@ Signed-off-by: {reviewer}"""
                 ref='heads/other'
             )
             pr1 = repo.make_pr(title='first pr', target='master', head='other')
-            repo.post_status('other', 'success', 'legal/cla')
-            repo.post_status('other', 'success', 'ci/runbot')
+            repo.post_status('other', 'success')
 
             pr_2_commits = repo.make_commits(
                 'master',
@@ -2060,8 +1951,7 @@ Signed-off-by: {reviewer}"""
             assert c1.author['name'] != c2.author['name']
             assert c1.committer['name'] != c2.committer['name']
             pr2 = repo.make_pr(title='second pr', target='master', head='other2')
-            repo.post_status('other2', 'success', 'legal/cla')
-            repo.post_status('other2', 'success', 'ci/runbot')
+            repo.post_status('other2', 'success')
         env.run_crons()
 
         with repo: # comments sequencing
@@ -2070,8 +1960,7 @@ Signed-off-by: {reviewer}"""
         env.run_crons()
 
         with repo:
-            repo.post_status('staging.master', 'success', 'legal/cla')
-            repo.post_status('staging.master', 'success', 'ci/runbot')
+            repo.post_status('staging.master', 'success')
         env.run_crons()
 
         # PR 1 should have merged properly, the PR message should be the
@@ -2161,7 +2050,6 @@ class TestPRUpdate:
             repo.update_ref(prx.ref, c2, force=True)
         assert pr.head == c2
 
-    @pytest.mark.defaultstatuses
     def test_update_validated(self, env, repo):
         """ Should reset to opened
         """
@@ -2197,7 +2085,6 @@ class TestPRUpdate:
         assert pr.head == c2
         assert pr.state == 'opened'
 
-    @pytest.mark.defaultstatuses
     def test_update_ready(self, env, repo, config):
         """ Should reset to opened
         """
@@ -2217,7 +2104,6 @@ class TestPRUpdate:
         assert pr.head == c2
         assert pr.state == 'opened'
 
-    @pytest.mark.defaultstatuses
     def test_update_staged(self, env, repo, config):
         """ Should cancel the staging & reset PR to opened
         """
@@ -2240,7 +2126,6 @@ class TestPRUpdate:
         assert not pr.staging_id
         assert not env['runbot_merge.stagings'].search([])
 
-    @pytest.mark.defaultstatuses
     def test_split(self, env, repo, config):
         """ Should remove the PR from its split, and possibly delete the split
         entirely.
@@ -2264,7 +2149,7 @@ class TestPRUpdate:
         s0 = pr1.staging_id
 
         with repo:
-            repo.post_status('heads/staging.master', 'failure')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
 
         assert pr1.staging_id and pr1.staging_id != s0, "pr1 should have been re-staged"
@@ -2282,7 +2167,6 @@ class TestPRUpdate:
         assert pr2.state == 'opened', "state should have been reset"
         assert not env['runbot_merge.split'].search([]), "there should be no split left"
 
-    @pytest.mark.defaultstatuses
     def test_update_error(self, env, repo, config):
         with repo:
             [c] = repo.make_commits("master", Commit('fist', tree={'m': 'c1'}))
@@ -2329,7 +2213,6 @@ class TestPRUpdate:
         with pytest.raises(TimeoutError):
             to_pr(env, prx)
 
-    @pytest.mark.defaultstatuses
     def test_update_to_ci(self, env, repo):
         """ If a PR is updated to a known-valid commit, it should be
         validated
@@ -2351,7 +2234,6 @@ class TestPRUpdate:
         assert pr.head == c2
         assert pr.state == 'validated'
 
-    @pytest.mark.defaultstatuses
     def test_update_missed(self, env, repo, config, users):
         """ Sometimes github's webhooks don't trigger properly, a branch's HEAD
         does not get updated and we might e.g. attempt to merge a PR despite it
@@ -2498,7 +2380,6 @@ Please check and re-approve.
             f"Updated target, squash, message. Updated {pr_id.display_name} to ready. Updated to {c2}."
         )
 
-    @pytest.mark.defaultstatuses
     def test_update_closed(self, env, repo, config):
         with repo:
             [c] = repo.make_commits("master", repo.Commit('first', tree={'m': 'm3'}), ref='heads/abranch')
@@ -2536,7 +2417,6 @@ Please check and re-approve.
         assert not pr_id.reviewed_by
         assert not pr_id.squash
 
-    @pytest.mark.defaultstatuses
     def test_update_incorrect_commits_count(self, port, env, project, repo, config, users):
         """This is not a great test but it aims to kinda sorta simulate the
         behaviour when a user retargets and updates a PR at about the same time:
@@ -2609,7 +2489,7 @@ Please check and re-approve.
 
 class TestBatching(object):
     def _pr(self, repo, prefix, trees, *, target='master', user, reviewer,
-            statuses=(('ci/runbot', 'success'), ('legal/cla', 'success'))
+            statuses=(('default', 'success'),)
         ):
         """ Helper creating a PR from a series of commits on a base
         """
@@ -2652,7 +2532,7 @@ class TestBatching(object):
         assert pr2.staging_id
         assert pr1.staging_id == pr2.staging_id
 
-        log = list(repo.log('heads/staging.master'))
+        log = list(repo.log('staging.master'))
         staging = log_to_node(log)
         reviewer = get_partner(env, users["reviewer"]).formatted_email
         p1 = node(
@@ -2726,7 +2606,7 @@ class TestBatching(object):
         assert pr2.staging_id
         assert pr1.staging_id == pr2.staging_id
 
-        log = list(repo.log('heads/staging.master'))
+        log = list(repo.log('staging.master'))
 
         staging = log_to_node(log)
         reviewer = get_partner(env, users["reviewer"]).formatted_email
@@ -2813,7 +2693,7 @@ class TestBatching(object):
 
         # make the staging fail
         with repo:
-            repo.post_status('staging.master', 'failure', 'ci/runbot')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
         assert p_01.error
         assert p_01.batch_id.blocked
@@ -2833,7 +2713,7 @@ class TestBatching(object):
 
         # make the staging fail again
         with repo:
-            repo.post_status('staging.master', 'failure', 'ci/runbot')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
 
         assert not p_01.staging_id.active
@@ -2875,8 +2755,7 @@ class TestBatching(object):
         # cause the PR to become ready the normal way
         with repo:
             pr01.post_comment("hansen r+", config['role_reviewer']['token'])
-            repo.post_status(p_01.head, 'success', 'legal/cla')
-            repo.post_status(p_01.head, 'success', 'ci/runbot')
+            repo.post_status(p_01.head, 'success')
         env.run_crons()
 
         # a cancel_staging pr becoming ready should have cancelled the staging,
@@ -2911,8 +2790,7 @@ class TestBatching(object):
 
         # add CI failure
         with repo:
-            repo.post_status('heads/staging.master', 'failure', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
 
         # should have staged the first half
@@ -2984,7 +2862,7 @@ class TestBatching(object):
         st = pr01_id.staging_id
         assert st and pr02_id.staging_id == st
         with repo:
-            repo.post_status('staging.master', 'failure', 'ci/runbot')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
         # should have cancelled the staging, split it, and re-staged the first
         # half of the split
@@ -3015,8 +2893,7 @@ class TestBatching(object):
         assert len(st.mapped('batch_ids.prs')) == 2
         # add CI failure
         with repo:
-            repo.post_status('heads/staging.master', 'failure', 'ci/runbot')
-            repo.post_status('heads/staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'failure')
 
         pr1 = to_pr(env, pr1)
         pr2 = to_pr(env, pr2)
@@ -3033,16 +2910,14 @@ class TestBatching(object):
 
         # This is the failing PR!
         with repo:
-            repo.post_status('staging.master', 'failure', 'ci/runbot')
-            repo.post_status('staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
         assert pr1.state == 'error'
 
         assert pr2.staging_id
 
         with repo:
-            repo.post_status('staging.master', 'success', 'ci/runbot')
-            repo.post_status('staging.master', 'success', 'legal/cla')
+            repo.post_status('staging.master', 'success')
         env.run_crons(None)
         assert pr2.state == 'merged'
 
@@ -3058,8 +2933,7 @@ class TestReviewing:
 
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_other']['token'])
         env.run_crons()
 
@@ -3091,8 +2965,7 @@ class TestReviewing:
             with repo.fork(token=reviewer) as f:
                 f.make_commits(m, Commit('first', tree={'m': 'c1'}), ref='heads/change')
             prx = repo.make_pr(title='title', body='body', target='master', head=f'{f.owner}:change', token=reviewer)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', reviewer)
         env.run_crons()
 
@@ -3115,8 +2988,7 @@ class TestReviewing:
             with repo.fork(token=self_reviewer) as f:
                 f.make_commits(m, Commit('first', tree={'m': 'c1'}), ref='heads/change')
             prx = repo.make_pr(title='title', body='body', target='master', head=f'{f.owner}:change', token=self_reviewer)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', self_reviewer)
         env.run_crons()
 
@@ -3139,8 +3011,7 @@ class TestReviewing:
 
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen delegate+', config['role_reviewer']['token'])
             prx.post_comment('hansen r+', config['role_user']['token'])
         env.run_crons()
@@ -3159,8 +3030,7 @@ class TestReviewing:
 
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             # flip case to check that github login is case-insensitive
             other = ''.join(c.lower() if c.isupper() else c.upper() for c in users['other'])
             prx.post_comment('hansen delegate=%s' % other, config['role_reviewer']['token'])
@@ -3300,8 +3170,7 @@ class TestUnknownPR:
 
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot', target_url="http://example.org/wheee")
+            repo.post_status(prx.head, 'success', target_url="http://example.org/wheee")
         env.run_crons()
 
         # assume an unknown but ready PR: we don't know the PR or its head commit
@@ -3326,8 +3195,7 @@ class TestUnknownPR:
 
         c = env['runbot_merge.commit'].search([('sha', '=', prx.head)])
         assert json.loads(c.statuses) == {
-            'legal/cla': {'state': 'success', 'target_url': None, 'description': None, 'updated_at': matches("$$")},
-            'ci/runbot': {'state': 'success', 'target_url': 'http://example.org/wheee', 'description': None, 'updated_at': matches("$$")}
+            'default': {'state': 'success', 'target_url': 'http://example.org/wheee', 'description': None, 'updated_at': matches("$$")}
         }
         assert prx.comments == [
             seen(env, prx, users),
@@ -3470,8 +3338,7 @@ class TestUnknownPR:
 
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='branch', head=c1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
 
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons(
@@ -3494,8 +3361,7 @@ class TestUnknownPR:
 
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='branch', head=c1)
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
 
             prx.post_review('APPROVE', 'hansen r+', config['role_reviewer']['token'])
         env.run_crons(
@@ -3668,8 +3534,7 @@ class TestRMinus:
 
             c = repo.make_commit(m, 'first', None, tree={'m': 'c'})
             prx = repo.make_pr(title='title', body=None, target='master', head=c)
-            repo.post_status(prx.head, 'success', 'ci/runbot')
-            repo.post_status(prx.head, 'success', 'legal/cla')
+            repo.post_status(prx.head, 'success')
         env.run_crons()
 
         pr = to_pr(env, prx)
@@ -3703,8 +3568,7 @@ class TestRMinus:
 
             c = repo.make_commit(m, 'first', None, tree={'m': 'c'})
             prx = repo.make_pr(title='title', body=None, target='master', head=c)
-            repo.post_status(prx.head, 'success', 'ci/runbot')
-            repo.post_status(prx.head, 'success', 'legal/cla')
+            repo.post_status(prx.head, 'success')
         env.run_crons()
 
         pr = to_pr(env, prx)
@@ -3758,15 +3622,13 @@ class TestRMinus:
             c = repo.make_commit(m, 'first', None, tree={'m': 'm', '1': '1'})
             repo.make_ref('heads/p1', c)
             prx1 = repo.make_pr(title='t1', body='b1', target='master', head='p1')
-            repo.post_status(prx1.head, 'success', 'legal/cla')
-            repo.post_status(prx1.head, 'success', 'ci/runbot')
+            repo.post_status(prx1.head, 'success')
             prx1.post_comment('hansen r+', config['role_reviewer']['token'])
 
             c = repo.make_commit(m, 'first', None, tree={'m': 'm', '2': '2'})
             repo.make_ref('heads/p2', c)
             prx2 = repo.make_pr(title='t2', body='b2', target='master', head='p2')
-            repo.post_status(prx2.head, 'success', 'legal/cla')
-            repo.post_status(prx2.head, 'success', 'ci/runbot')
+            repo.post_status(prx2.head, 'success')
             prx2.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
@@ -3777,7 +3639,7 @@ class TestRMinus:
         s0 = pr1.staging_id
 
         with repo:
-            repo.post_status('heads/staging.master', 'failure', 'ci/runbot')
+            repo.post_status('staging.master', 'failure')
         env.run_crons()
 
         assert pr1.staging_id and pr1.staging_id != s0, "pr1 should have been re-staged"
@@ -3804,8 +3666,7 @@ class TestComments:
             c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
 
-            repo.post_status(prx.head, 'success', 'legal/cla')
-            repo.post_status(prx.head, 'success', 'ci/runbot')
+            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen delegate=foo', config['role_reviewer']['token'])
             prx.post_comment('@hansen delegate=bar', config['role_reviewer']['token'])
             prx.post_comment('#hansen delegate=baz', config['role_reviewer']['token'])
@@ -3858,8 +3719,9 @@ class TestComments:
         assert pr.state == 'opened'
 
 class TestFeedback:
-    def test_ci_approved(self, repo, env, users, config):
+    def test_ci_approved(self, repo, env, users, config, project):
         """CI failing on an r+'d PR sends feedback"""
+        project.repo_ids.required_statuses = 'legal/cla,ci/runbot'
         with repo:
             [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref="heads/master")
 
@@ -3902,7 +3764,7 @@ class TestFeedback:
         pr = to_pr(env, prx)
 
         with repo:
-            repo.post_status(prx.head, 'failure', 'ci/runbot')
+            repo.post_status(prx.head, 'failure')
         env.run_crons()
         assert pr.state == 'opened'
 

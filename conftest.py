@@ -122,10 +122,6 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "expect_log_errors(reason): allow and require tracebacks in the log",
     )
-    config.addinivalue_line(
-        "markers",
-        "defaultstatuses: use the statuses `default` rather than `ci/runbot,legal/cla`",
-    )
 
 def pytest_unconfigure(config):
     if not is_manager(config):

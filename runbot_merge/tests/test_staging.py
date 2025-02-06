@@ -1,4 +1,4 @@
-from utils import Commit, to_pr, make_basic, prevent_unstaging
+from utils import Commit, to_pr, prevent_unstaging
 
 
 def test_staging_disabled_branch(env, project, repo, config):

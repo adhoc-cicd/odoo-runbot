@@ -2,8 +2,6 @@
 Test cases for updating PRs during after the forward-porting process after the
 initial merge has succeeded (and forward-porting has started)
 """
-import re
-
 import pytest
 
 from utils import seen, matches, Commit, make_basic, to_pr
@@ -17,7 +15,7 @@ def test_update_pr(env, config, make_repo, users, merge_parent) -> None:
     In this case, all following forward ports should... be detached? Or maybe
     only this one and its dependent should be updated?
     """
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='ci/runbot,legal/cla')
     # create a branch d from c so we can have 3 forward ports PRs, not just 2,
     # for additional checks
     env['runbot_merge.project'].search([]).write({
@@ -219,7 +217,7 @@ def test_update_merged(env, make_repo, config, users):
     * also maybe disable or exponentially backoff the update job after some
       number of attempts?
     """
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
     # add a 4th branch
     with prod:
         prod.make_ref('heads/d', prod.commit('c').id)
@@ -230,33 +228,28 @@ def test_update_merged(env, make_repo, config, users):
     with prod:
         [c] = prod.make_commits('a', Commit('p_0', tree={'0': '0'}), ref='heads/hugechange')
         pr = prod.make_pr(target='a', head='hugechange')
-        prod.post_status(c, 'success', 'legal/cla')
-        prod.post_status(c, 'success', 'ci/runbot')
+        prod.post_status(c, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     _, pr1_id = env['runbot_merge.pull_requests'].search([], order='number')
     with prod:
-        prod.post_status(pr1_id.head, 'success', 'legal/cla')
-        prod.post_status(pr1_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr1_id.head, 'success')
     env.run_crons()
 
     pr0_id, pr1_id, pr2_id = env['runbot_merge.pull_requests'].search([], order='number')
     pr2 = prod.get_pr(pr2_id.number)
     with prod:
         pr2.post_comment('hansen r+', config['role_reviewer']['token'])
-        prod.post_status(pr2_id.head, 'success', 'legal/cla')
-        prod.post_status(pr2_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr2_id.head, 'success')
     env.run_crons()
 
     assert pr2_id.staging_id
     with prod:
-        prod.post_status('staging.c', 'success', 'legal/cla')
-        prod.post_status('staging.c', 'success', 'ci/runbot')
+        prod.post_status('staging.c', 'success')
     env.run_crons()
     assert pr2_id.state == 'merged'
     assert pr2.state == 'closed'
@@ -371,7 +364,7 @@ def test_duplicate_fw(env, make_repo, setreviewers, config, users):
         env.run_crons()
         parent = child
     pr_ids = _, prv2_id, prv3_id, prmaster_id = PRs.search([], order='number')
-    _, prv2, prv3, prmaster = [repo.get_pr(p.number) for p in pr_ids]
+    _, prv2, _prv3, _prmaster = [repo.get_pr(p.number) for p in pr_ids]
     assert pr_ids.mapped('target.name') == ['v1', 'v2', 'v3', 'master']
     assert pr_ids.mapped('state') == ['merged', 'validated', 'validated', 'validated']
     assert repo.read_tree(repo.commit(prmaster_id.head)) == {'f': 'e', 'z': 'a'}
@@ -404,19 +397,17 @@ def test_subsequent_conflict(env, make_repo, config, users):
     """ Test for updating an fw PR in the case where it produces a conflict in
     the followup. Cf #467.
     """
-    repo, fork = make_basic(env, config, make_repo)
+    repo, fork = make_basic(env, config, make_repo, statuses='default')
 
     # create a PR in branch A which adds a new file
     with repo:
         repo.make_commits('a', Commit('newfile', tree={'x': '0'}), ref='heads/pr1')
         pr_1 = repo.make_pr(target='a', head='pr1')
-        repo.post_status('pr1', 'success', 'legal/cla')
-        repo.post_status('pr1', 'success', 'ci/runbot')
+        repo.post_status('pr1', 'success')
         pr_1.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     with repo:
-        repo.post_status('staging.a', 'success', 'legal/cla')
-        repo.post_status('staging.a', 'success', 'ci/runbot')
+        repo.post_status('staging.a', 'success')
     env.run_crons()
     pr1_id = to_pr(env, pr_1)
     assert pr1_id.state == 'merged'
@@ -424,8 +415,7 @@ def test_subsequent_conflict(env, make_repo, config, users):
     pr2_id = env['runbot_merge.pull_requests'].search([('source_id', '=', pr1_id.id)])
     assert pr2_id
     with repo:
-        repo.post_status(pr2_id.head, 'success', 'legal/cla')
-        repo.post_status(pr2_id.head, 'success', 'ci/runbot')
+        repo.post_status(pr2_id.head, 'success')
     env.run_crons()
 
     pr3_id = env['runbot_merge.pull_requests'].search([('parent_id', '=', pr2_id.id)])

@@ -11,9 +11,8 @@ def statuses(pr):
 def test_override_inherited(env, config, make_repo, users):
     """ A forwardport should inherit its parents' overrides, until it's edited.
     """
-    repo, other = make_basic(env, config, make_repo)
+    repo, _other = make_basic(env, config, make_repo, statuses='default')
     project = env['runbot_merge.project'].search([])
-    project.repo_ids.status_ids = [(5, 0, 0), (0, 0, {'context': 'default'})]
     env['res.partner'].search([('github_login', '=', users['reviewer'])])\
         .write({'override_rights': [(0, 0, {
             'repository_id': project.repo_ids.id,
@@ -73,7 +72,7 @@ def test_override_inherited(env, config, make_repo, users):
 def test_override_combination(env, config, make_repo, users):
     """ A forwardport should inherit its parents' overrides, until it's edited.
     """
-    repo, other = make_basic(env, config, make_repo)
+    repo, _other = make_basic(env, config, make_repo, statuses='ci/runbot,legal/cla')
     project = env['runbot_merge.project'].search([])
     env['res.partner'].search([('github_login', '=', users['reviewer'])]) \
         .write({'override_rights': [

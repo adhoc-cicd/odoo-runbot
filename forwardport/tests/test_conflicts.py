@@ -3,8 +3,6 @@ import re
 import time
 from operator import itemgetter
 
-import pytest
-
 from utils import make_basic, Commit, validate_all, matches, seen, REF_PATTERN, to_pr
 
 
@@ -12,7 +10,7 @@ def test_conflict(env, config, make_repo, users):
     """ Create a PR to A which will (eventually) conflict with C when
     forward-ported.
     """
-    prod, other = make_basic(env, config, make_repo)
+    prod, _other = make_basic(env, config, make_repo, statuses='default')
     # create a d branch
     with prod:
         prod.make_commits('c', Commit('1111', tree={'i': 'a'}), ref='heads/d')
@@ -30,14 +28,12 @@ def test_conflict(env, config, make_repo, users):
             ref='heads/conflicting'
         )
         pr = prod.make_pr(target='a', head='conflicting')
-        prod.post_status(p_0, 'success', 'legal/cla')
-        prod.post_status(p_0, 'success', 'ci/runbot')
+        prod.post_status(p_0, 'success')
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
     pra_id, prb_id = env['runbot_merge.pull_requests'].search([], order='number')
     # mark pr b as OK so it gets ported to c
@@ -144,15 +140,13 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     # check that merging the fixed PR fixes the flow and restarts a forward
     # port process
     with prod:
-        prod.post_status(prc.head, 'success', 'legal/cla')
-        prod.post_status(prc.head, 'success', 'ci/runbot')
+        prod.post_status(prc.head, 'success')
         prc.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
     assert prc_id.staging_id
     with prod:
-        prod.post_status('staging.c', 'success', 'legal/cla')
-        prod.post_status('staging.c', 'success', 'ci/runbot')
+        prod.post_status('staging.c', 'success')
     env.run_crons()
 
     *_, prd_id = env['runbot_merge.pull_requests'].search([], order='number')
@@ -264,7 +258,7 @@ def test_massive_conflict(env, config, make_repo):
 
 
 def test_conflict_deleted(env, config, make_repo):
-    prod, other = make_basic(env, config, make_repo, statuses="default")
+    prod, _other = make_basic(env, config, make_repo, statuses="default")
     # remove f from b
     with prod:
         prod.make_commits(
@@ -431,7 +425,7 @@ def test_multiple_commits_same_authorship(env, config, make_repo):
     """
     author = {'name': 'George Pearce', 'email': 'gp@example.org'}
     committer = {'name': 'G. P. W. Meredith', 'email': 'gpwm@example.org'}
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
     with prod:
         # conflict: create `g` in `a`, using two commits
         prod.make_commits(
@@ -445,8 +439,7 @@ def test_multiple_commits_same_authorship(env, config, make_repo):
             ref='heads/conflicting'
         )
         pr = prod.make_pr(target='a', head='conflicting')
-        prod.post_status('conflicting', 'success', 'legal/cla')
-        prod.post_status('conflicting', 'success', 'ci/runbot')
+        prod.post_status('conflicting', 'success')
         pr.post_comment('hansen r+ rebase-ff', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -455,8 +448,7 @@ def test_multiple_commits_same_authorship(env, config, make_repo):
     assert pr_id.staging_id
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     for _ in range(20):
@@ -480,7 +472,7 @@ def test_multiple_commits_different_authorship(env, config, make_repo, users, ro
     """
     author = {'name': 'George Pearce', 'email': 'gp@example.org'}
     committer = {'name': 'G. P. W. Meredith', 'email': 'gpwm@example.org'}
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
     with prod:
         # conflict: create `g` in `a`, using two commits
         # just swap author and committer in the commits
@@ -495,8 +487,7 @@ def test_multiple_commits_different_authorship(env, config, make_repo, users, ro
             ref='heads/conflicting'
         )
         pr = prod.make_pr(target='a', head='conflicting')
-        prod.post_status('conflicting', 'success', 'legal/cla')
-        prod.post_status('conflicting', 'success', 'ci/runbot')
+        prod.post_status('conflicting', 'success')
         pr.post_comment('hansen r+ rebase-ff', config['role_reviewer']['token'])
     env.run_crons()
 
@@ -505,8 +496,7 @@ def test_multiple_commits_different_authorship(env, config, make_repo, users, ro
     assert pr_id.staging_id
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     for _ in range(20):
@@ -543,8 +533,7 @@ b
 
     pr2 = prod.get_pr(pr2_id.number)
     with prod:
-        prod.post_status(pr2_id.head, 'success', 'legal/cla')
-        prod.post_status(pr2_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr2_id.head, 'success')
         pr2.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 

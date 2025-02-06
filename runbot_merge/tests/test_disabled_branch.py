@@ -3,8 +3,6 @@ import pytest
 from utils import seen, Commit, pr_page, to_pr
 
 
-pytestmark = pytest.mark.defaultstatuses
-
 def test_existing_pr_disabled_branch(env, project, repo, config, users, page):
     """ PRs to disabled branches are ignored, but what if the PR exists *before*
     the branch is disabled?
@@ -37,7 +35,7 @@ def test_existing_pr_disabled_branch(env, project, repo, config, users, page):
     assert staging_id == pr_id.staging_id
 
     # staging of `pr` should have generated a staging branch
-    _ = repo.get_ref('heads/staging.other')
+    _ = repo.get_ref('staging.other')
 
     # disable branch "other"
     branch_id.active = False
@@ -46,7 +44,7 @@ def test_existing_pr_disabled_branch(env, project, repo, config, users, page):
     # triggered cleanup should have deleted the staging for the disabled `other`
     # target branch
     with pytest.raises(AssertionError, match=r'Not Found'):
-        repo.get_ref('heads/staging.other')
+        repo.get_ref('staging.other')
 
     # the PR should not have been closed implicitly
     assert pr_id.state == 'ready'

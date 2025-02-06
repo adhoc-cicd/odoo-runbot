@@ -31,7 +31,7 @@ def test_straightforward_flow(env, config, make_repo, users):
         ('github_login', '=', users['reviewer'])
     ]).name
 
-    prod, other = make_basic(env, config, make_repo)
+    prod, other = make_basic(env, config, make_repo, statuses='default')
     other_user = config['role_other']
     other_user_repo = prod.fork(token=other_user['token'])
 
@@ -50,8 +50,7 @@ def test_straightforward_flow(env, config, make_repo, users):
             head=other_user['user'] + ':hugechange',
             token=other_user['token']
         )
-        prod.post_status(p_1, 'success', 'legal/cla')
-        prod.post_status(p_1, 'success', 'ci/runbot')
+        prod.post_status(p_1, 'success')
         # use rebase-ff (instead of rebase-merge) so we don't have to dig in
         # parents of the merge commit to find the cherrypicks
         pr.post_comment('hansen r+ rebase-ff', config['role_reviewer']['token'])
@@ -61,8 +60,7 @@ def test_straightforward_flow(env, config, make_repo, users):
 
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
 
     # should merge the staging then create the FP PR
     env.run_crons()
@@ -116,8 +114,7 @@ def test_straightforward_flow(env, config, make_repo, users):
         'x': '1'
     }
     with prod:
-        prod.post_status(pr1.head, 'success', 'ci/runbot')
-        prod.post_status(pr1.head, 'success', 'legal/cla')
+        prod.post_status(pr1.head, 'success')
 
     env.run_crons()
     pr0_, pr1_, pr2 = env['runbot_merge.pull_requests'].search([], order='number')
@@ -176,8 +173,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         ))
     ]
     with prod:
-        prod.post_status(pr2.head, 'success', 'ci/runbot')
-        prod.post_status(pr2.head, 'success', 'legal/cla')
+        prod.post_status(pr2.head, 'success')
 
         pr2_remote.post_comment('hansen r+', config['role_reviewer']['token'])
 
@@ -189,10 +185,8 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     assert pr1.staging_id != pr2.staging_id
     # validate
     with prod:
-        prod.post_status('staging.b', 'success', 'ci/runbot')
-        prod.post_status('staging.b', 'success', 'legal/cla')
-        prod.post_status('staging.c', 'success', 'ci/runbot')
-        prod.post_status('staging.c', 'success', 'legal/cla')
+        prod.post_status('staging.b', 'success')
+        prod.post_status('staging.c', 'success')
 
     # and trigger merge
     env.run_crons()
@@ -249,7 +243,7 @@ def test_empty(env, config, make_repo, users):
     """ Cherrypick of an already cherrypicked (or separately implemented)
     commit -> conflicting pr.
     """
-    prod, other = make_basic(env, config, make_repo, statuses="default")
+    prod, _other = make_basic(env, config, make_repo, statuses="default")
     # merge change to b
     with prod:
         [p_0] = prod.make_commits(
@@ -405,7 +399,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 def test_partially_empty(env, config, make_repo):
     """ Check what happens when only some commits of the PR are now empty
     """
-    prod, other = make_basic(env, config, make_repo)
+    prod, _other = make_basic(env, config, make_repo, statuses='default')
     # merge change to b
     with prod:
         [p_0] = prod.make_commits(
@@ -413,13 +407,11 @@ def test_partially_empty(env, config, make_repo):
             ref='heads/early'
         )
         pr0 = prod.make_pr(target='b', head='early')
-        prod.post_status(p_0, 'success', 'legal/cla')
-        prod.post_status(p_0, 'success', 'ci/runbot')
+        prod.post_status(p_0, 'success')
         pr0.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     with prod:
-        prod.post_status('staging.b', 'success', 'legal/cla')
-        prod.post_status('staging.b', 'success', 'ci/runbot')
+        prod.post_status('staging.b', 'success')
 
     # merge same change to a afterwards
     with prod:
@@ -431,13 +423,11 @@ def test_partially_empty(env, config, make_repo):
             ref='heads/late'
         )
         pr1 = prod.make_pr(target='a', head='late')
-        prod.post_status(p_1, 'success', 'legal/cla')
-        prod.post_status(p_1, 'success', 'ci/runbot')
+        prod.post_status(p_1, 'success')
         pr1.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
 
     env.run_crons()
     assert prod.read_tree(prod.commit('a')) == {
@@ -490,7 +480,7 @@ def test_access_rights(env, config, make_repo, users, author, reviewer, delegate
     """Validates the review rights *for the forward-port sequence*, the original
     PR is always reviewed by `user`.
     """
-    prod, other = make_basic(env, config, make_repo)
+    prod, _other = make_basic(env, config, make_repo, statuses='default')
     project = env['runbot_merge.project'].search([])
 
     # create a partner for `user`
@@ -521,29 +511,25 @@ def test_access_rights(env, config, make_repo, users, author, reviewer, delegate
             head=users[author] + ':accessrights',
             token=author_token,
         )
-        prod.post_status(c, 'success', 'legal/cla')
-        prod.post_status(c, 'success', 'ci/runbot')
+        prod.post_status(c, 'success')
         pr.post_comment('hansen r+', token=config['github']['token'])
         if delegate:
             pr.post_comment('hansen delegate=%s' % users[delegate], token=config['github']['token'])
     env.run_crons()
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     pr0, pr1 = env['runbot_merge.pull_requests'].search([], order='number')
     assert pr0.state == 'merged'
     with prod:
-        prod.post_status(pr1.head, 'success', 'ci/runbot')
-        prod.post_status(pr1.head, 'success', 'legal/cla')
+        prod.post_status(pr1.head, 'success')
     env.run_crons()
 
     _, _, pr2 = env['runbot_merge.pull_requests'].search([], order='number')
     with prod:
-        prod.post_status(pr2.head, 'success', 'ci/runbot')
-        prod.post_status(pr2.head, 'success', 'legal/cla')
+        prod.post_status(pr2.head, 'success')
         prod.get_pr(pr2.number).post_comment(
             'hansen r+',
             token=config['role_' + reviewer]['token']
@@ -645,7 +631,7 @@ def test_delegate_fw(env, config, make_repo, users):
     """If a user is delegated *on a forward port* they should be able to approve
     *the followup*.
     """
-    prod, _ = make_basic(env, config, make_repo)
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
     # create a partner for `other` so we can put an email on it
     env['res.partner'].create({
         'name': users['other'],
@@ -661,14 +647,12 @@ def test_delegate_fw(env, config, make_repo, users):
             head=users['self_reviewer'] + ':accessrights',
             token=author_token,
         )
-        prod.post_status(c, 'success', 'legal/cla')
-        prod.post_status(c, 'success', 'ci/runbot')
+        prod.post_status(c, 'success')
         pr.post_comment('hansen r+', token=config['role_reviewer']['token'])
     env.run_crons()
 
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
 
     # ensure pr1 has to be approved to be forward-ported
@@ -679,29 +663,26 @@ def test_delegate_fw(env, config, make_repo, users):
         'detach_reason': "Detached for testing.",
     })
     with prod:
-        prod.post_status(pr1_id.head, 'success', 'legal/cla')
-        prod.post_status(pr1_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr1_id.head, 'success')
     env.run_crons()
     pr1 = prod.get_pr(pr1_id.number)
     # delegate review to "other" consider PR fixed, and have "other" approve it
     with prod:
         pr1.post_comment('hansen delegate=' + users['other'],
                          token=config['role_reviewer']['token'])
-        prod.post_status(pr1_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr1_id.head, 'success')
         pr1.post_comment('hansen r+', token=config['role_other']['token'])
     env.run_crons()
 
     with prod:
-        prod.post_status('staging.b', 'success', 'legal/cla')
-        prod.post_status('staging.b', 'success', 'ci/runbot')
+        prod.post_status('staging.b', 'success')
     env.run_crons()
 
     _, _, pr2_id = env['runbot_merge.pull_requests'].search([], order='number')
     pr2 = prod.get_pr(pr2_id.number)
     # make "other" also approve this one
     with prod:
-        prod.post_status(pr2_id.head, 'success', 'ci/runbot')
-        prod.post_status(pr2_id.head, 'success', 'legal/cla')
+        prod.post_status(pr2_id.head, 'success')
         pr2.post_comment('hansen r+', token=config['role_other']['token'])
     env.run_crons()
 
@@ -723,26 +704,22 @@ def test_redundant_approval(env, config, make_repo, users):
     """If a forward port sequence has been partially approved, fw-bot r+ should
     not perform redundant approval as that triggers warning messages.
     """
-    prod, _ = make_basic(env, config, make_repo)
-    [project] = env['runbot_merge.project'].search([])
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
     with prod:
         prod.make_commits(
             'a', Commit('p', tree={'x': '0'}),
             ref='heads/early'
         )
         pr0 = prod.make_pr(target='a', head='early')
-        prod.post_status('heads/early', 'success', 'legal/cla')
-        prod.post_status('heads/early', 'success', 'ci/runbot')
+        prod.post_status('heads/early', 'success')
         pr0.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     with prod:
-        prod.post_status('staging.a', 'success', 'legal/cla')
-        prod.post_status('staging.a', 'success', 'ci/runbot')
+        prod.post_status('staging.a', 'success')
     env.run_crons()
     pr0_id, pr1_id = env['runbot_merge.pull_requests'].search([], order='number asc')
     with prod:
-        prod.post_status(pr1_id.head, 'success', 'legal/cla')
-        prod.post_status(pr1_id.head, 'success', 'ci/runbot')
+        prod.post_status(pr1_id.head, 'success')
     env.run_crons()
 
     _, _, pr2_id = env['runbot_merge.pull_requests'].search([], order='number asc')
@@ -770,8 +747,8 @@ def test_batched(env, config, make_repo, users):
     """ Tests for projects with multiple repos & sync'd branches. Batches
     should be FP'd to batches
     """
-    main1, _ = make_basic(env, config, make_repo, reponame='main1')
-    main2, _ = make_basic(env, config, make_repo, reponame='main2')
+    main1, _ = make_basic(env, config, make_repo, reponame='main1', statuses='default')
+    main2, _ = make_basic(env, config, make_repo, reponame='main2', statuses='default')
     main1.unsubscribe(config['role_reviewer']['token'])
     main2.unsubscribe(config['role_reviewer']['token'])
 
@@ -862,7 +839,6 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     assert pr1c.label == pr2c.label, "batched source should yield batched FP"
     assert pr1b.label != pr1c.label
 
-    project = env['runbot_merge.project'].search([])
     # ok main1 PRs
     with main1:
         validate_all([main1], [pr1c.head])
@@ -894,7 +870,7 @@ class TestClosing:
     def test_closing_before_fp(self, env, config, make_repo, users):
         """ Closing a PR should preclude its forward port
         """
-        prod, other = make_basic(env, config, make_repo)
+        prod, _other = make_basic(env, config, make_repo, statuses='default')
         with prod:
             [p_1] = prod.make_commits(
                 'a',
@@ -902,14 +878,12 @@ class TestClosing:
                 ref='heads/hugechange'
             )
             pr = prod.make_pr(target='a', head='hugechange')
-            prod.post_status(p_1, 'success', 'legal/cla')
-            prod.post_status(p_1, 'success', 'ci/runbot')
+            prod.post_status(p_1, 'success')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
         env.run_crons()
         with prod:
-            prod.post_status('staging.a', 'success', 'legal/cla')
-            prod.post_status('staging.a', 'success', 'ci/runbot')
+            prod.post_status('staging.a', 'success')
         # should merge the staging then create the FP PR
         env.run_crons()
 
@@ -921,8 +895,7 @@ class TestClosing:
         assert pr1_id.state == 'closed'
         assert not pr1_id.parent_id, "closed PR should should be detached from its parent"
         with prod:
-            prod.post_status(pr1_id.head, 'success', 'legal/cla')
-            prod.post_status(pr1_id.head, 'success', 'ci/runbot')
+            prod.post_status(pr1_id.head, 'success')
         env.run_crons()
         env.run_crons('forwardport.reminder')
 
@@ -941,8 +914,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         """ Closing a PR which has been forward-ported should not touch the
         followups
         """
-        prod, other = make_basic(env, config, make_repo)
-        project = env['runbot_merge.project'].search([])
+        prod, _other = make_basic(env, config, make_repo, statuses='default')
         with prod:
             [p_1] = prod.make_commits(
                 'a',
@@ -950,22 +922,19 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
                 ref='heads/hugechange'
             )
             pr = prod.make_pr(target='a', head='hugechange')
-            prod.post_status(p_1, 'success', 'legal/cla')
-            prod.post_status(p_1, 'success', 'ci/runbot')
+            prod.post_status(p_1, 'success')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
 
         env.run_crons()
         with prod:
-            prod.post_status('staging.a', 'success', 'legal/cla')
-            prod.post_status('staging.a', 'success', 'ci/runbot')
+            prod.post_status('staging.a', 'success')
 
         # should merge the staging then create the FP PR
         env.run_crons()
 
         pr0_id, pr1_id = env['runbot_merge.pull_requests'].search([], order='number')
         with prod:
-            prod.post_status(pr1_id.head, 'success', 'legal/cla')
-            prod.post_status(pr1_id.head, 'success', 'ci/runbot')
+            prod.post_status(pr1_id.head, 'success')
         # should create the second staging
         env.run_crons()
 
@@ -995,8 +964,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         be nodified if already merged, also there should not be recursive
         notifications (odoo/odoo#145969, odoo/odoo#145984)
         """
-        repo, _ = make_basic(env, config, make_repo)
-        env['runbot_merge.repository'].search([]).required_statuses = 'default'
+        repo, _ = make_basic(env, config, make_repo, statuses='default')
         # prep: merge PR, create two forward ports
         with repo:
             [c1] = repo.make_commits('a', Commit('first', tree={'m': 'c1'}))
@@ -1072,21 +1040,19 @@ class TestBranchDeletion:
         """ Regular PRs should get their branch deleted as long as they're
         created in the fp repository
         """
-        prod, other = make_basic(env, config, make_repo)
+        prod, other = make_basic(env, config, make_repo, statuses='default')
         with prod, other:
             [c] = other.make_commits(prod.commit('a').id, Commit('c', tree={'0': '0'}), ref='heads/abranch')
             pr = prod.make_pr(
                 target='a', head='%s:abranch' % other.owner,
                 title="a pr",
             )
-            prod.post_status(c, 'success', 'legal/cla')
-            prod.post_status(c, 'success', 'ci/runbot')
+            prod.post_status(c, 'success')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
         with prod:
-            prod.post_status('staging.a', 'success', 'legal/cla')
-            prod.post_status('staging.a', 'success', 'ci/runbot')
+            prod.post_status('staging.a', 'success')
         env.run_crons()
 
         pr_id = to_pr(env, pr)
@@ -1103,13 +1069,12 @@ class TestBranchDeletion:
         """ The branches of PRs which are still open or have been closed (rather
         than merged) should not get deleted
         """
-        prod, other = make_basic(env, config, make_repo)
+        prod, other = make_basic(env, config, make_repo, statuses='default')
         with prod, other:
             a_ref = prod.commit('a').id
             [c] = other.make_commits(a_ref, Commit('c1', tree={'1': '0'}), ref='heads/abranch')
             pr1 = prod.make_pr(target='a', head='%s:abranch' % other.owner, title='a')
-            prod.post_status(c, 'success', 'legal/cla')
-            prod.post_status(c, 'success', 'ci/runbot')
+            prod.post_status(c, 'success')
             pr1.post_comment('hansen r+', config['role_reviewer']['token'])
 
             other.make_commits(a_ref, Commit('c2', tree={'2': '0'}), ref='heads/bbranch')
@@ -1118,8 +1083,7 @@ class TestBranchDeletion:
 
             [c] = other.make_commits(a_ref, Commit('c3', tree={'3': '0'}), ref='heads/cbranch')
             pr3 = prod.make_pr(target='a', head='%s:cbranch' % other.owner, title='c')
-            prod.post_status(c, 'success', 'legal/cla')
-            prod.post_status(c, 'success', 'ci/runbot')
+            prod.post_status(c, 'success')
 
             other.make_commits(a_ref, Commit('c3', tree={'4': '0'}), ref='heads/dbranch')
             pr4 = prod.make_pr(target='a', head='%s:dbranch' % other.owner, title='d')
@@ -1155,7 +1119,7 @@ def test_spengbab():
 
 class TestRecognizeCommands:
     def make_pr(self, env, config, make_repo):
-        r, _ = make_basic(env, config, make_repo)
+        r, _ = make_basic(env, config, make_repo, statuses='default')
 
         with r:
             r.make_commits('c', Commit('p', tree={'x': '0'}), ref='heads/testbranch')

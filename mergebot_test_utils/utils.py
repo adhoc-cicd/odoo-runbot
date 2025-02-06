@@ -24,7 +24,7 @@ class Commit:
         self.tree = tree
         self.reset = reset
 
-def validate_all(repos, refs, contexts=('ci/runbot', 'legal/cla')):
+def validate_all(repos, refs, contexts=('default',)):
     """ Post a "success" status for each context on each ref of each repo
     """
     for repo, branch, context in itertools.product(repos, refs, contexts):
@@ -76,7 +76,7 @@ def make_basic(
         *,
         project_name='myproject',
         reponame='proj',
-        statuses='legal/cla,ci/runbot',
+        statuses,
         fp_token=True,
         fp_remote=True,
 ):
