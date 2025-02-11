@@ -1397,7 +1397,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 )
         return prs
 
-    def _from_gh(self, description, author=None, branch=None, repo=None):
+    def _from_gh(self, description, author=None, branch=None, repo=None, **kwargs):
         if repo is None:
             repo = self.env['runbot_merge.repository'].search([
                 ('name', '=', description['base']['repo']['full_name']),
@@ -1423,6 +1423,7 @@ For your own safety I've ignored *everything in your entire comment*.
             'squash': description['commits'] == 1,
             'message': utils.make_message(description),
             'draft': description['draft'],
+            **kwargs,
         })
 
     def write(self, vals):

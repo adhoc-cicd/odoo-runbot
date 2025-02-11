@@ -116,15 +116,15 @@ class PullRequestBackport(models.TransientModel):
         if not r.ok:
             raise UserError(f"Backport PR creation failure: {r.text}")
 
-        backport = self.env['runbot_merge.pull_requests']._from_gh(r.json())
-        _logger.info("Created backport %s for %s", backport.display_name, self.pr_id.display_name)
-
-        backport.write({
-            'merge_method': self.pr_id.merge_method,
+        backport = self.env['runbot_merge.pull_requests']._from_gh(
+            r.json(),
+            merge_method=self.pr_id.merge_method,
             # the backport's own forwardport should stop right before the
             # original PR by default
-            'limit_id': branches[source_idx - 1],
-        })
+            limit_id=branches[source_idx - 1],
+        )
+        _logger.info("Created backport %s for %s", backport.display_name, self.pr_id.display_name)
+
         self.env['runbot_merge.pull_requests.tagging'].create({
             'repository': repo_id.id,
             'pull_request': backport.number,

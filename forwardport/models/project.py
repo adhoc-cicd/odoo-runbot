@@ -213,10 +213,11 @@ class PullRequests(models.Model):
 
         new = super().create(to_create)
         for pr in new:
-            # added a new PR to an already forward-ported batch: port the PR
-            if self.env['runbot_merge.batch'].search_count([
+            # added a new PR to an already forward-ported batch: immediately
+            # port forward to complete the genealogy
+            if not pr.source_id and self.env['runbot_merge.batch'].search_count([
                 ('parent_id', '=', pr.batch_id.id),
-            ]):
+            ], limit=1):
                 self.env['forwardport.batches'].create({
                     'batch_id': pr.batch_id.id,
                     'source': 'complete',

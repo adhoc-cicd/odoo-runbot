@@ -227,6 +227,13 @@ def test_add_to_forward_ported(env, config, make_repo, users):
     # region setup
     r1, _ = make_basic(env, config, make_repo, statuses="default")
     r2, fork2 = make_basic(env, config, make_repo, statuses="default")
+    project = env['runbot_merge.project'].search([])
+    project.write({
+        'branch_ids': [(0, 0, {'name': 'd', 'sequence': 40})],
+    })
+    with r1, r2:
+        r1.make_commits('c', Commit('1111', tree={'g': 'a'}), ref='heads/d')
+        r2.make_commits('c', Commit('1111', tree={'g': 'a'}), ref='heads/d')
 
     with r1:
         r1.make_commits('a', Commit('a', tree={'a': 'a'}), ref="heads/pr1")
@@ -241,59 +248,60 @@ def test_add_to_forward_ported(env, config, make_repo, users):
 
     # region port forward
     pr1_a_id = to_pr(env, pr1_a)
-    pr1_b_id = pr1_a_id.forwardport_ids
-    assert pr1_b_id
-    with r1:
-        r1.post_status(pr1_b_id.head, 'success')
-    env.run_crons()
-    pr1_c_id = pr1_a_id.forwardport_ids - pr1_b_id
-    assert pr1_c_id
+    for branch in 'bcd':
+        next_pr = env['runbot_merge.pull_requests'].search([
+            ('source_id', '=', pr1_a_id.id),
+            ('target.name', '=', branch),
+        ])
+        assert next_pr
+        with r1:
+            r1.post_status(next_pr.head, 'success')
+        env.run_crons()
     # endregion
     # endregion
 
+    pr1_b_id, pr1_c_id, pr1_d_id = pr1_a_id.forwardport_ids[::-1]
     # new PR must be in fork for labels to actually match
     with r2, fork2:
         # branch in fork has no owner prefix, but HEAD for cross-repo PR does
         fork2.make_commits(r2.commit("b").id, Commit('b', tree={'b': 'b'}), ref=f'heads/{pr1_b_id.refname}')
         pr2_b = r2.make_pr(title="b", target="b", head=pr1_b_id.label)
-        r2.post_status(pr2_b.head, 'success')
     env.run_crons()
 
     pr2_b_id = to_pr(env, pr2_b)
     assert pr2_b_id.batch_id == pr1_b_id.batch_id
-    assert len(pr2_b_id.forwardport_ids) == 1, \
+    assert len(pr2_b_id.forwardport_ids) == 2, \
         "since the batch is already forward ported, the new PR should" \
          " immediately be forward ported to match"
-    assert pr2_b_id.forwardport_ids.label == pr1_c_id.label
 
-    pr2_a = r1.get_pr(pr1_b_id.number)
+    assert pr2_b_id.forwardport_ids.mapped('label') == (pr1_d_id | pr1_c_id).mapped('label')
+
+    assert not (b := env['forwardport.batches'].search([])),\
+        f"there should not be any more forward porting, found {b.read(['source', 'pr_id'])}"
+    known_set = pr1_a_id | pr1_a_id.forwardport_ids | pr2_b_id | pr2_b_id.forwardport_ids
+    assert not (p := (env['runbot_merge.pull_requests'].search([]) - known_set)), \
+        "there should not be any PR outside of the sequences we created, "\
+        f"found {p.read(['source_id', 'parent_id', 'display_name'])}"
+
+    with r2:
+        for pr_id in pr2_b_id | pr2_b_id.forwardport_ids:
+            r2.post_status(pr_id.head, 'success')
+
     with r1, r2:
-        pr2_a.post_comment('hansen r+', config['role_reviewer']['token'])
-        pr2_b.post_comment("hansen r+", config['role_reviewer']['token'])
+        r1.get_pr(pr1_a_id.forwardport_ids[0].number)\
+            .post_comment('hansen r+', config['role_reviewer']['token'])
+        r2.get_pr(pr2_b_id.forwardport_ids[0].number) \
+            .post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
 
     with r1, r2:
-        r1.post_status('staging.b', 'success')
-        r2.post_status('staging.b', 'success')
+        for branch in 'bcd':
+            r1.post_status(f'staging.{branch}', 'success')
+            r2.post_status(f'staging.{branch}', 'success')
     env.run_crons()
 
-    assert pr1_b_id.state == 'merged'
-    assert pr2_b_id.state == 'merged'
-
-    assert len(pr2_b_id.forwardport_ids) == 1,\
-        "verify that pr2_b did not get forward ported again on merge"
-    pr2_c = r2.get_pr(pr2_b_id.forwardport_ids.number)
-    assert pr2_c.comments == [
-        seen(env, pr2_c, users),
-        (users['user'], '''\
-@{user} this PR targets c and is the last of the forward-port chain.
-
-To merge the full chain, use
-> @hansen r+
-
-More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
-'''.format_map(users)),
-    ]
+    assert not env['runbot_merge.pull_requests'].search([]) - known_set, \
+        "there should not be any PR outside of the sequences we created"
 
 def test_add_to_forward_port_conflict(env, config, make_repo, users):
     """If a PR is added to an existing forward port sequence, and it causes

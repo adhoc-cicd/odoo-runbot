@@ -241,17 +241,15 @@ class ForwardPortTasks(models.Model, Queue):
                     _logger.warning("Deleting %s:%s=%s", remote_target, ref, d.text)
                 raise RuntimeError(f"Forwardport failure: {pr.display_name} ({r.text})")
 
-            new_pr = PullRequests._from_gh(r.json())
-            _logger.info("Created forward-port PR %s", new_pr)
-            new_pr.write({
-                'batch_id': descendant.id, # should already be set correctly but...
-                'merge_method': pr.merge_method,
-                'source_id': source.id,
-                # only link to previous PR of sequence if cherrypick passed
-                # FIXME: apply parenting of siblings? Apply parenting *to* siblings?
-                'parent_id': pr.id if not conflict else False,
-                'detach_reason': "{1}\n{2}".format(*conflict).strip() if conflict else None,
-            })
+            new_pr = PullRequests._from_gh(
+                r.json(),
+                batch_id=descendant.id,
+                merge_method=pr.merge_method,
+                source_id=source.id,
+                parent_id=False if conflict else pr.id,
+                detach_reason="{1}\n{2}".format(*conflict).strip() if conflict else None
+            )
+            _logger.info("Created forward-port PR %s", new_pr.display_name)
 
             if conflict:
                 self.env.ref('runbot_merge.forwardport.failure.conflict')._send(

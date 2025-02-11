@@ -364,23 +364,21 @@ class Batch(models.Model):
                         _logger.warning("Deleting %s:%s=%s", repo.fp_remote_target, new_branch, d.text)
                 raise RuntimeError(f"Forwardport failure: {pr.display_name} ({r.text})")
 
-            new_pr = PRs._from_gh(r.json())
+            report_conflicts = has_conflicts and self.fw_policy != 'skipmerge'
+            new_pr = PRs._from_gh(
+                r.json(),
+                merge_method=pr.merge_method,
+                source_id=source.id,
+                parent_id=False if report_conflicts else pr.id,
+                detach_reason=report_conflicts and "conflicts:\n{}".format(
+                    '\n\n'.join(
+                        f"{out}\n{err}".strip()
+                        for _, out, err, _ in filter(None, conflicts.values())
+                    )
+                ),
+            )
             _logger.info("Created forward-port PR %s", new_pr)
             new_batch |= new_pr
-
-            report_conflicts = has_conflicts and self.fw_policy != 'skipmerge'
-
-            # allows PR author to close or skipci
-            new_pr.write({
-                'merge_method': pr.merge_method,
-                'source_id': source.id,
-                # only link to previous PR of sequence if cherrypick passed
-                'parent_id': pr.id if not report_conflicts else False,
-                'detach_reason': "conflicts:\n{}".format('\n\n'.join(
-                    f"{out}\n{err}".strip()
-                    for _, out, err, _ in filter(None, conflicts.values())
-                )) if report_conflicts else None,
-            })
             if report_conflicts and pr.parent_id and pr.state not in ('merged', 'closed'):
                 self.env.ref('runbot_merge.forwardport.failure.conflict')._send(
                     repository=pr.repository,
