@@ -3,6 +3,7 @@ import builtins
 import collections
 import logging
 import re
+import sys
 from collections.abc import Mapping
 from contextlib import ExitStack
 from datetime import datetime, timedelta
@@ -64,6 +65,7 @@ class Queue:
 
 class ForwardPortTasks(models.Model, Queue):
     _name = 'forwardport.batches'
+    _inherit = ['mail.thread']
     _description = 'batches which got merged and are candidates for forward-porting'
 
     limit = 10
@@ -76,6 +78,7 @@ class ForwardPortTasks(models.Model, Queue):
         ('complete', 'Complete ported batches'),
     ], required=True)
     retry_after = fields.Datetime(required=True, default='1900-01-01 01:01:01')
+    cannot_apply = fields.Boolean(compute='_compute_cannot_apply', store=True)
     retry_after_relative = fields.Char(compute="_compute_retry_after_relative")
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
@@ -92,21 +95,31 @@ class ForwardPortTasks(models.Model, Queue):
 
     def _search_domain(self):
         return super()._search_domain() + [
+            ('cannot_apply', '=', False),
             ('retry_after', '<=', fields.Datetime.to_string(fields.Datetime.now())),
         ]
 
-    @api.depends('retry_after')
+    @api.depends('retry_after', 'cannot_apply')
     def _compute_retry_after_relative(self):
         now = fields.Datetime.now()
         for t in self:
-            if t.retry_after <= now:
+            if t.cannot_apply:
+                t.retry_after_relative = "N/A"
+            elif t.retry_after <= now:
                 t.retry_after_relative = ""
             else:
                 t.retry_after_relative = format_timedelta(t.retry_after - now, locale=t.env.lang)
 
+    @api.depends('retry_after')
+    def _compute_cannot_apply(self):
+        for t in self:
+            t.cannot_apply = t.retry_after > (t.create_date + timedelta(days=1))
+
     def _on_failure(self):
         super()._on_failure()
-        self.retry_after = fields.Datetime.to_string(fields.Datetime.now() + timedelta(minutes=30))
+        _, e, _ = sys.exc_info()
+        self._message_log(body=f"Error while processing forward-port batch: {e}")
+        self.retry_after = fields.Datetime.now() + timedelta(hours=1)
 
     def _process_item(self):
         batch = self.batch_id
