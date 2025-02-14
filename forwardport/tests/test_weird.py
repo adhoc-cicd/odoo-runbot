@@ -1284,3 +1284,77 @@ def test_duplicate_manual_port(env, config, make_repo, users):
         'source': 'fp',
     })
     env.run_crons()
+
+@pytest.mark.parametrize('triggered', range(4))
+@pytest.mark.parametrize('kind', ['merge', 'fp'])
+def test_resume_manual_detached(env, config, make_repo, users, triggered, kind):
+    """In case of detached interrupted forward ports, check where and how they
+    can be manually resumed from.
+
+    Turns out it always works, not sure why on the mergebot there seemingly
+    have been cases where creating a batch from the source batch with source=fp
+    sometimes didn't work...
+    """
+    # region setup
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
+    with prod:
+        prod.make_commits('a', Commit('c', tree={'x': '0'}), ref="heads/abranch")
+        pr1 = prod.make_pr(target='a', head='abranch')
+        prod.post_status('abranch', 'success')
+        pr1.post_comment('hansen r+', config['role_reviewer']['token'])
+
+        prod.make_commits('a', Commit('cc', tree={'y': '0'}), ref="heads/bbranch")
+        pr2 = prod.make_pr(target='a', head='bbranch')
+        prod.post_status('bbranch', 'success')
+        pr2.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    pr1_a_id, pr2_a_id, pr1_b_id, pr2_b_id = prs = env['runbot_merge.pull_requests'].search([], order='number')
+    assert pr1_b_id.source_id == pr1_a_id
+    assert pr2_b_id.source_id == pr2_a_id
+    pr1_b_id.write({
+        'parent_id': False,
+        'detach_reason': 'whatever',
+    })
+
+    proj = env['runbot_merge.project'].search([])
+    proj.write({
+        'branch_ids': [
+            (1, pr1_b_id.target.id, {'active': False}),
+        ]
+    })
+    fw_batches = env['forwardport.batches'].search([])
+    assert len(fw_batches) == 2
+    fw_batches.unlink()
+
+    env.run_crons()
+    assert env['runbot_merge.pull_requests'].search_count([]) == 4
+    # endregion
+
+    # At this point we have two merged source PRs to A and two forward ports
+    # to the now disabled B, one detached and the other not.
+    #
+    # The port was interrupted because reasons even though the branch being
+    # disabled should have forced ports to C (it's happened live for a few
+    # reasons we have added guards for, still we want to handle recovery if a
+    # new issue sneaks in).
+    #
+    # We want to see if creating fw batches by hand puts us back into gear.
+    pr = prs[triggered]
+    env['forwardport.batches'].create({'source': kind, 'batch_id': pr.id})
+    env.run_crons()
+
+    new_prs = env['runbot_merge.pull_requests'].search([], order='number')[len(prs):]
+    assert len(new_prs) == 1, f"{pr.display_name} ({kind}) => no port (expected one)"
+    assert new_prs.source_id == (pr.source_id or pr)
+
+    env['forwardport.batches'].create([
+        {'source': 'merge', 'batch_id': pr.id},
+        {'source': 'fp', 'batch_id': pr.id},
+    ])
+    env.run_crons()
+    assert not env['runbot_merge.pull_requests'].search([], order='number')[len(prs)+1:]
