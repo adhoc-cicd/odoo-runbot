@@ -1243,3 +1243,44 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         ))
     ], "the final forward port should be reminded as before"
     # endregion
+
+def test_duplicate_manual_port(env, config, make_repo, users):
+    """Most forward port checks are performed before creating the fw batch, but
+    the FW batch processor should still avoid creating duplicate forward ports.
+    """
+    # region setup
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
+    with prod:
+        prod.make_commits('a', Commit('c', tree={'x': '0'}), ref="heads/abranch")
+        pr_a = prod.make_pr(target='a', head='abranch')
+        prod.post_status('abranch', 'success')
+        pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    PullRequests = env['runbot_merge.pull_requests']
+    pr_a_id = to_pr(env, pr_a)
+    for branch in 'bc':
+        child_id = PullRequests.search([
+            ('target.name', '=', branch),
+            ('source_id', '=', pr_a_id.id),
+        ])
+        with prod:
+            prod.post_status(child_id.head, 'success')
+        env.run_crons()
+    _, pr_b_id, _ = PullRequests.search([], order='number')
+
+    env['forwardport.batches'].create({
+        'batch_id': pr_b_id.batch_id.id,
+        'source': 'complete',
+        'pr_id': pr_b_id.id,
+    })
+
+    env['forwardport.batches'].create({
+        'batch_id': pr_b_id.batch_id.id,
+        'source': 'fp',
+    })
+    env.run_crons()

@@ -173,6 +173,7 @@ class ForwardPortTasks(models.Model, Queue):
 
     def _complete_batches(self):
         source = pr = self.pr_id
+        source_id = pr.source_id or pr
         if not pr:
             _logger.warning(
                 "Unable to complete descendants of %s (%s): no new PR",
@@ -204,10 +205,10 @@ class ForwardPortTasks(models.Model, Queue):
                 return
 
             if PullRequests.search_count([
-                ('source_id', '=', source.id),
+                ('source_id', '=', source_id.id),
                 ('target', '=', target.id),
                 ('state', 'not in', ('closed', 'merged')),
-            ]):
+            ], limit=1):
                 _logger.warning("Will not forward-port %s: already ported", pr.display_name)
                 return
 
@@ -258,7 +259,7 @@ class ForwardPortTasks(models.Model, Queue):
                 r.json(),
                 batch_id=descendant.id,
                 merge_method=pr.merge_method,
-                source_id=source.id,
+                source_id=source_id.id,
                 parent_id=False if conflict else pr.id,
                 detach_reason="{1}\n{2}".format(*conflict).strip() if conflict else None
             )
