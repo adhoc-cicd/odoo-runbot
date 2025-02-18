@@ -59,11 +59,12 @@ class Dashboard(MergebotDashboard):
             if reviewers:
                 partner_filter.append([(f'source_id.reviewed_by{suffix}', '=', arg)])
 
+        now = datetime.datetime.now()
         outstanding = PullRequests.search([
             ('source_id', '!=', False),
             ('blocked', '!=', False),
             ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
-            ('create_date', '<', datetime.datetime.now() - DEFAULT_DELTA),
+            ('create_date', '<', now - DEFAULT_DELTA),
             *(partner_filter and expression.OR(partner_filter)),
         ])
 
@@ -71,7 +72,7 @@ class Dashboard(MergebotDashboard):
         outstanding_per_author = collections.Counter()
         outstanding_per_reviewer = collections.Counter()
         outstandings = []
-        for source in outstanding.mapped('source_id').sorted('merge_date'):
+        for source in outstanding.mapped('source_id').sorted(lambda s: s.merge_date or now):
             prs = source.forwardport_ids.filtered(lambda p: p.state not in ['merged', 'closed'])
             outstandings.append({
                 'source': source,
