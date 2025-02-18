@@ -21,6 +21,7 @@
         'models/project_freeze/views.xml',
         'models/staging_cancel/views.xml',
         'models/backport/views.xml',
+        'models/ir_cron/views.xml',
     ],
     'assets': {
        'web._assets_primary_variables': [

@@ -1,7 +1,9 @@
-from . import mail_thread
 from . import ir_actions
+from . import ir_cron
 from . import ir_ui_view
+from . import mail_thread
 from . import res_partner
+
 from . import project
 from . import pull_requests
 from . import batch
