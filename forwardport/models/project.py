@@ -544,9 +544,9 @@ stderr:
                 # after 6 months, start sending emails
                 if age > datetime.timedelta(weeks=26):
                     if author := source.author.email:
-                        emails[author] |= prs
+                        emails[author] = emails[author].union(*prs)
                     if reviewer := source.reviewed_by.email:
-                        emails[reviewer] |= prs
+                        emails[reviewer] = emails[reviewer].union(*prs)
                 self.env.ref('runbot_merge.forwardport.reminder')._send(
                     repository=pr.repository,
                     pull_request=pr.number,
