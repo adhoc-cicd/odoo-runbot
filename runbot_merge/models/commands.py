@@ -31,6 +31,9 @@ def normalize(it: Iterator[str]) -> Iterator[str]:
         match t:
             case 'r':
                 yield 'review'
+            case 'rplush':
+                yield 'review'
+                yield '+'
             case 'r-':
                 yield 'review'
                 yield '-'
