@@ -6,6 +6,7 @@ overhead, or FBI backdoors oh wait forget about that last one.
 """
 from __future__ import annotations
 
+import collections
 import contextlib
 import logging
 import pathlib
@@ -14,6 +15,7 @@ import subprocess
 import tarfile
 import tempfile
 from dataclasses import dataclass
+from datetime import timedelta
 from email import message_from_string, policy
 from email.utils import parseaddr
 from typing import Union
@@ -241,24 +243,42 @@ class Patch(models.Model):
 
     def _apply_patches(self, target: Branch) -> bool:
         patches = self.search([('target', '=', target.id)], order='id asc')
-        if not patches:
+        selected = len(patches)
+        if not selected:
             return True
 
-        commits = {}
+        commits = collections.defaultdict(set)
         repos = {}
         for p in patches:
-            repos[p.repository] = git.get_local(p.repository).check(True)
-            commits.setdefault(p.repository, set())
+            if p.repository not in repos:
+                repos[p.repository] = git.get_local(p.repository).check(True)
             if p.commit:
-                commits[p.repository].add(p.commit)
+                commits[p.repository].add(p)
+
+        for repo, ps in commits.items():
+            r = repos[repo].check(False)
+            remote = git.source_url(repo)
+            if r.fetch(
+                remote,
+                f"+refs/heads/{target.name}:refs/heads/{target.name}",
+                *(p.commit for p in ps),
+                no_tags=True
+            ).returncode:
+                r.fetch(remote, f"+refs/heads/{target.name}:refs/heads/{target.name}", no_tags=True)
+                for p in ps:
+                    if r.fetch(remote, p.commit, no_tags=True).returncode:
+                        patches -= p
+                        p.message_post(body=f"Unable to apply patch: commit {p.commit} not found.")
+        # if some of the commits are not available (yet) schedule a new staging
+        # in case this is a low traffic period (so there might not be staging
+        # triggers every other minute
+        if len(patches) < selected:
+            self.env.ref('runbot_merge.staging_cron')._trigger(fields.Datetime.now() + timedelta(minutes=30))
 
         for patch in patches:
             patch.active = False
             r = repos[patch.repository]
             remote = git.source_url(patch.repository)
-            if (cs := commits.pop(patch.repository, None)) is not None:
-                # first time encountering a repo, fetch the branch and commits
-                r.fetch(remote, f"+refs/heads/{target.name}:refs/heads/{target.name}", *cs, no_tags=True)
 
             _logger.info(
                 "Applying %s to %r (in %s)",

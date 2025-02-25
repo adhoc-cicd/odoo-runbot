@@ -193,6 +193,38 @@ CONFLICT (content): Merge conflict in b<br></p>\
         (False, '', [('active', 1, 0)]),
     ]
 
+def test_apply_not_found(env, project, repo, users):
+    """ Github can take some time to propagate commits through the network,
+    resulting in patches getting not found and killing the application.
+
+    Commits which are not found should just be skipped (and trigger a new
+    staging?).
+    """
+    with repo:
+        [c] = repo.make_commits("x", Commit("c", tree={"b": "2"}), ref="heads/abranch")
+        repo.delete_ref('heads/abranch')
+
+    p1 = env['runbot_merge.patch'].create({
+        'target': project.branch_ids.id,
+        'repository': project.repo_ids.id,
+        'commit': c,
+    })
+    # simulate commit which hasn't propagated yet
+    p2 = env['runbot_merge.patch'].create({
+        'target': project.branch_ids.id,
+        'repository': project.repo_ids.id,
+        'commit': "0123456789012345678901234567890123456789",
+    })
+
+    env.run_crons()
+
+    assert not p1.active
+    assert p2.active
+    assert p2.message_ids.mapped('body')[::-1] == [
+        "<p>Unstaged direct-application patch created</p>",
+        "<p>Unable to apply patch: commit 0123456789012345678901234567890123456789 not found.</p>",
+    ]
+
 def test_apply_udiff(env, project, repo, users):
     p = env['runbot_merge.patch'].create({
         'target': project.branch_ids.id,
