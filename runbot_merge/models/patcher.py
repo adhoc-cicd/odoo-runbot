@@ -308,8 +308,7 @@ class Patch(models.Model):
 
     def _apply_commit(self, r: git.Repo) -> str:
         r = r.check(True).stdout().with_config(encoding="utf-8")
-        # TODO: maybe use git-rev-list instead?
-        sha = r.show('--no-patch', '--pretty=%H', self.target.name).stdout.strip()
+        sha = r.rev_list('-1', self.target.name).stdout.strip()
         target = r.show('--no-patch', '--pretty=%an%n%ae%n%ai%n%cn%n%ce%n%ci%n%B', self.commit)
         # retrieve metadata of cherrypicked commit
         author_name, author_email, author_date, committer_name, committer_email, committer_date, body =\
@@ -368,7 +367,7 @@ class Patch(models.Model):
             new_tree = r.update_tree(self.target.name, patched)
 
         sha = r.stdout().with_config(encoding='utf-8')\
-            .show('--no-patch', '--pretty=%H', self.target.name)\
+            .rev_list('-1', self.target.name)\
             .stdout.strip()
         return r.commit_tree(
             tree=new_tree,
