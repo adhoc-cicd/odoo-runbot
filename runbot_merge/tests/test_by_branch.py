@@ -14,7 +14,7 @@ def _setup_statuses(project, repo):
             'branch_filter': [('id', '=', project.branch_ids.id)]
         }),
         (0, 0, {'context': 'pr', 'stagings': False}),
-        (0, 0, {'context': 'staging', 'prs': False}),
+        (0, 0, {'context': 'staging', 'prs': 'ignored'}),
     ]
 
 @pytest.mark.usefixtures('_setup_statuses')

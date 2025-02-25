@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import time
+import typing
 from enum import IntEnum
 from functools import reduce
 from operator import itemgetter
@@ -42,8 +43,32 @@ class StatusConfiguration(models.Model):
     context = fields.Char(required=True)
     repo_id = fields.Many2one('runbot_merge.repository', required=True, ondelete='cascade')
     branch_filter = fields.Char(help="branches this status applies to")
-    prs = fields.Boolean(string="Applies to pull requests", default=True)
+    prs = fields.Selection([
+        ('required', 'Required'),
+        ('optional', 'Optional'),
+        ('ignored', 'Ignored'),
+    ],
+        default='required',
+        required=True,
+        string="Applies to pull requests",
+        column_type=enum(_name, 'prs'),
+    )
     stagings = fields.Boolean(string="Applies to stagings", default=True)
+
+    def _auto_init(self):
+        for field in self._fields.values():
+            if not isinstance(field, fields.Selection) or field.column_type[0] == 'varchar':
+                continue
+
+            t = field.column_type[1]
+            self.env.cr.execute("SELECT 1 FROM pg_type WHERE typname = %s", [t])
+            if not self.env.cr.rowcount:
+                self.env.cr.execute(
+                    f"CREATE TYPE {t} AS ENUM %s",
+                    [tuple(s for s, _ in field.selection)]
+                )
+
+        super()._auto_init()
 
     def _for_branch(self, branch):
         assert branch._name == 'runbot_merge.branch', \
@@ -55,11 +80,15 @@ class StatusConfiguration(models.Model):
     def _for_pr(self, pr):
         assert pr._name == 'runbot_merge.pull_requests', \
             f'Expected pull request, got {pr}'
-        return self._for_branch(pr.target).filtered('prs')
+        return self._for_branch(pr.target).filtered(lambda p: p.prs != 'ignored')
     def _for_staging(self, staging):
         assert staging._name == 'runbot_merge.stagings', \
             f'Expected staging, got {staging}'
         return self._for_branch(staging.target).filtered('stagings')
+
+    @property
+    def _default_pr_state(self) -> typing.Literal['pending', 'success']:
+        return 'pending' if self.prs == 'required' else 'success'
 
 class Repository(models.Model):
     _name = _description = 'runbot_merge.repository'
@@ -1243,7 +1272,7 @@ For your own safety I've ignored *everything in your entire comment*.
 
             st = 'success'
             for ci in pr.repository.status_ids._for_pr(pr):
-                v = (statuses.get(ci.context) or {'state': 'pending'})['state']
+                v = (statuses.get(ci.context) or {'state': ci._default_pr_state})['state']
                 if v in ('error', 'failure'):
                     st = 'failure'
                     break
