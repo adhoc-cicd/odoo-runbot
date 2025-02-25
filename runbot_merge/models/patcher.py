@@ -266,11 +266,19 @@ class Patch(models.Model):
                 patch.target.display_name,
                 patch.repository.name,
             )
+
+            info = r.check(True).stdout().with_config(encoding="utf-8")
+            t = info.show('--no-patch', '--pretty=%T', patch.target.name).stdout.strip()
             try:
                 if patch.commit:
                     c = patch._apply_commit(r)
                 else:
                     c = patch._apply_patch(r)
+                if t == info.show('--no-patch', '--pretty=%T', c).stdout.strip():
+                    raise PatchFailure(
+                        "Patch results in an empty commit when applied, "
+                        "it is likely a duplicate of a merged commit."
+                    )
             except Exception as e:
                 if isinstance(e, PatchFailure):
                     subject = "Unable to apply patch"

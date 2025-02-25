@@ -135,6 +135,26 @@ def test_apply_commit(env, project, repo, users):
     assert HEAD.author['email'] == "dustsuckinghose@example.org"
     assert not p.active
 
+    # try to apply a dupe version
+    p = env['runbot_merge.patch'].create({
+        'target': project.branch_ids.id,
+        'repository': project.repo_ids.id,
+        'commit': c,
+    })
+
+    env.run_crons()
+
+    # the patch should have been rejected since it leads to an empty commit
+    NEW_HEAD = repo.commit('master')
+    assert NEW_HEAD.id == HEAD.id
+    assert not p.active
+    assert p.message_ids.mapped('body')[::-1] == [
+        '<p>Unstaged direct-application patch created</p>',
+        "<p>Patch results in an empty commit when applied, "
+        "it is likely a duplicate of a merged commit.</p>",
+        "",  # empty message alongside active tracking value
+    ]
+
 def test_commit_conflict(env, project, repo, users):
     with repo:
         [c] = repo.make_commits("x", Commit("x", tree={"b": "3"}))
