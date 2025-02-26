@@ -1,3 +1,38 @@
+:root {
+  // dunno why it's not global
+  --bg-opacity: 1;
+
+  --success-rgb: 223, 240, 216;
+  --danger-rgb: 242, 222, 222;
+  --warning-rgb: 252, 248, 227;
+  --info-rgb: 217, 237, 247;
+}
+// reset the table bg rules so they use the generic (rg)bg variables
+@each $category, $whatever in $table-variants {
+  .table-#{$category} {
+    $c: rgba(var(--#{$category}-rgb), var(--bg-opacity));
+    --table-bg: #{$c};
+    --table-accent-bg: transparent;
+    &.table-active {
+      --table-bg: hsl(from #{$c} h s calc(l - 5));
+    }
+  }
+}
+
+// adjust because shift-color($primary, $alert-color-scale) is fucking awful
+.alert-primary {
+  // use string interpolation otherwise sass blows up because it tries to apply
+  // its own hsl function, and that does not support relative colors
+  background-color: #{'hsl(from var(--primary) h calc(s - 16) calc(l + 60))'};
+}
+.bg-unmerged {
+  background-color: color-mix(
+    in lab,
+    rgba(var(--info-rgb), var(--bg-opacity)),
+    rgba(var(--success-rgb), var(--bg-opacity))
+  );
+}
+
 html {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   color: #666666;
@@ -19,27 +54,6 @@ h1, h2, h3, h4, h5, h6{
   color: inherit;
 }
 
-// FIXME: move these over to the primary variables or some shit, but bg-info is completely fucked
-$mergebot-colors: ("success": #dff0d8, "danger": #f2dede, "warning": #fcf8e3, "info": #d9edf7);
-@each $category, $color in $mergebot-colors {
-  .bg-#{$category} {
-    background-color: $color !important;
-  }
-  .table-#{$category} {
-    --table-bg: #{$color};
-    --table-accent-bg: transparent;
-    &.table-active {
-      // TODO: make that a runtime operation
-      --table-bg: #{scale-color($color, $lightness: -5%)};
-    }
-  }
-}
-.alert-primary {
-  background-color: #d7eaeb !important;
-}
-.bg-unmerged {
-  background-color: #dcefe8 !important
-}
 
 .list-inline {
   margin-bottom: 10px;
