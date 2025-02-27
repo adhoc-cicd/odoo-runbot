@@ -402,15 +402,19 @@ def render_full_table(pr, branches, repos, batches):
                         if not pr.batch_id.skipchecks:
                             statuses = json.loads(pr.statuses_full)
                             for ci in pr.repository.status_ids._for_pr(pr):
-                                st = (statuses.get(ci.context.strip()) or {'state': 'pending'})['state']
+                                if (status := statuses.get(ci.context.strip())) is None:
+                                    if ci.prs != 'required':
+                                        continue
+                                    status = {'state': 'pending'}
                                 color = foreground
-                                if st in ('error', 'failure'):
-                                    color = error
-                                    box = boxes[False]
-                                elif st == 'success':
-                                    box = boxes[True]
-                                else:
-                                    box = boxes[None]
+                                match status['state']:
+                                    case 'error' | 'failure':
+                                        color = error
+                                        box = boxes[False]
+                                    case 'success':
+                                        box = boxes[True]
+                                    case _:
+                                        box = boxes[None]
 
                                 lines.append(Line([
                                     Text(" - ", font, color),
