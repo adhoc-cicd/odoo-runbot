@@ -22,6 +22,7 @@ import werkzeug
 from markupsafe import Markup
 
 from odoo import api, fields, models, tools, Command
+from odoo.addons.base.controllers.rpc import OdooMarshaller
 from odoo.exceptions import AccessError, UserError
 from odoo.osv import expression
 from odoo.tools import html_escape, Reverse, mute_logger
@@ -32,6 +33,10 @@ from .. import github, exceptions, controllers, utils
 
 _logger = logging.getLogger(__name__)
 FOOTER = '\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port\n'
+
+
+Status = collections.namedtuple('Status', 'repository context state url')
+OdooMarshaller.dispatch[Status] = OdooMarshaller.dump_array
 
 
 class StatusConfiguration(models.Model):
@@ -2171,7 +2176,7 @@ class Stagings(models.Model):
 
             commits = st.head_ids.with_prefetch(all_heads._prefetch_ids)
             st.statuses = [
-                (
+                Status(
                     heads[commit].name,
                     context,
                     status.get('state') or 'pending',
