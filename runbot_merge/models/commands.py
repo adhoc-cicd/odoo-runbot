@@ -1,9 +1,7 @@
 import enum
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from functools import partial
-from operator import contains
-from typing import Callable, List, Optional, Union, Tuple
+from typing import List, Optional, Union, Tuple
 
 
 def tokenize(line: str) -> Iterator[str]:

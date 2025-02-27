@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-import secrets
 from collections import defaultdict
 from collections.abc import Iterator
 

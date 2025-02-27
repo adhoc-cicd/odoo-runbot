@@ -13,7 +13,6 @@ it up), ...
 """
 from __future__ import annotations
 
-import builtins
 import collections
 import datetime
 import itertools

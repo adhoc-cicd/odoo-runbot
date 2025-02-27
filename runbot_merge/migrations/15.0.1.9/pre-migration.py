@@ -1,6 +1,3 @@
-from psycopg2.extras import execute_values
-
-
 def migrate(cr, version):
     # Drop all legacy style "previous failures": this is for PRs
     # several years old so almost certainly long irrelevant, and it

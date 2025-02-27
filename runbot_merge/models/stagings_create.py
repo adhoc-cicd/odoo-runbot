@@ -1,5 +1,4 @@
 import base64
-import collections
 import contextlib
 import dataclasses
 import io

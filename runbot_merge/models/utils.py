@@ -1,7 +1,7 @@
 import logging
 from contextvars import ContextVar
 from typing import Tuple
-from xml.etree.ElementTree import Element, tostring
+from xml.etree.ElementTree import Element
 
 import markdown.inlinepatterns
 import markdown.treeprocessors

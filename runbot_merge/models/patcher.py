@@ -20,7 +20,7 @@ from email import message_from_string, policy
 from email.utils import parseaddr
 from typing import Union
 
-from odoo import models, fields, api, Command
+from odoo import models, fields, api
 from odoo.exceptions import ValidationError
 from odoo.tools.mail import plaintext2html
 

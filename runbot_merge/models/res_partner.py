@@ -1,7 +1,7 @@
 import random
 from email.utils import parseaddr
 
-from markupsafe import Markup, escape
+from markupsafe import Markup
 
 import odoo.tools
 from odoo import fields, models, tools, api, Command
