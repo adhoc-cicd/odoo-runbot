@@ -95,6 +95,7 @@ class StatusConfiguration(models.Model):
     def _default_pr_state(self) -> typing.Literal['pending', 'success']:
         return 'pending' if self.prs == 'required' else 'success'
 
+
 class Repository(models.Model):
     _name = _description = 'runbot_merge.repository'
     _order = 'sequence, id'
@@ -1260,11 +1261,22 @@ For your own safety I've ignored *everything in your entire comment*.
             self.env.add_to_compute(self._fields['state'], descendants_or_self)
         super().modified(fnames, create, before)
 
+    applicable_statuses = fields.Many2many(
+        'runbot_merge.repository.status',
+        store=False,
+        search='_search_applicable_statuses',
+    )
+    def _search_applicable_statuses(self, operator, value):
+        return [
+            ('merge_date', '=', False), ('closed', '=', False),
+            ('repository.status_ids', operator, value),
+        ]
+
     @api.depends(
         'statuses', 'overrides', 'target', 'parent_id', 'skipchecks',
-        'repository.status_ids.context',
-        'repository.status_ids.branch_filter',
-        'repository.status_ids.prs',
+        'applicable_statuses.context',
+        'applicable_statuses.branch_filter',
+        'applicable_statuses.prs',
     )
     def _compute_statuses(self):
         for pr in self:
@@ -2250,12 +2262,24 @@ class Stagings(models.Model):
 
         return True
 
+    applicable_statuses = fields.Many2many(
+        'runbot_merge.repository.status',
+        store=False,
+        search='_search_applicable_statuses',
+    )
+    def _search_applicable_statuses(self, operator, value):
+        return [
+            ('active', '=', True),
+            ('heads.repository_id.status_ids', operator, value),
+        ]
+
     @api.depends(
         "statuses_cache",
         "target",
         "heads.commit_id.sha",
-        "heads.repository_id.status_ids.branch_filter",
-        "heads.repository_id.status_ids.context",
+        "applicable_statuses.branch_filter",
+        "applicable_statuses.context",
+        "applicable_statuses.stagings",
     )
     def _compute_state(self):
         for staging in self:
