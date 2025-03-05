@@ -1,0 +1,93 @@
+// resets a bunch of CSS rules to either `inherit` color or use CSS variables,
+// such that they properly follow CSS variables
+:root {
+  color-scheme: light dark;
+
+  // dunno why it's not global
+  --bg-opacity: 1;
+
+  @each $color, $value in $theme-colors {
+    --#{$variable-prefix}#{$color}-bg-rgb: #{to-rgb(hsl(
+      hue($value),
+      max(saturation($value) - 16%, 0%),
+      90%,
+    ))};
+  }
+  // the adjusted danger is too saturated and a bit odd, rather than bother with
+  // adjusting the conversion just set the value we want
+  --danger-bg-rgb: 242, 222, 222;
+}
+@function invlight($value) {
+  @return hsl(hue($value), saturation($value), 100% - lightness($value));
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    $ibc: invlight($body-color);
+    --body-color: #{$ibc};
+    --body-color-rgb: #{to-rgb($ibc)};
+    $ibg: invlight($body-bg);
+    --body-bg: #{$ibg};
+    --body-bg-rgb: #{to-rgb($ibg)};
+
+    @each $color, $value in $theme-colors {
+      $value: invlight($value);
+
+      --#{$color}: #{$value};
+      --#{$color}-rgb: #{to_rgb($value)};
+      --#{$color}-bg-rgb: #{to-rgb(hsl(
+        hue($value),
+        min(saturation($value) + 16%, 100%),
+        10%,
+      ))};
+    }
+    --danger-bg-rgb: 41, 10, 10;
+  }
+}
+body {
+  font-family: inherit;
+}
+h1, h2, h3, h4, h5, h6{
+  color: inherit;
+  margin-top: 0.66em !important;
+  margin-bottom: 0.33em !important;
+}
+
+.bg-success, .bg-info, .bg-warning, .bg-danger, .bg-gray-lighter,
+.table-success, .table-info, .table-warning, .table-danger {
+  color: inherit;
+}
+
+.dropdown-item, .dropdown-menu, .dropdown-menu a {
+  color: inherit;
+}
+
+.navbar-light {
+  background-color: var(--body-bg);
+  color: inherit;
+}
+
+.navbar-light .navbar-nav .nav-link {
+  color: inherit;
+}
+
+// reset the table and alert bg rules so they use the generic (rg)bg variables
+@each $category, $_ in $theme-colors {
+  .alert-#{$category} {
+    // inline alert-variant as it can't handle ~~the truth~~ CSS variables
+    background-color: rgba(var(--#{$category}-bg-rgb), var(--bg-opacity));
+    border-color: color-mix(in rgb, var(--#{$category}-rgb) #{$alert-border-scale}, var(--light));
+    --alert-text: color-mix(in rgb, var(--#{$category}-rgb) #{$alert-color-scale}, var(--dark));
+    color: var(--alert-text);
+    .alert-link {
+      color: color-mix(in rgb, var(--alert-text) 20%, var(--dark));
+    }
+  }
+  .table-#{$category} {
+    $c: rgba(var(--#{$category}-bg-rgb), var(--bg-opacity));
+    --table-bg: #{$c};
+    --table-accent-bg: transparent;
+    &.table-active {
+      --table-bg: hsl(from #{$c} h s calc(l - 5));
+    }
+  }
+}

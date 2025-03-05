@@ -1,3 +1,4 @@
+$variable-prefix: '';
 // colors from the original mergebot
 $primary: #276e72;
 $secondary: #685563;
@@ -5,6 +6,8 @@ $success: #28a745;
 $info: #17a2b8;
 $warning: #ffc107;
 $danger: #dc3545;
+$light: #f8f9fa;
+$dark: #212529;
 $theme-colors: (
   "primary":    $primary,
   "secondary":  $secondary,
@@ -12,7 +15,15 @@ $theme-colors: (
   "info":       $info,
   "warning":    $warning,
   "danger":     $danger,
+  // gray-100
+  "light":      $light,
+  // gray-900
+  "dark":       $dark,
 );
+// gray-600
+$body-color: #6c757d;
+// same as table-bg and alert-bg
+$bg-scale: -80%;
 
 $o-system-fonts: sans-serif;
 
@@ -46,3 +57,20 @@ $h5-font-size:                $font-size-base;
 $h6-font-size:                $font-size-base;
 
 $border-radius: 0.25rem;
+
+// The builtins utilities-bg system is completely stupid because we do a bunch
+// of transformations on the theme-color, then we ignore them all because we
+// just reference the `--#{$category}-rgb` css variables.
+//
+// Update rgba-css-var to reference target-suffixed vars (e.g. -bg, -text) but
+// fallback to the un-suffixed vars if necessary.
+@function rgba-css-var($identifier, $target) {
+  @return rgba(
+    var(
+      --#{$variable-prefix}#{$identifier}-#{$target}-rgb,
+      var(--#{$variable-prefix}#{$identifier}-rgb)
+    ),
+    var(--#{$variable-prefix}#{$target}-opacity)
+  );
+}
+$utilities-bg-colors: map-loop($theme-colors, rgba-css-var, "$key", "bg");

@@ -28,6 +28,7 @@
           ('prepend', 'runbot_merge/static/scss/primary_variables.scss'),
        ],
         'web.assets_frontend': [
+            'runbot_merge/static/scss/revariable.scss',
             'runbot_merge/static/scss/runbot_merge.scss',
         ],
         'web.assets_backend': [
