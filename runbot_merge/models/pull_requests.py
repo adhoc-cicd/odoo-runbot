@@ -775,7 +775,7 @@ class PullRequests(models.Model):
             (is_author or source_author) and self.reviewed_by and commands.Reject,
             (is_author or source_author) and self.error and commands.Retry,
 
-            is_author and not self.source_id and commands.FW,
+            (is_author or source_author) and commands.FW,
             is_author and commands.Limit,
             source_author and self.source_id and commands.Close,
 
