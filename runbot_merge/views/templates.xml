@@ -530,6 +530,7 @@ for branch in [*branches, branches.browse(())]:
                 'checked': done or p.status == 'success',
                 'reviewed': done or bool(p.reviewed_by),
                 'attached': done or p.parent_id or not p.source_id,
+                'merge_date': p.merge_date or '',
             })
         state = None
         for i, s in zip(range(2, -1, -1), ['danger', 'success', 'warning']):
@@ -607,9 +608,10 @@ action = batches
                             that's not always the case
                             -->
                             <span t-foreach="ps['prs']" t-as="p"
-                                  t-att-title="p['label']"
+                                  t-att-title="p['label'] + (p['merge_date'] and (f' at ' + str(p['merge_date'])))"
                                   t-att-class="'closed' if p['closed'] else None">
                                 <a t-attf-href="/{{repo.name}}/pull/{{p['number']}}">#<t t-out="p['number']"/></a>
+                                <sup t-if="p['merge_date'] and request.session.debug" t-out="p['merge_date']"/>
                                 <a t-attf-class="fa fa-brands fa-github"
                                    title="Open on Github"
                                    t-att-href="p['github_url']"
