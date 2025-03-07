@@ -249,12 +249,7 @@ def staging_setup(
         source = git.get_local(repo)
         source.fetch(
             git.source_url(repo),
-            # a full refspec is necessary to ensure we actually fetch the ref
-            # (not just the commit it points to) and update it.
-            # `git fetch $remote $branch` seems to work locally, but it might
-            # be hooked only to "proper" remote-tracking branches
-            # (in `refs/remotes`), it doesn't seem to work here
-            f'+refs/heads/{target.name}:refs/heads/{target.name}',
+            head,
             *(pr.head for pr in by_repo.get(repo, [])),
             no_tags=True,
         )

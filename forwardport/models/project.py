@@ -331,11 +331,14 @@ class PullRequests(models.Model):
             "Forward-porting" if forward else "Back-porting",
             self.display_name, root.display_name, target_branch.name
         )
-        fetch = source.with_config(stdout=subprocess.PIPE, stderr=subprocess.STDOUT).fetch()
-        logger.info("Updated cache repo %s:\n%s", source._directory, fetch.stdout.decode())
 
         head_fetch = source.with_config(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False) \
-            .fetch(git.source_url(self.repository), root.head)
+            .fetch(
+                git.source_url(self.repository),
+                f"refs/heads/{target_branch.name}:refs/heads/{target_branch.name}",
+                root.head,
+                no_tags=True,
+            )
         if head_fetch.returncode:
             raise ForwardPortError(
                 f"During forward port of {self.display_name}, unable to find "

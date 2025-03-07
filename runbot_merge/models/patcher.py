@@ -263,7 +263,7 @@ class Patch(models.Model):
                 remote,
                 f"+refs/heads/{target.name}:refs/heads/{target.name}",
                 *(p.commit for p in ps),
-                no_tags=True
+                no_tags=True,
             ).returncode:
                 r.fetch(remote, f"+refs/heads/{target.name}:refs/heads/{target.name}", no_tags=True)
                 for p in ps:
