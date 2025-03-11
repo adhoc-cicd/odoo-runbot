@@ -15,10 +15,9 @@ from dateutil import relativedelta
 
 from odoo import api, fields, models
 from odoo.addons.runbot_merge import git
-from odoo.addons.runbot_merge.github import GH
 
 # how long a merged PR survives
-MERGE_AGE = relativedelta.relativedelta(weeks=2)
+MERGE_AGE = relativedelta.relativedelta(weeks=1)
 FOOTER = '\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port\n'
 
 _logger = logging.getLogger(__name__)
@@ -379,7 +378,7 @@ class DeleteBranches(models.Model, Queue):
     _name = 'forwardport.branch_remover'
     _description = "Removes branches of merged PRs"
 
-    pr_id = fields.Many2one('runbot_merge.pull_requests')
+    pr_id = fields.Many2one('runbot_merge.pull_requests', index=True)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -389,7 +388,11 @@ class DeleteBranches(models.Model, Queue):
     def _search_domain(self):
         cutoff = getattr(builtins, 'forwardport_merged_before', None) \
              or fields.Datetime.to_string(datetime.now() - MERGE_AGE)
-        return [('pr_id.merge_date', '<', cutoff)]
+        return [
+            '|', ('pr_id.merge_date', '<', cutoff),
+                 '&', ('pr_id.closed', '=', True),
+                      ('pr_id.write_date', '<', cutoff),
+        ]
 
     def _process_item(self):
         _deleter.info(
@@ -398,8 +401,8 @@ class DeleteBranches(models.Model, Queue):
             self.pr_id.label
         )
 
-        if self.pr_id.state != 'merged':
-            _deleter.info('✘ PR is not "merged" (got %s)', self.pr_id.state)
+        if self.pr_id.state not in ('merged', 'closed'):
+            _deleter.info('✘ PR is active (%s)', self.pr_id.state)
             return
 
         repository = self.pr_id.repository
@@ -414,34 +417,17 @@ class DeleteBranches(models.Model, Queue):
             _deleter.info('✘ PR owner != FP target owner (%s)', repo_owner)
             return # probably don't have access to arbitrary repos
 
-        github = GH(token=repository.project_id.fp_github_token, repo=fp_remote)
-        refurl = 'git/refs/heads/' + branch
-        ref = github('get', refurl, check=False)
-        if ref.status_code != 200:
-            _deleter.info("✘ branch already deleted (%s)", ref.json())
-            return
-
-        ref = ref.json()
-        if isinstance(ref, list):
+        r = git.get_local(repository).check(False).push(
+            git.fw_url(repository),
+            '--delete', branch,
+            f'--force-with-lease={branch}:{self.pr_id.head}',
+        )
+        if r.returncode:
             _deleter.info(
-                "✘ got a fuzzy match (%s), branch probably deleted",
-                ', '.join(r['ref'] for r in ref)
-            )
-            return
-
-        if ref['object']['sha'] != self.pr_id.head:
-            _deleter.info(
-                "✘ branch %s head mismatch, expected %s, got %s",
+                '✘ failed to delete branch %s of PR %s:\n%s',
                 self.pr_id.label,
-                self.pr_id.head,
-                ref['object']['sha']
+                self.pr_id.display_name,
+                r.stderr.decode(),
             )
-            return
-
-        r = github('delete', refurl, check=False)
-        assert r.status_code == 204, \
-            "Tried to delete branch %s of %s, got %s" % (
-                branch, self.pr_id.display_name,
-                r.json()
-            )
-        _deleter.info('✔ deleted branch %s of PR %s', self.pr_id.label, self.pr_id.display_name)
+        else:
+            _deleter.info('✔ deleted branch %s of PR %s', self.pr_id.label, self.pr_id.display_name)

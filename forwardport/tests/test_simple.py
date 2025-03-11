@@ -1105,7 +1105,8 @@ class TestBranchDeletion:
 
         # check that the branches still exist
         assert other.get_ref('heads/abranch') == pr_heads[0]
-        assert other.get_ref('heads/bbranch') == pr_heads[1]
+        with pytest.raises(AssertionError, match="Not Found"):
+            other.get_ref('heads/bbranch')
         assert other.get_ref('heads/cbranch') == pr_heads[2]
         assert other.get_ref('heads/dbranch') == pr_heads[3]
 

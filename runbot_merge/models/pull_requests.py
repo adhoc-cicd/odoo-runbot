@@ -1499,14 +1499,20 @@ For your own safety I've ignored *everything in your entire comment*.
                 if merge_method not in (False, 'rebase-ff') and pr.message != vals['message']:
                     pr.unstage("merge message updated")
 
+        # FIXME: remove condition once mergebot and forwardbot modules are merged
+        remover = self.env.get('forwardport.branch_remover')
         match vals.get('closed'):
             case True if not self.closed:
                 vals['reviewed_by'] = False
+                if remover is not None:
+                    remover.create([{'pr_id': self.id}])
             case False if self.closed and not self.batch_id:
                 vals['batch_id'] = self._get_batch(
                     target=vals.get('target') or self.target.id,
                     label=vals.get('label') or self.label,
                 )
+                if remover is not None:
+                    remover.search([('pr_id', '=', self.id)]).unlink()
         w = super().write(vals)
 
         newhead = vals.get('head')
