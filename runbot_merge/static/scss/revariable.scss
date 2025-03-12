@@ -1,6 +1,6 @@
 // resets a bunch of CSS rules to either `inherit` color or use CSS variables,
 // such that they properly follow CSS variables
-:root {
+:root, :root.light {
   color-scheme: light dark;
 
   // dunno why it's not global
@@ -17,11 +17,11 @@
   // adjusting the conversion just set the value we want
   --danger-bg-rgb: 242, 222, 222;
 }
+
 @function invlight($value) {
   @return hsl(hue($value), saturation($value), 100% - lightness($value));
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+@mixin darkrules {
     $ibc: invlight($body-color);
     --body-color: #{$ibc};
     --body-color-rgb: #{to-rgb($ibc)};
@@ -41,8 +41,17 @@
       ))};
     }
     --danger-bg-rgb: 41, 10, 10;
+}
+
+:root.dark {
+  @include darkrules;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    @include darkrules;
   }
 }
+
 body {
   font-family: inherit;
 }

@@ -640,4 +640,20 @@ action = batches
             </tbody>
         </table>
     </template>
+    <template id="theme-script" inherit_id="website.layout">
+        <xpath expr="//head" position="inside">
+            <script type="text/javascript"
+                    src="/runbot_merge/static/src/js/runbot_merge.js"
+                    async="async"/>
+        </xpath>
+    </template>
+    <template id="theme-toggle" inherit_id="website.placeholder_header_call_to_action">
+        <xpath expr="." position="inside">
+            <div class="btn-group btn-group-toggle theme-toggle">
+                <button class="btn btn-outline-secondary fa fa-sun-o"/>
+                <button class="btn btn-outline-secondary fa fa-moon-o"/>
+                <button class="btn btn-outline-secondary fa fa-ban active"/>
+            </div>
+        </xpath>
+    </template>
 </odoo>
