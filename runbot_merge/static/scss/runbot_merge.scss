@@ -1,3 +1,11 @@
+:root {
+  --border-color: color-mix(
+    in oklch,
+    var(--body-color) 30%,
+    var(--body-bg)
+  )
+}
+
 .bg-unmerged {
   background-color: color-mix(
     in lab,
@@ -37,7 +45,7 @@ html {
     padding: 0.1em 0.1em 0.1em 0.5em;
 
     &:not(:last-child) {
-      border-right: 1px solid lightgray;
+      border-right: 1px solid var(--border-color);
     }
   }
   .batch {
@@ -47,7 +55,7 @@ html {
     text-overflow: ellipsis;
 
     &:not(:last-child) {
-      border-bottom: 1px solid lightgray;
+      border-bottom: 1px solid var(--border-color);
     }
   }
 
