@@ -5,6 +5,8 @@
 
   // dunno why it's not global
   --bg-opacity: 1;
+  --link-color: var(--primary);
+  --link-hover-color: color-mix(in oklch, var(--link-color), var(--dark));
 
   @each $color, $value in $theme-colors {
     --#{$variable-prefix}#{$color}-bg-rgb: #{to-rgb(hsl(

@@ -27,8 +27,9 @@ $bg-scale: -80%;
 
 $o-system-fonts: sans-serif;
 
-// mostly revets a bunch of shit from the default odoo theming
-$link-color: $primary;
+// mostly reverts a bunch of shit from the default odoo theming
+$link-color: var(--link-color);
+$link-hover-color: var(--link-hover-color);
 $o-community-color: $primary;
 $o-enterprise-color: $primary;
 
