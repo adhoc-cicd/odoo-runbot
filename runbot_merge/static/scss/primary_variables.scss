@@ -64,13 +64,25 @@ $border-radius: 0.25rem;
 //
 // Update rgba-css-var to reference target-suffixed vars (e.g. -bg, -text) but
 // fallback to the un-suffixed vars if necessary.
+//
+// Affects utilities-text-color, which affects $utilities[color]([values]),
+//    which is then used to define the `.text-#{$category}` in
+//    boostrap/scss/mixin/_utilities.scss
+// note: can use (map|deep)-merge to update $utilities maybe?
 @function rgba-css-var($identifier, $target) {
   @return rgba(
     var(
       --#{$variable-prefix}#{$identifier}-#{$target}-rgb,
       var(--#{$variable-prefix}#{$identifier}-rgb)
     ),
-    var(--#{$variable-prefix}#{$target}-opacity)
+    var(--#{$variable-prefix}#{$target}-opacity, 1)
   );
 }
 $utilities-bg-colors: map-loop($theme-colors, rgba-css-var, "$key", "bg");
+// nuke text-emphasis-variant because it resets the text colors in
+//    bootstrap_review_frontend (though might not matter much...)
+@mixin text-emphasis-variant($parent, $color) {
+  #{$parent} {
+    --ignore: 1;
+  }
+}
