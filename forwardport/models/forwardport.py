@@ -22,39 +22,36 @@ FOOTER = '\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 
 _logger = logging.getLogger(__name__)
 
-class Queue:
-    __slots__ = ()
-    limit = 100
+PROCESS_LIMIT = 10
+class Queue(models.BaseModel):
+    _name = 'forwardport.queue'
+    _description = "Common cron behaviour for queue-type models attached to crons"
+    sequence = fields.Integer(default=0)
 
     def _process_item(self):
         raise NotImplementedError
 
     def _process(self):
-        skip = 0
-        from_clause, where_clause, params = self._search(self._search_domain(), order='create_date, id', limit=1).get_sql()
-        for _ in range(self.limit):
-            self.env.cr.execute(f"""
-                SELECT id FROM {from_clause}
-                WHERE {where_clause or "true"}
-                ORDER BY create_date, id
-                LIMIT 1 OFFSET %s
-                FOR UPDATE SKIP LOCKED
-            """, [*params, skip])
-            b = self.browse(self.env.cr.fetchone())
-            if not b:
-                return
+        item = self.search([
+            ('sequence', '<', PROCESS_LIMIT),
+            *self._search_domain(),
+        ], order='sequence, create_date, id', limit=1)
+        if not item:
+            return
 
-            try:
-                with sentry_sdk.start_span(description=self._name):
-                    b._process_item()
-                b.unlink()
-                self.env.cr.commit()
-            except Exception:
-                _logger.exception("Error while processing %s, skipping", b)
-                self.env.cr.rollback()
-                if b._on_failure():
-                    skip += 1
-                self.env.cr.commit()
+        try:
+            with sentry_sdk.start_span(description=self._name):
+                item._process_item()
+            item.unlink()
+        except Exception:
+            _logger.exception(
+                "Error while processing %s (attempt %d / %d)",
+                item, item.sequence + 1, PROCESS_LIMIT
+            )
+            self.env.cr.rollback()
+            if item._on_failure():
+                item.sequence += 1
+        self.env.ref(self._cron_name)._trigger()
 
     def _on_failure(self):
         return True
@@ -62,12 +59,11 @@ class Queue:
     def _search_domain(self):
         return []
 
-class ForwardPortTasks(models.Model, Queue):
+class ForwardPortTasks(models.Model):
     _name = 'forwardport.batches'
-    _inherit = ['mail.thread']
+    _inherit = ['forwardport.queue', 'mail.thread']
     _description = 'batches which got merged and are candidates for forward-porting'
-
-    limit = 10
+    _cron_name = 'forwardport.port_forward'
 
     batch_id = fields.Many2one('runbot_merge.batch', required=True, index=True)
     source = fields.Selection([
@@ -284,11 +280,14 @@ class ForwardPortTasks(models.Model, Queue):
 
             pr = new_pr
 
-class UpdateQueue(models.Model, Queue):
-    _name = 'forwardport.updates'
-    _description = 'if a forward-port PR gets updated & has followups (cherrypick succeeded) the followups need to be updated as well'
 
-    limit = 10
+Update = tuple[str, str, str]
+Updates = list[Update]
+class UpdateQueue(models.Model):
+    _name = 'forwardport.updates'
+    _inherit = ['forwardport.queue']
+    _description = 'if a forward-port PR gets updated & has followups (cherrypick succeeded) the followups need to be updated as well'
+    _cron_name = 'forwardport.updates'
 
     original_root = fields.Many2one('runbot_merge.pull_requests')
     new_root = fields.Many2one('runbot_merge.pull_requests')
@@ -303,7 +302,7 @@ class UpdateQueue(models.Model, Queue):
         sentry_sdk.set_tag("update-root", self.new_root.display_name)
         with ExitStack() as s:
             # dict[repo: [ref, old_head, new_head]
-            updates: Mapping[str, list[str, str, str]] = collections.defaultdict(list)
+            updates: Mapping[str, Updates] = collections.defaultdict[str, Updates](Updates)
             for child in self.new_root._iter_descendants():
                 self.env.cr.execute("""
                     SELECT id
@@ -374,9 +373,11 @@ class UpdateQueue(models.Model, Queue):
                 )
 
 _deleter = _logger.getChild('deleter')
-class DeleteBranches(models.Model, Queue):
+class DeleteBranches(models.Model):
     _name = 'forwardport.branch_remover'
+    _inherit = ['forwardport.queue']
     _description = "Removes branches of merged PRs"
+    _cron_name = 'forwardport.remover'
 
     pr_id = fields.Many2one('runbot_merge.pull_requests', index=True)
 
