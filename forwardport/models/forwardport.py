@@ -16,6 +16,8 @@ from dateutil import relativedelta
 from odoo import api, fields, models
 from odoo.addons.runbot_merge import git
 
+from odoo.modules.registry import Registry
+
 # how long a merged PR survives
 MERGE_AGE = relativedelta.relativedelta(weeks=1)
 FOOTER = '\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port\n'
@@ -26,7 +28,42 @@ PROCESS_LIMIT = 10
 class Queue(models.BaseModel):
     _name = 'forwardport.queue'
     _description = "Common cron behaviour for queue-type models attached to crons"
+    _cron_name: str
+
+    pool: Registry
     sequence = fields.Integer(default=0)
+
+    def init(self):
+        super().init()
+        # not sure why this triggers on abstract models...
+        if not self._abstract:
+            self.pool.post_init(self._init_cron)
+
+    def _init_cron(self):
+        cron_values = {
+            'name': self._description,
+            'state': 'code',
+            'code': "model._process()",
+            'interval_number': 12,
+            'interval_type': 'hours',
+            'numbercall': -1,
+        }
+        if c := self.env.ref(self._cron_name, raise_if_not_found=False):
+            c.write(cron_values)
+        else:
+            c = self.env['ir.cron'].create({
+                **cron_values,
+                'model_id': self.env['ir.model']._get(self._name).id,
+            })
+        self.env['ir.model.data']._update_xmlids([{
+            'xml_id': self._cron_name,
+            'record': c,
+        }])
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        self.env.ref(self._cron_name)._trigger()
+        return super().create(vals_list)
 
     def _process_item(self):
         raise NotImplementedError
@@ -62,7 +99,7 @@ class Queue(models.BaseModel):
 class ForwardPortTasks(models.Model):
     _name = 'forwardport.batches'
     _inherit = ['forwardport.queue', 'mail.thread']
-    _description = 'batches which got merged and are candidates for forward-porting'
+    _description = 'Check merged batches to forward port'
     _cron_name = 'forwardport.port_forward'
 
     batch_id = fields.Many2one('runbot_merge.batch', required=True, index=True)
@@ -77,14 +114,9 @@ class ForwardPortTasks(models.Model):
     retry_after_relative = fields.Char(compute="_compute_retry_after_relative")
     pr_id = fields.Many2one('runbot_merge.pull_requests')
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        self.env.ref('forwardport.port_forward')._trigger()
-        return super().create(vals_list)
-
     def write(self, vals):
         if retry := vals.get('retry_after'):
-            self.env.ref('forwardport.port_forward')\
+            self.env.ref(self._cron_name)\
                 ._trigger(fields.Datetime.to_datetime(retry))
         return super().write(vals)
 
@@ -286,16 +318,11 @@ Updates = list[Update]
 class UpdateQueue(models.Model):
     _name = 'forwardport.updates'
     _inherit = ['forwardport.queue']
-    _description = 'if a forward-port PR gets updated & has followups (cherrypick succeeded) the followups need to be updated as well'
+    _description = 'Update forward ports of an updated PR'
     _cron_name = 'forwardport.updates'
 
     original_root = fields.Many2one('runbot_merge.pull_requests')
     new_root = fields.Many2one('runbot_merge.pull_requests')
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        self.env.ref('forwardport.updates')._trigger()
-        return super().create(vals_list)
 
     def _process_item(self):
         previous = self.new_root
@@ -376,15 +403,10 @@ _deleter = _logger.getChild('deleter')
 class DeleteBranches(models.Model):
     _name = 'forwardport.branch_remover'
     _inherit = ['forwardport.queue']
-    _description = "Removes branches of merged PRs"
+    _description = "Removes branches of merged and closed PRs"
     _cron_name = 'forwardport.remover'
 
     pr_id = fields.Many2one('runbot_merge.pull_requests', index=True)
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        self.env.ref('forwardport.remover')._trigger(datetime.now() - MERGE_AGE)
-        return super().create(vals_list)
 
     def _search_domain(self):
         cutoff = getattr(builtins, 'forwardport_merged_before', None) \
