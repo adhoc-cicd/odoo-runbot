@@ -105,7 +105,7 @@ h1, h2, h3, h4, h5, h6{
     --table-bg: #{$c};
     --table-accent-bg: transparent;
     &.table-active {
-      --table-bg: hsl(from #{$c} h s calc(l - 5));
+      --table-bg: color-mix(in oklch, #{$c} 85%, var(--#{$category}));
     }
   }
 }
