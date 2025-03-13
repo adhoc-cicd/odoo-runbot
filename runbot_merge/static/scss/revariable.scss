@@ -27,7 +27,7 @@
     $ibc: invlight($body-color);
     --body-color: #{$ibc};
     --body-color-rgb: #{to-rgb($ibc)};
-    $ibg: invlight($body-bg);
+    $ibg: $gray-900;
     --body-bg: #{$ibg};
     --body-bg-rgb: #{to-rgb($ibg)};
 
@@ -39,10 +39,11 @@
       --#{$color}-bg-rgb: #{to-rgb(hsl(
         hue($value),
         min(saturation($value) + 16%, 100%),
-        10%,
+        15%,
       ))};
     }
-    --danger-bg-rgb: 41, 10, 10;
+    --success-bg-rgb: 17, 68, 28;
+    --danger-bg-rgb: 96, 32, 32;
 }
 
 :root.dark {
@@ -85,11 +86,18 @@ h1, h2, h3, h4, h5, h6{
   .alert-#{$category} {
     // inline alert-variant as it can't handle ~~the truth~~ CSS variables
     background-color: rgba(var(--#{$category}-bg-rgb), var(--bg-opacity));
-    border-color: color-mix(in rgb, var(--#{$category}-rgb) #{$alert-border-scale}, var(--light));
-    --alert-text: color-mix(in rgb, var(--#{$category}-rgb) #{$alert-color-scale}, var(--dark));
-    color: var(--alert-text);
-    .alert-link {
-      color: color-mix(in rgb, var(--alert-text) 20%, var(--dark));
+    border-color: color-mix(in srgb, var(--#{$category}) #{-$alert-border-scale}, var(--light));
+    color: color-mix(in srgb, var(--#{$category}) #{$alert-color-scale}, var(--dark));
+    a {
+      color: color-mix(
+        in srgb,
+        color-mix(
+          in srgb,
+          var(--#{$category}) #{$alert-color-scale},
+          var(--dark)
+        ) 80%,
+        var(--dark)
+      );
     }
   }
   .table-#{$category} {

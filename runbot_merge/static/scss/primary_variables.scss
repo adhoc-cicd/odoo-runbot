@@ -15,13 +15,11 @@ $theme-colors: (
   "info":       $info,
   "warning":    $warning,
   "danger":     $danger,
-  // gray-100
   "light":      $light,
-  // gray-900
   "dark":       $dark,
 );
-// gray-600
-$body-color: #6c757d;
+// gray-700
+$body-color: #495057;
 // same as table-bg and alert-bg
 $bg-scale: -80%;
 
