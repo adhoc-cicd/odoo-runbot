@@ -195,10 +195,18 @@
                 </t>
                 <li t-attf-class="staging {{stateclass.strip()}} {{decorationclass.strip()}}" t-att-title="title.strip() or None">
                     <ul class="list-unstyled">
-                        <li t-foreach="staging.batch_ids" t-as="batch" class="batch">
-                            <t t-esc="batch.prs[:1].label"/>
-                            <t t-foreach="batch.prs" t-as="pr">
-                                <t t-call="runbot_merge.link-pr"/>
+                        <li t-foreach="staging.batch_ids" t-as="batch"
+                            t-attf-class="batch {{'' if batch.active else 'text-decoration-line-through'}}">
+                            <t t-esc="batch.name"/>
+                            <t t-if="batch.active">
+                                <t t-foreach="batch.prs" t-as="pr">
+                                    <t t-call="runbot_merge.link-pr"/>
+                                </t>
+                            </t>
+                            <t t-else="">
+                                <t t-foreach="batch.all_prs" t-as="pr">
+                                    <t t-call="runbot_merge.link-pr"/>
+                                </t>
                             </t>
                         </li>
                     </ul>
