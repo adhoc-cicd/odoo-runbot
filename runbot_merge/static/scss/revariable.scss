@@ -68,10 +68,6 @@ h1, h2, h3, h4, h5, h6{
   color: inherit;
 }
 
-.dropdown-item, .dropdown-menu, .dropdown-menu a {
-  color: inherit;
-}
-
 .navbar-light {
   background-color: var(--body-bg);
   color: inherit;
@@ -107,5 +103,18 @@ h1, h2, h3, h4, h5, h6{
     &.table-active {
       --table-bg: color-mix(in oklch, #{$c} 85%, var(--#{$category}));
     }
+  }
+}
+
+.dropdown-menu {
+  color: var(--body-color);
+  background-color: var(--body-bg);
+}
+.dropdown-item {
+  color: color-mix(in srgb, var(--link-color) 85%, var(--light));
+  &:hover, &:focus {
+    color: color-mix(in srgb, var(--link-color), var(--dark));
+    // TODO: doesn't work for statuses (doesn't combine with .bg-{category}
+    background-color: oklch(from var(--dark) l c h / 0.1);
   }
 }
