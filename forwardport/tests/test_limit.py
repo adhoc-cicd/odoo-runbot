@@ -345,6 +345,35 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     ]
 
 
+def test_limit_multiple_fw_tasks(env, config, make_repo, users):
+    """Bit of a special case here: technically nothing prevents having multiple
+    forward port tasks in flight (the second will just fail / be cancelled), but
+    `_maybe_update_limit` assumed only one batch was possible.
+    """
+    # disable cron so we don't risk the entire thing running on us
+    env.ref('forwardport.port_forward').active = False
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
+    with prod:
+        prod.make_commits('a', Commit('c', tree={'a': '0'}), ref='heads/abranch')
+        pr = prod.make_pr(target='a', head='abranch')
+        prod.post_status('abranch', 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    fp = env['forwardport.batches'].search([])
+    assert len(fp) == 1
+    assert fp.source == 'merge'
+    fp.copy()
+    with prod:
+        pr.post_comment("hansen up to a", config['role_reviewer']['token'])
+    env.run_crons()
+
+    assert to_pr(env, pr).limit_id.name == 'a'
+
 
 @pytest.mark.parametrize("update_from", [
     pytest.param(lambda source: [('id', '=', source)], id='source'),

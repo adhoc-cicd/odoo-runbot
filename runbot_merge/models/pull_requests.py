@@ -1089,8 +1089,8 @@ For your own safety I've ignored *everything in your entire comment*.
                 with self.env.cr.savepoint():
                     self.env.cr.execute(
                         "SELECT FROM forwardport_batches "
-                        "WHERE id = %s FOR UPDATE NOWAIT",
-                        [task.id])
+                        "WHERE id = any(%s) FOR UPDATE NOWAIT",
+                        [task.ids])
             except psycopg2.errors.LockNotAvailable:
                 # row locked = port occurring and probably going to succeed,
                 # so next(real_limit) likely a done deal already
@@ -1099,7 +1099,7 @@ For your own safety I've ignored *everything in your entire comment*.
                     f"ongoing, unable to cancel, close next forward port "
                     f"when it completes.")
             else:
-                self.env.cr.execute("DELETE FROM forwardport_batches WHERE id = %s", [task.id])
+                self.env.cr.execute("DELETE FROM forwardport_batches WHERE id = any(%s)", [task.ids])
 
         if real_limit != tip.target:
             # forward porting was previously stopped at tip, and we want it to
