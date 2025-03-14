@@ -147,10 +147,10 @@ class Repo:
         )
         return Repo(to)
 
-    def get_tree(self, commit_hash: str) -> str:
-        r = self.with_config(check=True).rev_parse(f'{commit_hash}^{{tree}}')
-
-        return r.stdout.strip()
+    def get_tree(self, rev: str) -> str:
+        return self.stdout().with_config(check=True, encoding="utf-8")\
+            .rev_parse(f'{rev}^{{tree}}')\
+            .stdout.strip()
 
     def rebase(self, dest: str, commits: Sequence[PrCommit]) -> Tuple[str, Dict[str, str]]:
         """Implements rebase by hand atop plumbing so:
