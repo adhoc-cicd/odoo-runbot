@@ -341,8 +341,7 @@ class PullRequests(models.Model):
             )
         if head_fetch.returncode:
             raise ForwardPortError(
-                f"During forward port of {self.display_name}, unable to find "
-                f"expected head of {root.display_name} ({root.head})"
+                f"Git error while forward porting {self.display_name}:\n%s{head_fetch.stdout.decode()}"
             )
 
         logger.info(
