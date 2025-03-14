@@ -403,6 +403,7 @@ class Patch(models.Model):
             if read:
                 out = stack.enter_context(archiver.archive(parent, *read))
                 tf = stack.enter_context(tarfile.open(fileobj=out.stdout, mode='r|'))
+                tf.extraction_filter = getattr(tarfile, 'data_filter', None)
                 tf.extractall(tmpdir)
             patch = subprocess.run(
                 ['patch', f'-p{prefix}', '--directory', tmpdir, '--verbose'],
