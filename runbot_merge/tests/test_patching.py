@@ -184,10 +184,7 @@ def test_commit_conflict(env, project, repo, users):
         (False, '<p>Unstaged direct-application patch created</p>', []),
         (
             "Unable to apply patch",
-            """\
-<p>Auto-merging b<br>\
-CONFLICT (content): Merge conflict in b<br></p>\
-""",
+            "<pre>Auto-merging b\nCONFLICT (content): Merge conflict in b\n</pre>",
             [],
         ),
         (False, '', [('active', 1, 0)]),
@@ -222,7 +219,15 @@ def test_apply_not_found(env, project, repo, users):
     assert p2.active
     assert p2.message_ids.mapped('body')[::-1] == [
         "<p>Unstaged direct-application patch created</p>",
-        "<p>Unable to apply patch: commit 0123456789012345678901234567890123456789 not found.</p>",
+        matches('''\
+<p>Commit 0123456789012345678901234567890123456789 not found</p>
+<p>stderr:</p>
+<pre>
+error: Unable to find 0123456789012345678901234567890123456789 under $repo$
+Cannot obtain needed object 0123456789012345678901234567890123456789
+error: fetch failed.
+</pre>\
+'''),
     ]
 
 def test_apply_udiff(env, project, repo, users):

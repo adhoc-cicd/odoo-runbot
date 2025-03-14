@@ -20,6 +20,8 @@ from email import message_from_string, policy
 from email.utils import parseaddr
 from typing import Union
 
+from markupsafe import Markup
+
 from odoo import models, fields, api
 from odoo.exceptions import ValidationError
 from odoo.tools.mail import plaintext2html
@@ -242,34 +244,49 @@ class Patch(models.Model):
             if not has_files:
                 raise ValidationError("Patches should have files they patch, found none.")
 
+    def _notify(self, subject: str | None, body: str, r: subprocess.CompletedProcess[str]) -> None:
+        self.message_post(
+            subject=subject,
+            body=Markup("\n").join(filter(None, [
+                Markup("<p>{}</p>").format(body),
+                r.stdout and Markup("<p>stdout:</p>\n<pre>\n{}</pre>").format(r.stdout),
+                r.stderr and Markup("<p>stderr:</p>\n<pre>\n{}</pre>").format(r.stderr),
+            ])),
+        )
+
     def _apply_patches(self, target: Branch) -> bool:
         patches = self.search([('target', '=', target.id)], order='id asc')
         selected = len(patches)
         if not selected:
             return True
 
-        commits = collections.defaultdict(set)
-        repos = {}
-        for p in patches:
-            if p.repository not in repos:
-                repos[p.repository] = git.get_local(p.repository).check(True)
-            if p.commit:
-                commits[p.repository].add(p)
+        repo_info = {
+            r: {
+                'local': git.get_local(r).check(True).with_config(encoding="utf-8"),
+                'with_commit': self.browse(),
+                'target_head': None,
+            }
+            for r in patches.repository
+        }
+        for p in patches.filtered('commit'):
+            repo_info[p.repository]['with_commit'] |= p
 
-        for repo, ps in commits.items():
-            r = repos[repo].check(False)
+        for repo, info in repo_info.items():
+            r = info['local']
             remote = git.source_url(repo)
-            if r.fetch(
+            if r.check(False).fetch(
                 remote,
                 f"+refs/heads/{target.name}:refs/heads/{target.name}",
-                *(p.commit for p in ps),
+                *info['with_commit'].mapped('commit'),
                 no_tags=True,
             ).returncode:
                 r.fetch(remote, f"+refs/heads/{target.name}:refs/heads/{target.name}", no_tags=True)
-                for p in ps:
-                    if r.fetch(remote, p.commit, no_tags=True).returncode:
+                for p in info['with_commit']:
+                    if (res := r.check(False).fetch(remote, p.commit, no_tags=True)).returncode:
                         patches -= p
-                        p.message_post(body=f"Unable to apply patch: commit {p.commit} not found.")
+                        p._notify(None, f"Commit {p.commit} not found", res)
+            info['target_head'] = r.stdout().rev_list('-1', target.name).stdout.strip()
+
         # if some of the commits are not available (yet) schedule a new staging
         # in case this is a low traffic period (so there might not be staging
         # triggers every other minute
@@ -278,77 +295,88 @@ class Patch(models.Model):
 
         for patch in patches:
             patch.active = False
-            r = repos[patch.repository]
-            remote = git.source_url(patch.repository)
+            info = repo_info[patch.repository]
+            r = info['local']
+            sha = info['target_head']
 
             _logger.info(
-                "Applying %s to %r (in %s)",
+                "Applying %s to %s:%r (%s@%s)",
                 patch,
+                patch.repository.name,
                 patch.target.display_name,
                 patch.repository.name,
+                sha,
             )
 
-            info = r.check(True).stdout().with_config(encoding="utf-8")
-            t = info.show('--no-patch', '--pretty=%T', patch.target.name).stdout.strip()
+            # this tree should be available locally since we got `sha` from the
+            # local commit
+            t = r.get_tree(sha)
             try:
                 if patch.commit:
-                    c = patch._apply_commit(r)
+                    c = patch._apply_commit(r, sha)
                 else:
-                    c = patch._apply_patch(r)
-                if t == info.show('--no-patch', '--pretty=%T', c).stdout.strip():
-                    raise PatchFailure(
+                    c = patch._apply_patch(r, sha)
+                if t == r.get_tree(c):
+                    raise PatchFailure(Markup(
                         "Patch results in an empty commit when applied, "
                         "it is likely a duplicate of a merged commit."
-                    )
+                    ))
             except Exception as e:
                 if isinstance(e, PatchFailure):
                     subject = "Unable to apply patch"
                 else:
                     subject = "Unknown error while trying to apply patch"
                 _logger.error("%s:\n%s", subject, str(e))
-                patch.message_post(body=plaintext2html(e), subject=subject)
+                patch.message_post(
+                    subject=subject,
+                    # hack in order to get a formatted message from line 320 but
+                    # a pre from git
+                    # TODO: do better
+                    body=e.args[0] if isinstance(e.args[0], Markup) else Markup("<pre>{}</pre>").format(e),
+                )
                 continue
-            # `.` is the local "remote", so this updates target to c
-            r.fetch(".", f"{c}:{target.name}")
 
             # push patch by patch, avoids sync issues and in most cases we have 0~1 patches
             res = r.check(False).stdout()\
                 .with_config(encoding="utf-8")\
-                .push(remote, f"{target.name}:{target.name}")
+                .push(
+                    git.source_url(patch.repository),
+                    f"{c}:{target.name}",
+                    f"--force-with-lease={target.name}:{sha}",
+                )
             ## one of the repos is out of consistency, loop around to new staging?
             if res.returncode:
+                patch._notify(None, f"Unable to push result ({c})", res)
                 _logger.warning(
-                    "Unable to push result of %s\nout:\n%s\nerr:\n%s",
-                    patch.id,
-                    res.stdout,
-                    res.stderr,
+                    "Unable to push result of %s (%s)\nout:\n%s\nerr:\n%s",
+                    patch, c, res.stdout, res.stderr,
                 )
-                return False
+            else:
+                info['target_head'] = c
 
         return True
 
-    def _apply_commit(self, r: git.Repo) -> str:
+    def _apply_commit(self, r: git.Repo, parent: str) -> str:
         r = r.check(True).stdout().with_config(encoding="utf-8")
-        sha = r.rev_list('-1', self.target.name).stdout.strip()
         target = r.show('--no-patch', '--pretty=%an%n%ae%n%ai%n%cn%n%ce%n%ci%n%B', self.commit)
         # retrieve metadata of cherrypicked commit
         author_name, author_email, author_date, committer_name, committer_email, committer_date, body =\
             target.stdout.strip().split("\n", 6)
 
-        res = r.check(False).merge_tree(sha, self.commit)
+        res = r.check(False).merge_tree(parent, self.commit)
         if res.returncode:
             _conflict_info, _, informational = res.stdout.partition('\n\n')
             raise PatchFailure(informational)
 
         return r.commit_tree(
             tree=res.stdout.strip(),
-            parents=[sha],
+            parents=[parent],
             message=body.strip(),
             author=(author_name, author_email, author_date),
             committer=(committer_name, committer_email, committer_date),
         ).stdout.strip()
 
-    def _apply_patch(self, r: git.Repo) -> str:
+    def _apply_patch(self, r: git.Repo, parent: str) -> str:
         p = self._parse_patch()
         def reader(_r, f):
             return pathlib.Path(tmpdir, f).read_text(encoding="utf-8")
@@ -364,7 +392,7 @@ class Patch(models.Model):
                 read.add(m['file_from'])
             patched[m['file_to']] = reader
 
-        archiver = r.stdout(True)
+        archiver = r.stdout(True).with_config(encoding=None)
         # if the parent is checked then we can't get rid of the kwarg and popen doesn't support it
         archiver._config.pop('check', None)
         archiver.runner = subprocess.Popen
@@ -373,7 +401,7 @@ class Patch(models.Model):
             # if there's no file to *update*, `archive` will extract the entire
             # tree which is unnecessary
             if read:
-                out = stack.enter_context(archiver.archive(self.target.name, *read))
+                out = stack.enter_context(archiver.archive(parent, *read))
                 tf = stack.enter_context(tarfile.open(fileobj=out.stdout, mode='r|'))
                 tf.extractall(tmpdir)
             patch = subprocess.run(
@@ -387,12 +415,9 @@ class Patch(models.Model):
                 raise PatchFailure("\n---------\n".join(filter(None, [p.patch, patch.stdout.strip(), patch.stderr.strip()])))
             new_tree = r.update_tree(self.target.name, patched)
 
-        sha = r.stdout().with_config(encoding='utf-8')\
-            .rev_list('-1', self.target.name)\
-            .stdout.strip()
         return r.commit_tree(
             tree=new_tree,
-            parents=[sha],
+            parents=[parent],
             message=p.message,
             author=p.author,
             committer=p.committer,
