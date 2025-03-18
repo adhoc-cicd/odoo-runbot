@@ -10,6 +10,7 @@ import re
 from collections.abc import Mapping
 from difflib import Differ
 from operator import itemgetter
+from subprocess import CalledProcessError
 from typing import Dict, Union, Optional, Literal, Callable, Iterator, Tuple, List, TypeAlias
 
 from werkzeug.datastructures import Headers
@@ -243,18 +244,25 @@ def staging_setup(
     staging_state = {}
     original_heads = {}
     for repo in target.project_id.repo_ids.having_branch(target):
-        gh = repo.github()
-        head = gh.head(target.name)
+        source = git.get_local(repo).stdout().with_config(text=True)
+        pr_heads = {pr.head for pr in by_repo.get(repo, [])}
+        try:
+            head = next(
+                h for h in source.fetch_heads(
+                    repo,
+                    f"refs/heads/{target.name}",
+                    *pr_heads,
+                ) if h not in pr_heads
+            )
+        except CalledProcessError as e:
+            raise exceptions.MergeError(f"Failed to fetch {target.name} from {repo.name}: {e.stderr}") from None
+        except StopIteration:
+            raise exceptions.MergeError(f"Failed to resolve {target.name} from {repo.name}") from None
+        except Exception as e:
+            raise exceptions.MergeError(f"Failed to fetch {target.name} from {repo.name}: {e}") from None
 
-        source = git.get_local(repo)
-        source.fetch(
-            git.source_url(repo),
-            head,
-            *(pr.head for pr in by_repo.get(repo, [])),
-            no_tags=True,
-        )
         original_heads[repo] = head
-        staging_state[repo] = StagingSlice(gh=gh, head=head, repo=source.stdout().with_config(text=True, check=False))
+        staging_state[repo] = StagingSlice(gh=repo.github(), head=head, repo=source.check(False))
 
     return original_heads, staging_state
 
