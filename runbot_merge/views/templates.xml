@@ -482,7 +482,7 @@ if not genealogy:
     # in which case it's just a sole soul drifting in the deep dark
     branches = pr.target
     repos = pr.repository
-elif all(p.state in ('merged', 'closed') for p in genealogy[-1].all_prs):
+elif all(p.closed for p in genealogy[-1].all_prs):
     branches = (project.branch_ids & targets)[::-1]
 elif pr.batch_id.fw_policy == 'no':
     branches = pr.target

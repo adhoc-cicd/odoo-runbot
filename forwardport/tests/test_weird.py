@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
+import time
+import urllib.request
+import webbrowser
 from datetime import datetime, timedelta
 
 import pytest
 
-from utils import seen, Commit, to_pr, make_basic, prevent_unstaging
+from utils import seen, Commit, to_pr, make_basic, prevent_unstaging, pr_page
 
 
 def test_no_token(env, config, make_repo):
@@ -1358,3 +1361,44 @@ def test_resume_manual_detached(env, config, make_repo, users, triggered, kind):
     ])
     env.run_crons()
     assert not env['runbot_merge.pull_requests'].search([], order='number')[len(prs)+1:]
+
+
+@pytest.mark.expect_log_errors(reason="push conflict triggers a logged exception")
+def test_table_on_fp_interruption(env, config, make_repo, users, page, port):
+    """If the forwardport fails for some reason in this case simulated by having
+    an existing branch with the same name, which can and has happened), the
+    genealogy table should still display rows up to the limit.
+    """
+    prod, other = make_basic(env, config, make_repo, statuses='default')
+
+    with prod:
+        prod.make_commits('a', Commit('c', tree={'x': '0'}), ref="heads/abranch")
+        pr = prod.make_pr(target='a', head='abranch')
+        prod.post_status('abranch', 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    pr_id = to_pr(env, pr)
+    with other:
+        # fp pattern is `{target.name}-{source.target.name}-{batch.id}-fw`
+        other.make_commits(
+            None,
+            Commit('com-blocked', tree={'f': '1'}),
+            ref="heads/b-abranch-%d-fw" % pr_id.batch_id.id,
+        )
+
+    doc = pr_page(page, pr)
+    [tbody] = doc.cssselect(".table-bordered tbody")
+    assert len(tbody) == 3, "branches should be a, b, c"
+
+    env.run_crons()
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    assert env['runbot_merge.pull_requests'].search_count([]) == 1,\
+        "should not have been able to create the forward port"
+    assert env['forwardport.batches'].search_count([]) == 1,\
+        "fw batch should still be enqueued"
+
+    doc = pr_page(page, pr)
+    [tbody] = doc.cssselect(".table-bordered tbody")
+    assert len(tbody) == 3, "branches should still be a, b, c"
