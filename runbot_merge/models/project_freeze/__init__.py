@@ -2,14 +2,16 @@ import enum
 import itertools
 import json
 import logging
+import re
 from collections import Counter
+from subprocess import CalledProcessError
 from typing import Dict
 
 from markupsafe import Markup
 
 from odoo import models, fields, api, Command
 from odoo.exceptions import UserError
-from odoo.tools import drop_view_if_exists
+from odoo.tools import drop_view_if_exists, groupby
 
 from ... import git
 from ..pull_requests import Repository
@@ -216,27 +218,28 @@ class FreezeWizard(models.Model):
             r: git.get_local(r).check(False)
             for r in self.project_id.repo_ids
         }
-        for repo, copy in repos.items():
-            copy.fetch(git.source_url(repo), '+refs/heads/*:refs/heads/*', no_tags=True)
+
+        master_heads: Dict[Repository, str] = {}
         all_prs = self.release_pr_ids.pr_id | self.bump_pr_ids.pr_id
-        for pr in all_prs:
-            repos[pr.repository].fetch(
-                git.source_url(pr.repository),
-                pr.head,
-            )
+        for repo, prs in groupby(all_prs, lambda p: p.repository):
+            heads = {p.head for p in prs}
+            try:
+                master_heads[repo] = next(
+                    head for head in repos[repo].fetch_heads(
+                        repo,
+                        f"refs/heads/{master_name}",
+                        *heads,
+                    ) if head not in heads
+                )
+            except CalledProcessError as e:
+                raise UserError(f"Unable to fetch commits for {repo.name}\n{e.stdout}\n{e.stderr}") from None
 
         # prep new branch (via tmp refs) on every repo
         rel_heads: Dict[Repository, str] = {}
-        # store for master heads as odds are high the bump pr(s) will be on the
-        # same repo as one of the release PRs
-        prevs: Dict[Repository, str] = {}
         for rel in self.release_pr_ids:
             repo_id = rel.repository_id
             gh = gh_sessions[repo_id]
-            try:
-                prev = prevs[repo_id] = gh.head(master_name)
-            except Exception as e:
-                raise UserError(f"Unable to resolve branch {master_name} of repository {repo_id.name} to a commit.") from e
+            prev = master_heads[repo_id]
 
             try:
                 commits = gh.commits(rel.pr_id.number)
@@ -253,10 +256,7 @@ class FreezeWizard(models.Model):
             repo_id = bump.repository_id
             gh = gh_sessions[repo_id]
 
-            try:
-                prev = prevs[repo_id] = prevs.get(repo_id) or gh.head(master_name)
-            except Exception as e:
-                raise UserError(f"Unable to resolve branch {master_name} of repository {repo_id.name} to a commit.") from e
+            prev = master_heads[repo_id]
 
             try:
                 commits = gh.commits(bump.pr_id.number)
@@ -311,7 +311,7 @@ class FreezeWizard(models.Model):
                 if repos[prev_id].push(
                     '-f',
                     git.source_url(prev_id),
-                    f'{prevs[prev_id]}:refs/heads/{master_name}',
+                    f'{master_heads[prev_id]}:refs/heads/{master_name}',
                 ).returncode:
                     failures.append(prev_id.name)
             if failures:
