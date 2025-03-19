@@ -19,8 +19,10 @@ import itertools
 import json
 import logging
 import operator
+import re
 import subprocess
 import typing
+from subprocess import CalledProcessError
 
 import dateutil.relativedelta
 import requests
@@ -329,30 +331,27 @@ class PullRequests(models.Model):
         logger.info(
             "%s %s (%s) to %s",
             "Forward-porting" if forward else "Back-porting",
-            self.display_name, root.display_name, target_branch.name
-        )
-
-        head_fetch = source.with_config(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False) \
-            .fetch(
-                git.source_url(self.repository),
-                f"refs/heads/{target_branch.name}:refs/heads/{target_branch.name}",
-                root.head,
-                no_tags=True,
-            )
-        if head_fetch.returncode:
-            raise ForwardPortError(
-                f"Git error while forward porting {self.display_name}:\n%s{head_fetch.stdout.decode()}"
-            )
-
-        logger.info(
-            "Fetched head of %s (%s):\n%s",
-            root.display_name,
-            root.head,
-            head_fetch.stdout.decode()
+            self.display_name, root.display_name, target_branch.name,
         )
 
         try:
-            return None, root._cherry_pick(source, target_branch.name)
+            target_head = next(
+                c for c in source.fetch_heads(
+                    self.repository,
+                    f"refs/heads/{target_branch.name}",
+                    root.head,
+                ) if c != root.head
+            )
+        except CalledProcessError as e:
+            raise ForwardPortError(
+                f"Git error while forward porting {self.display_name}:\n{e.stdout}\n{e.stderr}"
+            ) from None
+
+
+        logger.info("Fetched head of %s (%s)", root.display_name, root.head)
+
+        try:
+            return None, root._cherry_pick(source, target_branch.name, target_head)
         except CherrypickError as e:
             h, out, err, commits = e.args
 
@@ -377,7 +376,7 @@ class PullRequests(models.Model):
 
             tree = conf.with_config(check=False).merge_tree(
                 '--merge-base', commits[0]['parents'][0]['sha'],
-                target_branch.name,
+                target_head,
                 root.head,
             ).stdout.decode().splitlines(keepends=False)[0]
             # if there was a single commit, reuse its message when committing
@@ -387,34 +386,27 @@ class PullRequests(models.Model):
             else:
                 out = utils.shorten(out, 8*1024, '[...]')
                 err = utils.shorten(err, 8*1024, '[...]')
-                msg = f"""Cherry pick of {h} failed
-
-stdout:
-{out}
-stderr:
-{err}
-"""
+                msg = f"Cherry pick of {h} failed\n\nstdout:\n{out}\nstderr:\n{err}\n"
 
             # if a file is modified by the original PR and added by the forward
             # port / conflict it's a modify/delete conflict: the file was
             # deleted in the target branch, and the update (modify) in the
             # original PR causes it to be added back
+            base = conf.remote_head(root.repository, root.target.name)
             original_modified = set(conf.diff(
                 "--diff-filter=M", "--name-only",
-                "--merge-base", root.target.name,
+                "--merge-base", base,
                 root.head,
             ).stdout.decode().splitlines(keepends=False))
             conflict_added = set(conf.diff(
                 "--diff-filter=A", "--name-only",
-                target_branch.name,
+                target_head,
                 tree,
             ).stdout.decode().splitlines(keepends=False))
             if modify_delete := (conflict_added & original_modified):
                 # rewrite the tree with conflict markers added to modify/deleted blobs
                 tree = conf.modify_delete(tree, modify_delete)
 
-            target_head = source.stdout().rev_parse(f"refs/heads/{target_branch.name}")\
-                .stdout.decode().strip()
             commit = conf.commit_tree(
                 tree=tree,
                 parents=[target_head],
@@ -428,7 +420,7 @@ stderr:
 
             return (h, out, err, [c['sha'] for c in commits]), hh
 
-    def _cherry_pick(self, repo: git.Repo, branch: Branch) -> str:
+    def _cherry_pick(self, repo: git.Repo, branch: Branch, head: str) -> str:
         """ Cherrypicks ``self`` into ``branch``
 
         :return: the HEAD of the forward-port is successful
@@ -436,9 +428,6 @@ stderr:
         """
         # <xxx>.cherrypick.<number>
         logger = _logger.getChild(str(self.id)).getChild('cherrypick')
-
-        # target's head
-        head = repo.stdout().rev_parse(f"refs/heads/{branch}").stdout.decode().strip()
 
         commits = self.commits()
         logger.info(

@@ -176,7 +176,7 @@ def test_conflict_recovery_source(env, config, make_repo, users, page):
         'f': 'c',
         'g': 'b',
         'x': matches('''\
-<<<\x3c<<< b
+<<<\x3c<<< $$
 1
 ||||||| $$
 =======
@@ -189,7 +189,7 @@ def test_conflict_recovery_source(env, config, make_repo, users, page):
         'g': 'a',
         'h': 'a',
         'x': matches('''\
-<<<\x3c<<< c
+<<<\x3c<<< $$
 2
 ||||||| $$
 =======
@@ -251,7 +251,7 @@ def test_conflict_recovery_manual(env, config, make_repo, users, page):
         'f': 'c',
         'g': 'b',
         'x': matches('''\
-<<<\x3c<<< b
+<<<\x3c<<< $$
 1
 ||||||| $$
 =======
@@ -264,7 +264,7 @@ def test_conflict_recovery_manual(env, config, make_repo, users, page):
         'g': 'a',
         'h': 'a',
         'x': matches('''\
-<<<\x3c<<< c
+<<<\x3c<<< $$
 1
 ||||||| $$
 =======

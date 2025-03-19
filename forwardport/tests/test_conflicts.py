@@ -517,7 +517,7 @@ def test_multiple_commits_different_authorship(env, config, make_repo, users, ro
         "author set to the bot but an empty email"
     assert get(c.committer) == (bot, '')
 
-    assert prod.read_tree(c)['g'] == matches('''<<<\x3c<<< b
+    assert prod.read_tree(c)['g'] == matches('''<<<\x3c<<< $$
 b
 ||||||| $$
 =======

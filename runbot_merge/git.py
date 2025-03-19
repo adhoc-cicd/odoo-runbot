@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import dataclasses
 import itertools
 import logging
 import os
 import pathlib
+import re
 import resource
 import stat
 import subprocess
@@ -146,6 +149,54 @@ class Repo:
             self._directory, to,
         )
         return Repo(to)
+
+    def fetch_heads(self, repo, *specs) -> Iterator[str]:
+        """Fetches the heads of all the specified revisions, and returns their
+        oids.
+        """
+        r = self.stdout().with_config(check=True, encoding="utf-8").fetch(
+            # as its name does not indicate, retrieves all relevant objects but
+            # stops short of updating local refs, so
+            # `fetch --dry-run refs/heads/master` will resolve and retrieve the
+            # head of that branch on the specified remote, but not touch the
+            # local master
+            '--dry-run',
+            # parseable output (see below), returns info even when nothing happened
+            '--porcelain',
+            source_url(repo),
+            *specs,
+            no_tags=True,
+        )
+        # <flag> <old-object-id> <new-object-id> <local-reference>
+        # flag:
+        #   ` ` fast forward
+        #   `+` forced update
+        #   `-` pruned (deleted?) ref
+        #   `t` tag update
+        #   `*` new ref
+        #   `!` rejected ref / update failure
+        #   `=` same ref, did not need fetching
+        #
+        # local-reference FETCH_HEAD is always a new ref (*)
+        # up-to-date refs are only printed if `--verbose`
+        for m in re.finditer(r'^\* 0{40} ([0-9a-f]{40}) FETCH_HEAD$', r.stdout, flags=re.MULTILINE):
+            yield m[1]
+
+    def fetchone(self, repo, branch: str) -> str:
+        """Discovers, retrieves, and returns the oid of the current head of a
+        remote branch, without updating the remote-tracking branch for it.
+        """
+        return next(self.fetch_heads(repo, f"refs/heads/{branch}"))
+
+    def remote_head(self, repo, branch: str) -> str:
+        r = self.stdout().with_config(check=True, encoding="utf-8").ls_remote(
+            source_url(repo),
+            f'refs/heads/{branch}',
+        )
+        assert r.stdout.count('\n') == 1, f"expected single line, got {r.stdout}"
+        # The output is in the format: <oid> TAB <ref> LF
+        head, _ = r.stdout.split('\t', 1)
+        return head
 
     def get_tree(self, rev: str) -> str:
         return self.stdout().with_config(check=True, encoding="utf-8")\
