@@ -19,6 +19,7 @@ from typing import Optional, Union, List, Iterator, Tuple
 import psycopg2.errors
 import sentry_sdk
 import werkzeug
+import werkzeug.urls
 from markupsafe import Markup
 
 from odoo import api, fields, models, tools, Command
@@ -540,7 +541,12 @@ class PullRequests(models.Model):
         'author.github_login', 'reviewed_by.github_login',
         'source_id.author.github_login', 'source_id.reviewed_by.github_login',
     )
+    @api.depends_context('suppress_ping')
     def _compute_ping(self):
+        if self.env.context.get('suppress_ping'):
+            self.ping = ''
+            return
+
         for pr in self:
             if source := pr.source_id:
                 contacts = source.author | source.reviewed_by | pr.reviewed_by
@@ -1695,7 +1701,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 )
             template = 'runbot_merge.forwardport.failure'
             format_args = {
-                'pr': self,
+                'pr': self.with_context(suppress_ping=self.source_id.batch_id.fw_policy=='skipmerge'),
                 'commits': lines,
                 'stdout': sout,
                 'stderr': serr,
@@ -1704,7 +1710,7 @@ For your own safety I've ignored *everything in your entire comment*.
         elif any(conflicts.values()):
             template = 'runbot_merge.forwardport.linked'
             format_args = {
-                'pr': self,
+                'pr': self.with_context(suppress_ping=self.source_id.batch_id.fw_policy=='skipmerge'),
                 'siblings': ', '.join(p.display_name for p in (self.batch_id.prs - self)),
                 'footer': FOOTER,
             }

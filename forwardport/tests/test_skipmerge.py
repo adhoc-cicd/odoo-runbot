@@ -1,6 +1,8 @@
 import re
 from datetime import datetime, timedelta
 
+import pytest
+
 from utils import make_basic, Commit, to_pr, REF_PATTERN, seen, matches
 
 
@@ -314,3 +316,112 @@ def test_conflict_recovery_manual(env, config, make_repo, users, page):
         )
     env.run_crons()
     assert pr1.head == pr1_head, "since PR1 is detached the update to pr0 should not propagate"
+
+def test_suppress_ping_on_conflict(env, config, make_repo, users):
+    """The default ping-on-conflict is useful to notify the author that they
+    will need an action to resume forward porting.
+
+    However in the case of skipmerge, conflicts are pretty likely, and may be
+    multitude. As such a recap of conflicts *could* be useful but a conflict
+    notification for each one is a bit much.
+    """
+    r1, _ = make_basic(env, config, make_repo, statuses='default')
+    r2, _ = make_basic(env, config, make_repo, statuses='default')
+    with r1:
+        r1.make_commits("a", Commit("c", tree={'x': '0'}), ref="heads/hugechange")
+        # setup conflict for forward port
+        r1.make_commits("b", Commit("conflict", tree={'x': '1'}), ref="heads/b")
+        pr1_1 = r1.make_pr(target='a', title="super important change", head='hugechange')
+    with r2:
+        r2.make_commits("a", Commit("c", tree={'x': '0'}), ref="heads/hugechange")
+        pr2_1 = r2.make_pr(target='a', title="super important change", head='hugechange')
+        pr2_1.post_comment('hansen fw=skipmerge', config['role_reviewer']['token'])
+    env.run_crons()
+
+    assert env['runbot_merge.pull_requests'].search_count([]) == 6
+    pr1_1_id = to_pr(env, pr1_1)
+    pr1_2_id = env['runbot_merge.pull_requests'].search([
+        ('source_id', '=', pr1_1_id.id),
+        ('target.name', '=', 'b'),
+    ])
+    pr1_2 = r1.get_pr(pr1_2_id.number)
+    project = env['runbot_merge.project'].search([])
+    assert pr1_2.comments == [
+        seen(env, pr1_2, users),
+        (users['user'], f"""\
+cherrypicking of pull request {pr1_1_id.display_name} failed.
+
+stdout:
+```
+Auto-merging x
+CONFLICT (add/add): Merge conflict in x
+
+```
+
+Either perform the forward-port manually (and push to this branch, proceeding as usual) or close this PR (maybe?).
+
+In the former case, you may want to edit this PR message as well.
+
+:warning: after resolving this conflict, you will need to merge it via @{project.github_prefix}.
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+"""),
+    ]
+
+    pr2_1_id = to_pr(env, pr2_1)
+    pr2_2_id = env['runbot_merge.pull_requests'].search([
+        ('source_id', '=', pr2_1_id.id),
+        ('target.name', '=', 'b'),
+    ])
+    pr2_2 = r2.get_pr(pr2_2_id.number)
+    assert pr2_2.comments == [
+        seen(env, pr2_2, users),
+        (users['user'], f"""\
+while this was properly forward-ported, at least one co-dependent PR ({pr1_2_id.display_name}) did not succeed. You will need to fix it before this can be merged.
+
+Both this PR and the others will need to be approved via `@{project.github_prefix} r+` as they are all considered “in conflict”.
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+""")
+    ]
+
+
+def test_suppress_ping_on_update(env, config, make_repo, users):
+    """By default, if a PR is updated and its parent is merged, that parent gets
+    a notification. However, in the case of skipmerge such updates are more
+    likely than not, leading to unnecessary amounts of notifications. We can
+    probably consider that if someone needs skipmerge they'll be babying the
+    thing and will keep track of its state before finally getting rid of it.
+    """
+    r1, _ = make_basic(env, config, make_repo, statuses='default')
+    with r1:
+        r1.make_commits("a", Commit("c", tree={'x': '0'}), ref="heads/hugechange")
+        pr1 = r1.make_pr(target='a', title="super important change", head='hugechange')
+        pr1.post_comment('hansen fw=skipmerge', config['role_reviewer']['token'])
+    env.run_crons()
+
+    assert env['runbot_merge.pull_requests'].search_count([]) == 3
+    _pr1_id, pr2_id, _pr3_id = env['runbot_merge.pull_requests'].search([], order='number')
+
+    pr2 = r1.get_pr(pr2_id.number)
+    pr_repo, pr2_ref = pr2.branch
+    with pr_repo:
+        pr_repo.make_commits(
+            r1.commit("b").id,
+            Commit("cc", tree={'x': '1'}),
+            ref=f'heads/{pr2_ref}',
+            make=False,
+        )
+    env.run_crons()
+
+    assert pr2.comments == [
+        seen(env, pr2, users),
+        (users['user'], "This PR targets b and is part of the forward-port chain. Further PRs will be created up to c.\n\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port\n"),
+        (users['user'], "this PR was modified / updated and has become a normal PR. It must be merged directly."),
+    ]
+    assert pr1.comments == [
+        (users['reviewer'], "hansen fw=skipmerge"),
+        seen(env, pr1, users),
+        (users['user'], "Starting forward-port. Not waiting for merge to create followup forward-ports."),
+        (users['user'], f"child PR {pr2_id.display_name} was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross."),
+    ]

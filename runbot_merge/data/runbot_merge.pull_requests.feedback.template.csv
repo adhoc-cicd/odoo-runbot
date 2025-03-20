@@ -155,7 +155,7 @@ footer: some footer text"
 runbot_merge.forwardport.linked,"{pr.ping}while this was properly forward-ported, at least one co-dependent PR ({siblings}) did not succeed. You will need to fix it before this can be merged.
 
 Both this PR and the others will need to be approved via `@{pr.repository.project_id.github_prefix} r+` as they are all considered “in conflict”.
-{footer} ","Comment when a forward port succeeded but at least one sibling failed.
+{footer}","Comment when a forward port succeeded but at least one sibling failed.
 
 pr: the current pr (new)
 siblings: comma-separated list of sibling links
