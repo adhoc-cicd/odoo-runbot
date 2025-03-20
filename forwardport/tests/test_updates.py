@@ -472,3 +472,134 @@ Auto-merging h
 CONFLICT (add/add): Merge conflict in h
 ```'''),
     ]
+
+def test_wide_batch(env, config, make_repo, users) -> None:
+    """If a batch has multiple PRs, updating one of them by hand should cascade
+    the entire batch in order to keep the base branches consistent. Otherwise
+    the child of the updated PR gets re-ported on a recent version of its
+    target, and the batch gets an inconsistent batch which can cause CI failure
+    and requires updating the child's sibling, creating more detached PRs.
+    """
+    # region setup
+    r1, _ = make_basic(env, config, make_repo, statuses='default')
+    r2, _ = make_basic(env, config, make_repo, statuses='default')
+
+    # add a 4th branch
+    with r1, r2:
+        for r in [r1, r2]:
+            r.make_ref('heads/d', r.commit('c').id)
+    env['runbot_merge.project'].search([]).write({
+        'branch_ids': [(0, 0, {'name': 'd', 'sequence': 40})]
+    })
+
+    with r1:
+        r1.make_commits("a", Commit("c", tree={'x': '0'}), ref="heads/hugechange")
+        pr1_1 = r1.make_pr(target='a', title="super important change", head='hugechange')
+        pr1_1.post_comment('hansen r+', config['role_reviewer']['token'])
+        r1.post_status('hugechange', 'success')
+    with r2:
+        r2.make_commits("a", Commit("c", tree={'x': '0'}), ref="heads/hugechange")
+        pr2_1 = r2.make_pr(target='a', title="super important change", head='hugechange')
+        pr2_1.post_comment('hansen r+', config['role_reviewer']['token'])
+        r2.post_status('hugechange', 'success')
+    env.run_crons()
+
+    with r1, r2:
+        r1.post_status('staging.a', 'success')
+        r2.post_status('staging.a', 'success')
+    env.run_crons()
+
+    PullRequests = env['runbot_merge.pull_requests']
+    pr1_1_id, pr1_2_id = PullRequests.search([
+        ('repository.name', '=', r1.name),
+    ], order='number')
+    pr2_1_id, pr2_2_id = PullRequests.search([
+        ('repository.name', '=', r2.name),
+    ], order='number')
+
+    with r1, r2:
+        r1.post_status(pr1_2_id.head, 'success')
+        r2.post_status(pr2_2_id.head, 'success')
+    env.run_crons()
+
+    pr1_3_id = PullRequests.search([('target.name', '=', 'c'), ('source_id', '=', pr1_1_id.id)])
+    pr2_3_id = PullRequests.search([('target.name', '=', 'c'), ('source_id', '=', pr2_1_id.id)])
+    with r1, r2:
+        r1.post_status(pr1_3_id.head, 'success')
+        r2.post_status(pr2_3_id.head, 'success')
+    env.run_crons()
+
+    pr1_4_id = PullRequests.search([('target.name', '=', 'd'), ('source_id', '=', pr1_1_id.id)])
+    pr2_4_id = PullRequests.search([('target.name', '=', 'd'), ('source_id', '=', pr2_1_id.id)])
+    assert pr1_4_id
+    assert pr2_4_id
+    # endregion
+
+    assert r1.read_tree(r1.commit(pr1_3_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'a',
+        'x': '0',
+    }
+    assert r2.read_tree(r2.commit(pr2_3_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'a',
+        'x': '0',
+    }
+
+    # update d pr
+    pr_repo, pr_ref = r2.get_pr(pr2_4_id.number).branch
+    with pr_repo:
+        pr_repo.make_commits(
+            pr_ref,
+            Commit("add", tree={'k': 'l'}),
+            ref=f'heads/{pr_ref}',
+            make=False
+        )
+
+    # update c branches to clearly see the re-port (PR head of sibling might not
+    # change if update occurs within the same second as that's the granularity
+    # of git's timestamps)
+    with r1, r2:
+        r1.make_commits('c', Commit('bump', tree={'z': 'z'}), ref='heads/c', make=False)
+        r2.make_commits('c', Commit('bump', tree={'z': 'z'}), ref='heads/c', make=False)
+    pr1_2 = r1.get_pr(pr1_2_id.number)
+    pr_repo, pr_ref = pr1_2.branch
+    with pr_repo:
+        pr_repo.make_commits(
+            r1.commit("b").id,
+            Commit("cc", tree={'x': '1'}),
+            ref=f'heads/{pr_ref}',
+            make=False
+        )
+    env.run_crons()
+
+    assert r1.read_tree(r1.commit(pr1_3_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'a',
+        'x': '1',
+        'z': 'z',
+    }, "pr1_2 has been re-ported to r1's current version of c"
+    assert r2.read_tree(r2.commit(pr2_3_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'a',
+        'x': '0',
+        'z': 'z',
+    }, "pr2_2 has also been re-ported to r2's current version of c"
+
+    assert r1.read_tree(r1.commit(pr1_4_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'a',
+        'x': '0',
+    }, "PRs to d should not be updated as they were explicitly modified"
+    assert r2.read_tree(r2.commit(pr2_4_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'a',
+        'k': 'l',
+        'x': '0',
+    }, "PRs to d should not be updated as they were explicitly modified"

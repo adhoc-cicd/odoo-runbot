@@ -325,12 +325,29 @@ class UpdateQueue(models.Model):
     new_root = fields.Many2one('runbot_merge.pull_requests')
 
     def _process_item(self):
-        previous = self.new_root
         sentry_sdk.set_tag("update-root", self.new_root.display_name)
-        with ExitStack() as s:
-            # dict[repo: [ref, old_head, new_head]
-            updates: Mapping[str, Updates] = collections.defaultdict[str, Updates](Updates)
-            for child in self.new_root._iter_descendants():
+        # dict[repo: [ref, old_head, new_head]
+        updates: Mapping[str, Updates] = collections.defaultdict[str, Updates](Updates)
+
+        roots = self.new_root.batch_id.prs
+        previouses = dict(zip(roots, roots))
+        for batch in zip(*(
+            root._iter_descendants()
+            for root in roots
+        )):
+            if p := next(((r, c) for r, c in zip(roots, batch) if c.state in ('closed', 'merged')), None):
+                root, child = p
+                self.env.ref('runbot_merge.forwardport.updates.closed')._send(
+                    repository=child.repository,
+                    pull_request=child.number,
+                    token_field='fp_github_token',
+                    format_args={'pr': child, 'parent': root},
+                )
+                return
+
+            for root, child in zip(roots, batch):
+                original_root = self.original_root if root == self.new_root else root.root_id
+                previous = previouses[root]
                 self.env.cr.execute("""
                     SELECT id
                     FROM runbot_merge_pull_requests
@@ -341,17 +358,9 @@ class UpdateQueue(models.Model):
                     "Re-port %s from %s (changed root %s -> %s)",
                     child.display_name,
                     previous.display_name,
-                    self.original_root.display_name,
-                    self.new_root.display_name
+                    original_root.display_name,
+                    root.display_name,
                 )
-                if child.state in ('closed', 'merged'):
-                    self.env.ref('runbot_merge.forwardport.updates.closed')._send(
-                        repository=child.repository,
-                        pull_request=child.number,
-                        token_field='fp_github_token',
-                        format_args={'pr': child, 'parent': self.new_root},
-                    )
-                    return
 
                 repo = git.get_local(previous.repository)
                 conflicts, new_head = previous._create_port_branch(repo, child.target, forward=True)
@@ -389,15 +398,15 @@ class UpdateQueue(models.Model):
                 })
                 updates[child.repository].append((child.refname, old_head, new_head))
 
-                previous = child
+                previouses[root] = child
 
-            for repository, refs in updates.items():
-                # then update the child branches to the new heads
-                repo.push(
-                    *(f'--force-with-lease={ref}:{old}' for ref, old, _new in refs),
-                    git.fw_url(repository),
-                    *(f"{new}:refs/heads/{ref}" for ref, _old, new in refs)
-                )
+        for repository, refs in updates.items():
+            # then update the child branches to the new heads
+            git.get_local(repository).push(
+                *(f'--force-with-lease={ref}:{old}' for ref, old, _new in refs),
+                git.fw_url(repository),
+                *(f"{new}:refs/heads/{ref}" for ref, _old, new in refs)
+            )
 
 _deleter = _logger.getChild('deleter')
 class DeleteBranches(models.Model):
