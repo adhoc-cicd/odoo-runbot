@@ -268,14 +268,21 @@ class PullRequests(models.Model):
                     repository=p.repository,
                     pull_request=p.number,
                     token_field='fp_github_token',
-                    format_args={'pr': p},
+                    format_args={'pr': p.with_context(
+                        suppress_ping=p.source_id.batch_id.fw_policy=='skipmerge',
+                    )},
                 )
                 if parent.state not in ('closed', 'merged'):
                     self.env.ref('runbot_merge.forwardport.update.parent')._send(
                         repository=parent.repository,
                         pull_request=parent.number,
                         token_field='fp_github_token',
-                        format_args={'pr': parent, 'child': p},
+                        format_args={
+                            'pr': parent.with_context(
+                                suppress_ping=p.source_id.batch_id.fw_policy=='skipmerge',
+                            ),
+                            'child': p,
+                        },
                     )
         return r
 

@@ -410,7 +410,7 @@ class Batch(models.Model):
         # if the PR has a parent and is CI-validated, enqueue the next PR
         scheduled = self.browse(())
         for batch in self:
-            force_fw = force_fw or batch.fw_policy == 'skipmerge'
+            force_fw = force_fw or batch.source.fw_policy == 'skipmerge'
             prs = ', '.join(batch.prs.mapped('display_name'))
             _logger.info('Checking if forward-port %s (%s)', batch, prs)
             # in cas of conflict or update individual PRs will "lose" their
@@ -494,18 +494,19 @@ class Batch(models.Model):
                     for p in b.prs
                 ])
 
-        if vals.get('fw_policy') == 'skipci':
-            nonskip = self.filtered(lambda b: b.fw_policy != 'skipci')
-        else:
-            nonskip = self.browse(())
+        match vals.get('fw_policy'):
+            case 'skipmerge':
+                nonskip = self.filtered(lambda b: b.fw_policy != 'skipmerge')
+            case 'skipci':
+                nonskip = self.filtered(lambda b: b.merge_date and b.fw_policy != 'skipci')
+            case _:
+                nonskip = self.browse(())
         super().write(vals)
 
-        # if we change the policy to skip CI, schedule followups on merged
-        # batches which were not previously marked as skipping CI
+        # If we changed the fw policy to one which may trigger forward ports,
+        # do trigger those here.
         if nonskip:
-            toggled = nonskip.filtered(lambda b: b.merge_date)
-            tips = toggled.mapped(lambda b: b.genealogy_ids[-1:])
-            for tip in tips:
+            for tip in nonskip.mapped(lambda b: b.genealogy_ids[-1]):
                 tip._schedule_fp_followup()
 
         return True
