@@ -55,7 +55,6 @@ import http.client
 import itertools
 import os
 import pathlib
-import pprint
 import re
 import secrets
 import select
@@ -228,7 +227,7 @@ def rolemap(request, config):
         else:
             continue
 
-        r = _rate_limited(lambda: requests.get('https://api.github.com/user', headers={'Authorization': 'token %s' % data['token']}))
+        r = _rate_limited(lambda: requests.get('https://api.github.com/user', headers={'Authorization': f'token {data["token"]}'}))
         r.raise_for_status()
 
         user = rolemap[role] = r.json()
@@ -726,20 +725,20 @@ class Repo:
         return self.name.split('/')[0]
 
     def unsubscribe(self, token=None):
-        self._get_session(token).put('https://api.github.com/repos/{}/subscription'.format(self.name), json={
+        self._get_session(token).put(f'https://api.github.com/repos/{self.name}/subscription', json={
             'subscribed': False,
             'ignored': True,
         })
 
     def add_collaborator(self, login, token):
         # send invitation to user
-        r = check(self._session.put('https://api.github.com/repos/{}/collaborators/{}'.format(self.name, login)))
+        r = check(self._session.put(f'https://api.github.com/repos/{self.name}/collaborators/{login}'))
         # accept invitation on behalf of user
-        check(requests.patch('https://api.github.com/user/repository_invitations/{}'.format(r.json()['id']), headers={
+        check(requests.patch(f'https://api.github.com/user/repository_invitations/{r.json()["id"]}', headers={
             'Authorization': 'token ' + token
         }))
         # sanity check that user is part of collaborators
-        r = check(self._session.get('https://api.github.com/repos/{}/collaborators'.format(self.name)))
+        r = check(self._session.get(f'https://api.github.com/repos/{self.name}/collaborators'))
         assert any(login == c['login'] for c in r.json())
 
     def _get_session(self, token):
@@ -750,18 +749,18 @@ class Repo:
         return s
 
     def delete(self):
-        r = self._session.delete('https://api.github.com/repos/{}'.format(self.name))
+        r = self._session.delete(f'https://api.github.com/repos/{self.name}')
         if r.status_code != 204:
             warnings.warn("Unable to delete repository %s (HTTP %s)" % (self.name, r.status_code))
 
     def set_secret(self, secret):
         assert self.hook
         r = self._session.get(
-            'https://api.github.com/repos/{}/hooks'.format(self.name))
+            f'https://api.github.com/repos/{self.name}/hooks')
         assert 200 <= r.status_code < 300, r.text
         [hook] = r.json()
 
-        r = self._session.patch('https://api.github.com/repos/{}/hooks/{}'.format(self.name, hook['id']), json={
+        r = self._session.patch(f'https://api.github.com/repos/{self.name}/hooks/{hook["id"]}', json={
             'config': {**hook['config'], 'secret': secret},
         })
         assert 200 <= r.status_code < 300, r.text
@@ -774,7 +773,7 @@ class Repo:
         # FIXME: avoid calling get_ref on a hash & remove this code
         if re.match(r'[0-9a-f]{40}', ref):
             # just check that the commit exists
-            r = self._session.get('https://api.github.com/repos/{}/git/commits/{}'.format(self.name, ref))
+            r = self._session.get(f'https://api.github.com/repos/{self.name}/git/commits/{ref}')
             assert 200 <= r.status_code < 300, r.reason or http.client.responses[r.status_code]
             return r.json()['sha']
 
@@ -783,7 +782,7 @@ class Repo:
         if not ref.startswith('heads'):
             ref = 'heads/' + ref
 
-        r = self._session.get('https://api.github.com/repos/{}/git/ref/{}'.format(self.name, ref))
+        r = self._session.get(f'https://api.github.com/repos/{self.name}/git/ref/{ref}')
         assert 200 <= r.status_code < 300, r.reason or http.client.responses[r.status_code]
         res = r.json()
         assert res['object']['type'] == 'commit'
@@ -799,7 +798,7 @@ class Repo:
         if ref.startswith('heads/'):
             ref = 'refs/' + ref
 
-        r = self._session.get('https://api.github.com/repos/{}/commits/{}'.format(self.name, ref))
+        r = self._session.get(f'https://api.github.com/repos/{self.name}/commits/{ref}')
         assert 200 <= r.status_code < 300, r.text
 
         return self._commit_from_gh(r.json())
@@ -819,7 +818,7 @@ class Repo:
         """ read tree object from commit
         """
         r = self._session.get(
-            'https://api.github.com/repos/{}/git/trees/{}'.format(self.name, commit.tree),
+            f'https://api.github.com/repos/{self.name}/git/trees/{commit.tree}',
             params={'recursive': '1'} if recursive else None,
         )
         assert 200 <= r.status_code < 300, r.text
@@ -831,7 +830,7 @@ class Repo:
                 case 'commit':
                     tree[t['path']] = f"@{t['sha']}"
                 case 'blob':
-                    r = self._session.get('https://api.github.com/repos/{}/git/blobs/{}'.format(self.name, t['sha']))
+                    r = self._session.get(f'https://api.github.com/repos/{self.name}/git/blobs/{t["sha"]}')
                     assert 200 <= r.status_code < 300, r.text
                     tree[t['path']] = base64.b64decode(r.json()['content']).decode()
                 case 'tree' if not recursive:
@@ -842,7 +841,7 @@ class Repo:
     def make_ref(self, name, commit, force=False):
         assert self.hook
         assert name.startswith('heads/')
-        r = self._session.post('https://api.github.com/repos/{}/git/refs'.format(self.name), json={
+        r = self._session.post(f'https://api.github.com/repos/{self.name}/git/refs', json={
             'ref': 'refs/' + name,
             'sha': commit,
         })
@@ -853,7 +852,7 @@ class Repo:
 
     def update_ref(self, name, commit, force=False):
         assert self.hook
-        r = self._session.patch('https://api.github.com/repos/{}/git/refs/{}'.format(self.name, name), json={'sha': commit, 'force': force})
+        r = self._session.patch(f'https://api.github.com/repos/{self.name}/git/refs/{name}', json={'sha': commit, 'force': force})
         assert r.ok, r.text
 
     def delete_ref(self, name):
@@ -863,7 +862,7 @@ class Repo:
 
     def protect(self, branch):
         assert self.hook
-        r = self._session.put('https://api.github.com/repos/{}/branches/{}/protection'.format(self.name, branch), json={
+        r = self._session.put(f'https://api.github.com/repos/{self.name}/branches/{branch}/protection', json={
             'required_status_checks': None,
             'enforce_admins': True,
             'required_pull_request_reviews': None,
@@ -929,7 +928,7 @@ class Repo:
             if commit.committer:
                 data['committer'] = commit.committer
 
-            r = self._session.post('https://api.github.com/repos/{}/git/commits'.format(self.name), json=data)
+            r = self._session.post(f'https://api.github.com/repos/{self.name}/git/commits', json=data)
             assert r.ok, r.text
 
             hashes.append(r.json()['sha'])
@@ -969,10 +968,7 @@ class Repo:
 
     def get_pr(self, number):
         # ensure PR exists before returning it
-        self._session.head('https://api.github.com/repos/{}/pulls/{}'.format(
-            self.name,
-            number,
-        )).raise_for_status()
+        self._session.head(f'https://api.github.com/repos/{self.name}/pulls/{number}').raise_for_status()
         return PR(self, number)
 
     def make_pr(
@@ -1003,7 +999,7 @@ class Repo:
             head = ref
 
         r = self._get_session(token).post(
-            'https://api.github.com/repos/{}/pulls'.format(self.name),
+            f'https://api.github.com/repos/{self.name}/pulls',
             json={
                 'title': title,
                 'body': body,
@@ -1020,7 +1016,7 @@ class Repo:
         assert self.hook
         assert status in ('error', 'failure', 'pending', 'success')
         commit = ref if isinstance(ref, Commit) else self.commit(ref)
-        r = self._session.post('https://api.github.com/repos/{}/statuses/{}'.format(self.name, commit.id), json={
+        r = self._session.post(f'https://api.github.com/repos/{self.name}/statuses/{commit.id}', json={
             'state': status,
             'context': context,
             **kw
@@ -1033,7 +1029,7 @@ class Repo:
     def log(self, ref_or_sha):
         for page in itertools.count(1):
             r = self._session.get(
-                'https://api.github.com/repos/{}/commits'.format(self.name),
+                f'https://api.github.com/repos/{self.name}/commits',
                 params={'sha': ref_or_sha, 'page': page}
             )
             assert 200 <= r.status_code < 300, r.text
@@ -1041,7 +1037,7 @@ class Repo:
             if not r.links.get('next'):
                 return
 
-    def make_issue(self, title, *, body=None, token=None) -> None:
+    def make_issue(self, title, *, body=None, token=None) -> Issue:
         assert self.hook
 
         r = self._get_session(token).post(
@@ -1112,7 +1108,7 @@ class PR:
     def _pr(self):
         previous, caching = self._cache
         r = self.repo._session.get(
-            'https://api.github.com/repos/{}/pulls/{}'.format(self.repo.name, self.number),
+            f'https://api.github.com/repos/{self.repo.name}/pulls/{self.number}',
             headers=caching
         )
         assert r.ok, r.text
@@ -1159,7 +1155,7 @@ class PR:
 
     @property
     def comments(self):
-        r = self.repo._session.get('https://api.github.com/repos/{}/issues/{}/comments'.format(self.repo.name, self.number))
+        r = self.repo._session.get(f'https://api.github.com/repos/{self.repo.name}/issues/{self.number}/comments')
         assert 200 <= r.status_code < 300, r.text
         return [Comment(c) for c in r.json()]
 
@@ -1173,7 +1169,7 @@ class PR:
         if token:
             headers['Authorization'] = 'token %s' % token
         r = self.repo._session.post(
-            'https://api.github.com/repos/{}/issues/{}/comments'.format(self.repo.name, self.number),
+            f'https://api.github.com/repos/{self.repo.name}/issues/{self.number}/comments',
             json={'body': body},
             headers=headers,
         )
@@ -1184,9 +1180,9 @@ class PR:
         assert self.repo.hook
         headers = {}
         if token:
-            headers['Authorization'] = 'token %s' % token
+            headers['Authorization'] = f'token {token}'
         r = self.repo._session.patch(
-            'https://api.github.com/repos/{}/issues/comments/{}'.format(self.repo.name, cid),
+            f'https://api.github.com/repos/{self.repo.name}/issues/comments/{cid}',
             json={'body': body},
             headers=headers
         )
@@ -1198,7 +1194,7 @@ class PR:
         if token:
             headers['Authorization'] = 'token %s' % token
         r = self.repo._session.delete(
-            'https://api.github.com/repos/{}/issues/comments/{}'.format(self.repo.name, cid),
+            f'https://api.github.com/repos/{self.repo.name}/issues/comments/{cid}',
             headers=headers
         )
         assert r.status_code == 204, r.text
@@ -1208,7 +1204,7 @@ class PR:
         headers = {}
         if token:
             headers['Authorization'] = 'token ' + token
-        r = self.repo._session.patch('https://api.github.com/repos/{}/pulls/{}'.format(self.repo.name, self.number), json={
+        r = self.repo._session.patch(f'https://api.github.com/repos/{self.repo.name}/pulls/{self.number}', json={
             prop: value
         }, headers=headers)
         assert r.ok, r.text
@@ -1221,10 +1217,7 @@ class PR:
 
     @property
     def branch(self):
-        r = self.repo._session.get('https://api.github.com/repos/{}/pulls/{}'.format(
-            self.repo.name,
-            self.number,
-        ))
+        r = self.repo._session.get(f'https://api.github.com/repos/{self.repo.name}/pulls/{self.number}')
         assert 200 <= r.status_code < 300, r.text
         info = r.json()
 
@@ -1240,9 +1233,9 @@ class PR:
         assert self.repo.hook
         headers = {}
         if token:
-            headers['Authorization'] = 'token %s' % token
+            headers['Authorization'] = f'token {token}'
         r = self.repo._session.post(
-            'https://api.github.com/repos/{}/pulls/{}/reviews'.format(self.repo.name, self.number),
+            f'https://api.github.com/repos/{self.repo.name}/pulls/{self.number}/reviews',
             json={'body': body, 'event': state,},
             headers=headers
         )
@@ -1256,7 +1249,7 @@ class LabelsProxy(collections.abc.MutableSet):
     @property
     def _labels(self):
         pr = self._pr
-        r = pr.repo._session.get('https://api.github.com/repos/{}/issues/{}/labels'.format(pr.repo.name, pr.number))
+        r = pr.repo._session.get(f'https://api.github.com/repos/{pr.repo.name}/issues/{pr.number}/labels')
         assert r.ok, r.text
         return {label['name'] for label in r.json()}
 
@@ -1280,7 +1273,7 @@ class LabelsProxy(collections.abc.MutableSet):
     def add(self, label):
         pr = self._pr
         assert pr.repo.hook
-        r = pr.repo._session.post('https://api.github.com/repos/{}/issues/{}/labels'.format(pr.repo.name, pr.number), json={
+        r = pr.repo._session.post(f'https://api.github.com/repos/{pr.repo.name}/issues/{pr.number}/labels', json={
             'labels': [label]
         })
         assert r.ok, r.text
@@ -1288,7 +1281,7 @@ class LabelsProxy(collections.abc.MutableSet):
     def discard(self, label):
         pr = self._pr
         assert pr.repo.hook
-        r = pr.repo._session.delete('https://api.github.com/repos/{}/issues/{}/labels/{}'.format(pr.repo.name, pr.number, label))
+        r = pr.repo._session.delete(f'https://api.github.com/repos/{pr.repo.name}/issues/{pr.number}/labels/{label}')
         # discard should do nothing if the item didn't exist in the set
         assert r.ok or r.status_code == 404, r.text
 
@@ -1296,7 +1289,7 @@ class LabelsProxy(collections.abc.MutableSet):
         pr = self._pr
         assert pr.repo.hook
         # because of course that one is not provided by MutableMapping...
-        r = pr.repo._session.post('https://api.github.com/repos/{}/issues/{}/labels'.format(pr.repo.name, pr.number), json={
+        r = pr.repo._session.post(f'https://api.github.com/repos/{pr.repo.name}/issues/{pr.number}/labels', json={
             'labels': list(set(itertools.chain.from_iterable(others)))
         })
         assert r.ok, r.text
@@ -1355,7 +1348,7 @@ class Environment:
                 continue
 
             model, cron_id = self('ir.model.data', 'check_object_reference', *xid.split('.', 1))
-            assert model == 'ir.cron', "Expected {} to be a cron, got {}".format(xid, model)
+            assert model == 'ir.cron', f"Expected {xid} to be a cron, got {model}"
             cron_ids.append(cron_id)
         if cron_ids:
             self('ir.cron', 'write', cron_ids, {
@@ -1399,7 +1392,7 @@ class Model:
         return self._model == other._model and set(self._ids) == set(other._ids)
 
     def __repr__(self):
-        return "{}({})".format(self._model, ', '.join(str(id_) for id_ in self._ids))
+        return f"{self._model}({', '.join(map(str, self._ids))})"
 
     # method: (model, rebrowse)
     _conf = {
@@ -1439,7 +1432,7 @@ class Model:
 
     def __getattr__(self, fieldname):
         if fieldname in ['__dataclass_fields__', '__attrs_attrs__']:
-            raise AttributeError('%r is invalid on %s' % (fieldname, self._model))
+            raise AttributeError(f'{fieldname!r} is invalid on {self._model}')
 
         field_description = self._fields.get(fieldname)
         if field_description is None:
