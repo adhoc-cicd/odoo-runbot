@@ -425,3 +425,101 @@ def test_suppress_ping_on_update(env, config, make_repo, users):
         (users['user'], "Starting forward-port. Not waiting for merge to create followup forward-ports."),
         (users['user'], f"child PR {pr2_id.display_name} was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross."),
     ]
+
+
+def test_forwardport_resume_skipmerge(env, config, make_repo, users):
+    prod, _ = make_basic(env, config, make_repo, statuses='default')
+
+    with prod:
+        prod.make_commits("b", Commit("up", tree={'x': '1'}), ref='heads/b')
+        prod.make_commits("c", Commit("up", tree={'x': '1'}), ref='heads/c')
+
+        prod.make_commits("a", Commit("initial", tree={'x': '0'}), ref='heads/abranch')
+        pr0 = prod.make_pr(target='a', title="super important change", head='abranch')
+        prod.post_status('abranch', 'success')
+        pr0.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    pr0_id = to_pr(env, pr0)
+    assert pr0_id.state == 'merged'
+
+    pr1_id = env['runbot_merge.pull_requests'].search([('source_id', '=', pr0_id.id), ('target.name', '=', 'b')])
+    pr1 = prod.get_pr(pr1_id.number)
+    repo, ref = pr1.branch
+
+    assert repo.read_tree(repo.commit(pr1_id.head)) == {
+        'f': 'c',
+        'g': 'b',
+        'x': matches('''\
+<<<\x3c<<< $$
+1
+||||||| $$
+=======
+0
+>>>\x3e>>> $$
+'''),
+    }
+
+    assert env['runbot_merge.pull_requests'].search_count([]) == 2, "check that no forward port happened"
+    with prod, repo:
+        repo.make_commits(prod.commit("b").id, Commit("fix conflict", tree={'x': '01'}), ref=f'heads/{ref}', make=False)
+        pr1.post_comment('hansen fw=skipmerge', config['role_reviewer']['token'])
+    env.run_crons()
+    assert pr1_id.state == 'opened'
+    assert repo.read_tree(repo.commit(pr1_id.head)) == {
+        'f': 'c',
+        'g': 'b',
+        'x': '01',
+    }
+
+    pr2_id = env['runbot_merge.pull_requests'].search([('source_id', '=', pr0_id.id), ('target.name', '=', 'c')])
+    assert pr2_id, "skipmerge caused a forward port to be forced even with no statuses"
+
+    assert repo.read_tree(repo.commit(pr2_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'a',
+        'x': '01',
+    }
+
+    project = env['runbot_merge.project'].search([])
+    assert pr1.comments == [
+        seen(env, pr1, users),
+        (users['user'], f"""\
+@{users['user']} @{users['reviewer']} cherrypicking of pull request {pr0_id.display_name} failed.
+
+stdout:
+```
+Auto-merging x
+CONFLICT (add/add): Merge conflict in x
+
+```
+
+Either perform the forward-port manually (and push to this branch, proceeding as usual) or close this PR (maybe?).
+
+In the former case, you may want to edit this PR message as well.
+
+:warning: after resolving this conflict, you will need to merge it via @{project.github_prefix}.
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+"""),
+        (users['reviewer'], "hansen fw=skipmerge"),
+        (users['user'], "Forcing all forward ports."),
+    ]
+
+    pr2 = prod.get_pr(pr2_id.number)
+    assert pr2.comments == [
+        seen(env, pr2, users),
+        (users['user'], f"""\
+@{users['user']} @{users['reviewer']} this PR targets c and is the last of the forward-port chain.
+
+To merge the full chain, use
+> @{project.github_prefix} r+
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+""")
+    ]

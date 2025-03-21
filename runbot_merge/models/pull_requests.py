@@ -986,7 +986,7 @@ For your own safety I've ignored *everything in your entire comment*.
                             message = "Not waiting for CI to create followup forward-ports."
                         case commands.FW.SKIPMERGE if is_reviewer:
                             if self.source_id or self.merge_date:
-                                msg = "the source is already merged"
+                                message = "Forcing all forward ports."
                             else:
                                 message = "Not waiting for merge to create followup forward-ports."
                         case _:
@@ -1008,7 +1008,7 @@ For your own safety I've ignored *everything in your entire comment*.
                                 'source': 'merge',
                             })
 
-                        (self.source_id or self).batch_id.fw_policy = command.name.lower()
+                        self.batch_id.genealogy_ids.fw_policy = command.name.lower()
                         feedback(message=message)
 
                 case commands.Limit(branch) if is_author:
