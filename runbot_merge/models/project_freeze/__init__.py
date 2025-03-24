@@ -388,7 +388,7 @@ class FreezeWizard(models.Model):
                 'active': False,
                 'target': b.id,
                 'staging_batch_ids': [
-                    (0, 0, {'runbot_merge_batch_id': batch.id})
+                    Command.create({'runbot_merge_batch_id': batch.id})
                     for batch in self.release_pr_ids.pr_id.batch_id
                 ],
                 'heads': rel_items,
@@ -414,7 +414,7 @@ class FreezeWizard(models.Model):
                 'active': False,
                 'target': master.id,
                 'staging_batch_ids': [
-                    (0, 0, {'runbot_merge_batch_id': batch.id})
+                    Command.create({'runbot_merge_batch_id': batch.id})
                     for batch in self.bump_pr_ids.pr_id.batch_id
                 ],
                 'heads': bump_items,

@@ -19,7 +19,7 @@
            t-att-title="title.strip()"
            t-att-target="target or None"
            t-att-class="classes or None"
-        ><t t-esc="pr.display_name"/></a>
+        ><t t-out="pr.display_name"/></a>
     </template>
 
     <template id="staging-statuses" name="dropdown statuses list of stagings">
@@ -195,18 +195,10 @@
                 </t>
                 <li t-attf-class="staging {{stateclass.strip()}} {{decorationclass.strip()}}" t-att-title="title.strip() or None">
                     <ul class="list-unstyled">
-                        <li t-foreach="staging.batch_ids" t-as="batch"
-                            t-attf-class="batch {{'' if batch.active else 'text-decoration-line-through'}}">
-                            <t t-esc="batch.name"/>
-                            <t t-if="batch.active">
-                                <t t-foreach="batch.prs" t-as="pr">
-                                    <t t-call="runbot_merge.link-pr"/>
-                                </t>
-                            </t>
-                            <t t-else="">
-                                <t t-foreach="batch.all_prs" t-as="pr">
-                                    <t t-call="runbot_merge.link-pr"/>
-                                </t>
+                        <li t-foreach="staging.snapshot" t-as="batch" class="batch">
+                            <t t-out="batch['name']"/>
+                            <t t-foreach="staging.env['runbot_merge.pull_requests'].browse(batch['prs'])" t-as="pr">
+                                <t t-call="runbot_merge.link-pr"/>
                             </t>
                         </li>
                     </ul>

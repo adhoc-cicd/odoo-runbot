@@ -2,6 +2,7 @@
 without wider relevance and thus other location.
 """
 import pytest
+from lxml import html
 
 from utils import Commit, to_pr, pr_page, seen
 
@@ -199,6 +200,57 @@ Inconsistent targets:
     env.run_crons()
 
     assert env['runbot_merge.stagings'].search_count([])
+
+def test_close_pr_in_staged_batch(env, project, make_repo2, config, page):
+    """Closing a PR in a staged batch should cancel the staging.
+    """
+    repo1 = make_repo2('a')
+    repo2 = make_repo2('b')
+
+    with repo1:
+        [m1, _] = repo1.make_commits(
+            None,
+            Commit('a', tree={'a': 'a'}),
+            Commit('b', tree={'b': 'b'}),
+            ref='heads/p',
+        )
+        repo1.make_ref('heads/master', m1)
+        pr1 = repo1.make_pr(target='master', head='p')
+        repo1.post_status(pr1.head, 'success')
+        pr1.post_comment("hansen r+", config['role_reviewer']['token'])
+    with repo2:
+        [m2, _] = repo2.make_commits(
+            None,
+            Commit('a', tree={'a': 'a'}),
+            Commit('b', tree={'b': 'b'}),
+            ref='heads/p',
+        )
+        repo2.make_ref('heads/master', m2)
+        pr2 = repo2.make_pr(target='master', head='p')
+        repo2.post_status(pr2.head, 'success')
+        pr2.post_comment("hansen r+", config['role_reviewer']['token'])
+    env.run_crons(None)
+
+    pr1_id = to_pr(env, pr1)
+    pr2_id = to_pr(env, pr2)
+    assert pr1_id.staging_id
+    assert pr2_id.staging_id
+    h = html.fromstring(page('/runbot_merge'))
+    [staging] = h.cssselect(".staging")
+    assert 'bg-info' in staging.classes, "the staging should show pending"
+    [batch] = staging.cssselect('.batch')
+    assert len(batch) == 2,\
+        "the batch should show two PRs"
+
+    with repo2:
+        pr2.close()
+
+    h = html.fromstring(page('/runbot_merge'))
+    [staging] = h.cssselect(".staging")
+    assert 'bg-gray-lighter' in staging.classes, "the staging should show cancelled"
+    [batch] = staging.cssselect('.batch')
+    assert len(batch) == 2,\
+        "the batch should still show both PRs"
 
 def test_reopen_pr_in_staged_batch(env, project, make_repo2, config):
     """Reopening a closed PR from a staged batch should cancel the staging

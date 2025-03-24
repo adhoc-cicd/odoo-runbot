@@ -2163,6 +2163,7 @@ class Stagings(models.Model):
     statuses_cache = fields.Text(default='{}', required=True)
 
     issues_to_close = fields.Json(default=lambda _: [], help="list of tasks to close if this staging succeeds")
+    snapshot = fields.Json(required=True)
 
     @api.depends('staged_at', 'staging_end')
     def _compute_duration(self):
@@ -2209,6 +2210,17 @@ class Stagings(models.Model):
                 for commit in commits
                 for context, status in statuses.get(commit.sha, {}).items()
             ]
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        Batches = self.env['runbot_merge.batch']
+        for vals in vals_list:
+            vals['snapshot'] = Batches.browse(
+                attrs['runbot_merge_batch_id']
+                for cmd, _id, attrs in vals.get('staging_batch_ids', [])
+                if cmd == 0
+            ).read(['name', 'prs'])
+        return super().create(vals_list)
 
     def write(self, vals):
         if timeout := vals.get('timeout_limit'):
