@@ -194,8 +194,8 @@ class Host(models.Model):
         _logger.info('Cleaning docker images...')
         for image in docker_images():
             for tag in image.tags:
-                tag = tag.removesuffix('.future').removesuffix('.previous')
-                if tag.startswith('odoo:') and tag not in all_tags:  # what about odoo:latest
+                cleaned_tag = tag.removesuffix('.future').removesuffix('.previous')
+                if tag.startswith('odoo:') and cleaned_tag not in all_tags:  # what about odoo:latest
                     _logger.info(f"Removing tag '{tag}' since it doesn't exist anymore")
                     docker_remove(tag)
 
