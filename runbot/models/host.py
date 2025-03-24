@@ -169,13 +169,12 @@ class Host(models.Model):
                 future_identifier = None
                 if not dockerfile.in_error:
                     future_identifier = dockerfile._build(self)
-                    if future_identifier:
-                        docker_tag(future_identifier, dockerfile.image_future_tag)
                 if is_registry:
                     if future_identifier:
                         dockerfile.image_future_identifier = future_identifier
                     docker_tag(dockerfile.image_previous_identifier, dockerfile.image_previous_tag)
                     docker_tag(dockerfile.image_identifier, dockerfile.image_tag)
+                    docker_tag(dockerfile.image_future_identifier, dockerfile.image_future_tag)
                     for tag in [dockerfile.image_tag, dockerfile.image_future_tag]:
                         try:
                             docker_push(tag)  # for now, always push locally
@@ -190,6 +189,7 @@ class Host(models.Model):
                 else:
                     if future_identifier:
                         docker_tag(future_identifier, dockerfile.image_tag) # for a setup without registry
+                        docker_tag(future_identifier, dockerfile.image_future_tag)
 
         _logger.info('Cleaning docker images...')
         for image in docker_images():
