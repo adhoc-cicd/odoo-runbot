@@ -1200,7 +1200,7 @@ class PR:
         assert r.status_code == 204, r.text
 
     def _set_prop(self, prop, value, token=None):
-        assert self.repo.hook
+        assert self.repo.hook, "the repo must be hooked to perform modifications to a PR"
         headers = {}
         if token:
             headers['Authorization'] = 'token ' + token
