@@ -78,9 +78,12 @@ from urllib.parse import urlsplit, quote
 import pytest
 import requests
 
-NGROK_CLI = [
-    'ngrok', 'start', '--none', '--region', 'eu',
+collect_ignore = [
+    p.name
+    for p in pathlib.Path(__file__).parent.iterdir()
+    if p.name not in ('runbot_merge', 'forwardport')
 ]
+
 # When an operation can trigger webhooks, the test suite has to wait *some time*
 # in the hope that the webhook(s) will have been dispatched by the end as github
 # provides no real webhook feedback (e.g. an event stream).
