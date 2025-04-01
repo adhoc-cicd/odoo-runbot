@@ -603,3 +603,51 @@ def test_wide_batch(env, config, make_repo, users) -> None:
         'k': 'l',
         'x': '0',
     }, "PRs to d should not be updated as they were explicitly modified"
+
+def test_descendant_squash(env, config, make_repo, users) -> None:
+    repo, _ = make_basic(env, config, make_repo, statuses='default')
+    with repo:
+        [c] = repo.make_commits('a', Commit('c', tree={'a': '1'}), ref='heads/abranch')
+        pr = repo.make_pr(target='a', head='abranch')
+        repo.post_status(c, 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with repo:
+        repo.post_status('staging.a', 'success')
+    env.run_crons()
+    pra_id, prb_id = env['runbot_merge.pull_requests'].search([], order='number asc')
+    assert prb_id.parent_id == pra_id
+    with repo:
+        repo.post_status(prb_id.head, 'success')
+    env.run_crons()
+
+    _, _, prc_id = env['runbot_merge.pull_requests'].search([], order='number asc')
+    assert repo.read_tree(repo.commit(prc_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'a',
+        'a': '1',
+    }
+
+    with repo:
+        # update branch c to add a new commit to it
+        repo.make_commits('c', Commit('222', tree={'h': 'b'}), ref='heads/c')
+    # update prb to trigger an update to prc
+    pr_repo, pr_ref = repo.get_pr(prb_id.number).branch
+    with pr_repo:
+        pr_repo.make_commits(
+            repo.commit('b').id,
+            Commit('fixed', tree={'a': '2'}),
+            ref=f'heads/{pr_ref}',
+            make=False
+        )
+    env.run_crons()
+
+    assert repo.read_tree(repo.commit(prc_id.head)) == {
+        'f': 'c',
+        'g': 'a',
+        'h': 'b',
+        'a': '2',
+    }
+    assert prc_id.squash

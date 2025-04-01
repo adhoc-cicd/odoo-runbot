@@ -385,8 +385,9 @@ class UpdateQueue(models.Model):
                         },
                     )
 
+                target_head = repo.fetchone(previous.repository, child.target.name)
                 commits_count = int(repo.stdout().rev_list(
-                    f'{child.target.name}..{new_head}',
+                    f'{target_head}..{new_head}',
                     count=True
                 ).stdout.decode().strip())
                 old_head = child.head
