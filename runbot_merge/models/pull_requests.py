@@ -178,8 +178,9 @@ All substitutions are tentatively applied sequentially to the input.
             ('number', '=', number),
         ])
         if pr_id:
+            set_squash = pr['commits'] == 1
             if squash:
-                pr_id.squash = pr['commits'] == 1
+                pr_id.squash = set_squash
                 return
 
             sync = controllers.handle_pr(self.env, {
@@ -204,6 +205,8 @@ All substitutions are tentatively applied sequentially to the input.
                     'pull_request': pr,
                     'sender': {'login': self.project_id.github_prefix}
                 }).get_data(True) + '. '
+            if pr_id.squash != set_squash:
+                pr_id.squash = set_squash
             if pr_id.state != 'closed' and pr['state'] == 'closed':
                 # don't go through controller because try_closing does weird things
                 # for safety / race condition reasons which ends up committing

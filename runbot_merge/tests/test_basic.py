@@ -2380,6 +2380,12 @@ Please check and re-approve.
             f"Updated target, squash, message. Updated {pr_id.display_name} to ready. Updated to {c2}."
         )
 
+        pr_id.write({'squash': False})
+        with repo:
+            pr.post_comment('hansen check')
+        env.run_crons()
+        assert pr_id.squash
+
     def test_update_closed(self, env, repo, config):
         with repo:
             [c] = repo.make_commits("master", repo.Commit('first', tree={'m': 'm3'}), ref='heads/abranch')
