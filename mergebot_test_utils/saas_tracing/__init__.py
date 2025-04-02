@@ -39,7 +39,7 @@ conf = {
     "metric_exporter_names": [e] if (e := os.environ.get(OTEL_METRICS_EXPORTER, "otlp")) else [],
     "log_exporter_names": [e] if (e := os.environ.get(OTEL_TRACES_EXPORTER, "otlp")) else [],
 }
-# open-telemetry/opentelemetry-pythhon#4340 changed the name (and some semantics)
+# open-telemetry/opentelemetry-python#4340 changed the name (and some semantics)
 # of the parameters so need to try new and fall back to old
 try:
     configurator.configure(setup_logging_handler=True, **conf)
@@ -48,7 +48,7 @@ except TypeError:
 
 # Breaks server instrumentation when enabled: threads inherit the init context
 #   instead of creating a per-request / per-job trace, if we want to propagate
-#   tracing through to one-short workers it should be done by hand (using
+#   tracing through to one-shot workers it should be done by hand (using
 #   extract/inject)
 # ThreadingInstrumentor().instrument()
 # adds otel trace/span information to the logrecord which is not what we care about
@@ -62,9 +62,9 @@ psycopg2.Psycopg2Instrumentor().instrument(
 )
 requests.RequestsInstrumentor().instrument()
 
-# FIXME: blacklist /xmlrpc here so it's not duplicated by the instrumentation
-#        of execute below, the middleware currently does not support blacklisting
-#        (open-telemetry/opentelemetry-python-contrib#2369)
+# TODO: blacklist /xmlrpc here so it's not duplicated by the instrumentation
+#       of execute below, the middleware currently does not support blacklisting
+#       (open-telemetry/opentelemetry-python-contrib#2369)
 #
 # FIXME:
 #   - servers which mount `odoo.http.root` (before patched?)
@@ -103,7 +103,7 @@ def instrumented_execute(wrapped_execute, db, uid, obj, method, *args, **kw):
 
 # Instrument the server & preload so we know / can trace what happens during
 #   init. Server instrumentation performs context extraction from environment
-#   (preload is just nested inside that).
+#   (preload is nested inside that so doesn't need an extractor).
 
 @wraps(odoo.service.server.ThreadedServer, "run")
 def instrumented_threaded_start(wrapped_threaded_run, self, preload=None, stop=None):
