@@ -189,9 +189,10 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     if not is_manager(config):
         return
 
-    for c in config._tmp_path_factory.getbasetemp().iterdir():
-        if c.is_file() and c.name.startswith('template-'):
-            subprocess.run(['dropdb', '--if-exists', c.read_text(encoding='utf-8')])
+    if f := getattr(config, '_tmp_path_factory', None):
+        for c in f.getbasetemp().iterdir():
+            if c.is_file() and c.name.startswith('template-'):
+                subprocess.run(['dropdb', '--if-exists', c.read_text(encoding='utf-8')])
 
 @pytest.fixture(scope='session', autouse=True)
 def _set_socket_timeout():
