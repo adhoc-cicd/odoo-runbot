@@ -5,7 +5,7 @@ Merge Bot
 The mergebot is Odoo's internal tool for merging PRs.
 
 It is conceptually rooted in Graydon Hoare's `"not rocket science" rule of
-software engineering <https://graydon2.dreamwidth.org/1597.html>`_:
+software engineering`_:
 
     "automatically maintain a repository of code that always passes all the tests"
 
@@ -15,8 +15,7 @@ independently but do not pass when merged together, or the PR was tested with
 an older version of the target branch but doesn't work with the latest).
 
 This idea has become a lot more popular and democratized with the advent of
-gitlab's `merge trains <https://docs.gitlab.com/ci/pipelines/merge_trains/>`_
-and github's `merge queues <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue>`_.
+gitlab's `merge trains`_ and github's `merge queues`_.
 
 Justification of Existence
 ==========================
@@ -42,7 +41,7 @@ Because the mergebot has significant interactions with github (via git, the
 github API, and webhooks from github) it is not trivial to test. Not only that,
 but although it is possible to run the test suite against github actual because
 of the rate limits (primary and secondary) it takes literally days to go through
-the 500-odd integration tests.
+the 500-odd integration tests [#github]_.
 
 As a result, the mergebot is mostly tested locally, which requires its specific
 setup and tooling.
@@ -51,7 +50,7 @@ Shared Setup
 ------------
 
 Although the mergebot might be testable in addons-path layout, it has only been
-tested with a :env:`PYTHONPATH` layout, that is::
+tested with a ``PYTHONPATH`` layout, that is::
 
     /
     ├── odoo           ── odoo/odoo checkout here
@@ -65,7 +64,7 @@ tested with a :env:`PYTHONPATH` layout, that is::
         └── odoo
             └── addons ── odoo/runbot checkout here
 
-and using PYTHONPATH to add the addon directories to odoo via python
+and using ``PYTHONPATH`` to add the addon directories to odoo via python
 namespaces (rather than ``--addons-path``).
 
 This also requires [#pytest.ini]_ a ``pytest.ini`` file such that pytest can know
@@ -100,12 +99,21 @@ github actual which absolutely plagued the previous mock-based version).
 
 Thus running the test suite locally requires:
 
-- `mitmproxy <https://mitmproxy.org/>`_ (follow instructions to set up locally),
-  which is used to redirect requests to Github (from both the test harness and
-  the running Odoo instances) to
-- `dummy-central <https://github.com/odoo/dummy-central>`_, a simulator of the
-  github API (mostly implementing the stuff which is or used to be needed to run
-  the test suite)
+- mitmproxy_ (follow instructions to set up locally), which is used to redirect
+  requests to Github (from both the test harness and the running Odoo instances)
+  to
+- dummy-central_, a simulator of the github API (mostly implementing the stuff
+  which is or used to be needed to run the test suite).
+
+  The mergebot was originally tested using mocks, but the asynchronous nature
+  of various operations and the difficulty of differential testing made hewing
+  close to github's behaviour impossible, leading to features working with mocks
+  but needing to be pretty much entirely rewritten when testing against github
+  actual, and thus the mock unit tests being largely useless.
+
+  Dummy central has made local testing an infinitely better predictor of github
+  behaviour, with new tests mostly working out of the box against github once
+  they work against DC.
 
 Configuration
 '''''''''''''
@@ -275,6 +283,80 @@ provided when running against github actual, with a similar setup to
     <https://docs.pytest.org/en/stable/reference/reference.html#confval-cache_dir>`_
     for more details.
 
+Tracing
+-------
+
+Although assertions and logs usually make errors easy to diagnose, pipe
+(between the pytest test harness and the odoo process under test) and back and
+forth async operations (between the running odoo and dummy-central) can make
+understanding some issues difficult.
+
+To that end, tracing support was added to the test harness and to dummy central:
+
+- install pytest-opentelemetry (in the same environment as pytest)
+
+  .. note::
+
+    unless `#34`_ is merged, install the PR source::
+
+        pip install git+https://github.com/xmo-odoo/pytest-opentelemetry@trace-per-test
+
+    otherwise the plugin generates a trace for the entire test suite, which is
+    unusable, a trace per test is much clearer (and more compatible with otel
+    interfaces that I've seen)
+- setup an opentelemetry client / sink of some sort [#otel]_.
+- run dummy-central with ``--features otlp``, and the environment
+  ``OTEL_SERVICE_NAME=dummy-central OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317``
+- run the test suite with the parameters ``--export-traces --trace-per-test``
+
+This should export a trace for each test, with the entire test content
+(including Odoo and dummy-central paths, to the extent that they have spans
+defined either automatically or explicitly) nested under it.
+
+.. warning:: it looks like events don't carry over properly from tokio-tracing
+             to opentelemetry
+
+.. note::
+
+    One oddity to the setup is that webhook calls are nested within the
+    operation which triggered them, even though they are performed
+    asynchronously at some later time.
+
+    This is because I was not able to get `Span::follows_from`__ or
+    `OpenTelemetrySpanExt::add_link`__ to work correctly (or at least to show
+    up in any way in `otel desktop viewer`_ or venator_.
+
+__ https://docs.rs/tracing/latest/tracing/struct.Span.html#method.follows_from
+
+__ https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/trait.OpenTelemetrySpanExt.html#tymethod.add_link
+
+.. _"not rocket science" rule of software engineering:
+        https://graydon2.dreamwidth.org/1597.html
+.. _merge trains: https://docs.gitlab.com/ci/pipelines/merge_trains/
+.. _merge queues:
+        https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
+.. _mitmproxy: https://mitmproxy.org/
+.. _dummy-central: https://github.com/odoo/dummy-central
+.. _#34: https://github.com/chrisguidry/pytest-opentelemetry/pull/34
+.. _otel desktop viewer: https://github.com/CtrlSpice/otel-desktop-viewer
+.. _venator: https://github.com/kmdreko/venator
+
+.. [#github]
+    As of writing this document, the test suite against github took about 15
+    hours wallclock, however it was interrupted 9 times between github
+    misbehaving, the test suite not necessarily being 100% reliable, and having
+    to go home for the day(s).
+
+    .. 1 failed, 37 passed, 1 skipped in 7954.84s (2:12:34)
+       1 failed, 62 passed, 38 deselected in 12032.05s (3:20:32)
+       1 failed, 35 passed, 100 deselected in 6350.45s (1:45:50)
+       1 failed, 123 passed, 4 skipped, 135 deselected, 2 xfailed in 10389.24s (2:53:09)
+       1 failed, 16 passed, 264 deselected in 1619.17s (0:26:59)
+       1 failed, 3 passed, 280 deselected in 374.17s (0:06:14)
+       1 failed, 5 passed, 283 deselected in 1011.14s (0:16:51)
+       1 failed, 17 passed, 2 skipped, 288 deselected in 1682.49s (0:28:02)
+       1 failed, 7 passed, 307 deselected in 583.26s (0:09:43)
+       159 passed, 3 skipped, 314 deselected in 13287.71s (3:41:27)
 .. [#git] especially since the switch to using git directly, as the mergebot's
           need to call the rate-limited github API has gone down
           *significantly*: as of writing this it's down to ~1500 calls/h whe
@@ -288,7 +370,6 @@ provided when running against github actual, with a similar setup to
 .. [#owner] well that's how it's supposed to work anyway, I'm not sure I've ever
             tested it...
 .. [#numprocesses]
-
     It does trigger the odd false negative but does so at a very reasonable
     (low) rate. ``auto`` (worker per core) *might be slightly more reliable, but
     on my current machine it mostly leads to a significant slowdown in wallclock
@@ -301,3 +382,13 @@ provided when running against github actual, with a similar setup to
 
         2 failed, 462 passed, 10 skipped, 2 xfailed in 1972.72s (0:32:52)
         3687.33s user 671.44s system 220% cpu 32:54.30 total
+
+.. [#otel]
+    Some options are Jaeger, Grafana Tempo, Signoz, OpenObserve, or cloud
+    solutions like Datadog, New Relic, Honeycomb.
+
+    venator_ is a useful desktop sink, it should be run as::
+
+        venator -d :memory: -b localhost:4317
+
+    for otel compatibility
