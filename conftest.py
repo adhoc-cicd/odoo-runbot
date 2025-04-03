@@ -53,6 +53,7 @@ import fcntl
 import functools
 import http.client
 import itertools
+import json
 import os
 import pathlib
 import re
@@ -98,6 +99,8 @@ WEBHOOK_WAIT_TIME = 10  # seconds
 LOCAL_WEBHOOK_WAIT_TIME = 1
 
 def pytest_addoption(parser):
+    parser.addini('users', help="Path to a users json file.")
+    parser.addoption('--users', help="Path to a users json file.")
     parser.addoption('--addons-path')
     parser.addoption("--no-delete", action="store_true", help="Don't delete repo after a failed run")
     parser.addoption('--log-github', action='store_true')
@@ -207,34 +210,45 @@ def config(pytestconfig: pytest.Config) -> dict[str, dict[str, str]]:
     simple dict of {section: {key: value}}
 
     """
-    conf = configparser.ConfigParser(interpolation=None)
-    conf.read([pytestconfig.inifile])
+    if p := pytestconfig.getoption('--users'):
+        with pytestconfig.invocation_params.dir.joinpath(p).open('rb') as f:
+            users = json.load(f)
+    elif p := pytestconfig.getini('users'):
+        with pytestconfig.inipath.parent.joinpath(p).open('rb') as f:
+            users = json.load(f)
+    else:
+        raise ValueError("A users json file is required.")
+
     cnf = {
-        name: dict(s.items())
-        for name, s in conf.items()
+        f'role_{e["role"]}': {
+            **e,
+            'login': k,
+            'token': (e.get('token') or [None])[0],
+        }
+        for k, e in users.items()
+        if 'role' in e
     }
-    # special case user / owner / ...
-    cnf['role_user'] = {
-        'token': conf['github']['token']
-    }
+
+    cnf['github'] = dict(cnf['role_user'])
+    if owner := cnf.get('role_owner'):
+        cnf['github']['owner'] = owner['login']
+
     return cnf
 
 @pytest.fixture(scope='session')
 def rolemap(request, config):
     # only fetch github logins once per session
     rolemap = {}
-    for k, data in config.items():
-        if k.startswith('role_'):
-            role = k[5:]
-        elif k == 'github':
-            role = 'user'
-        else:
+    for data in config.values():
+        if not data['token']:
+            continue
+        if 'role' not in data:
             continue
 
         r = _rate_limited(lambda: requests.get('https://api.github.com/user', headers={'Authorization': f'token {data["token"]}'}))
         r.raise_for_status()
 
-        user = rolemap[role] = r.json()
+        user = rolemap[data['role']] = r.json()
         n = data['user'] = user['login']
         data.setdefault('name', n)
     return rolemap
@@ -250,12 +264,10 @@ def partners(env, config, rolemap):
     repositories.
     """
     m = {}
-    for role, u in rolemap.items():
-        if role in ('user', 'other'):
-            continue
-
+    for role in ('reviewer', 'self_reviewer'):
+        u = rolemap[role]
         login = u['login']
-        conf = config['role_' + role]
+        conf = config[f'role_{role}']
         m[role] = env['res.partner'].create({
             'name': conf.get('name', login),
             'email': conf.get('email') or u['email'] or False,

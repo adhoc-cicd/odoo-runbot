@@ -49,7 +49,7 @@ def stagings(request, env, project, repo):
         with mock.patch.object(RepoType, "post_status", _post_status):
             yield
 
-def test_trivial_flow(env, repo, page, users, config, project):
+def test_trivial_flow(env, repo, page, users, config, project, partners):
     project.repo_ids.required_statuses = 'legal/cla,ci/runbot'
     # create base branch
     with repo:
@@ -181,9 +181,9 @@ def test_trivial_flow(env, repo, page, users, config, project):
         ('OdooBot', f'<p>statuses changed on {c2}</p>', [('state', 'Opened', 'Validated')]),
         # reviewer approved changing the state and setting reviewer as reviewer
         # plus set merge method
-        ('Reviewer', '', [
+        (partners['reviewer'].name, '', [
             ('merge_method', '', 'rebase and merge, using the PR as merge commit message'),
-            ('reviewed_by', '', 'Reviewer'),
+            ('reviewed_by', '', partners['reviewer'].name),
             ('state', 'Validated', 'Ready'),
         ]),
         # staging succeeded
@@ -2423,7 +2423,7 @@ Please check and re-approve.
         assert not pr_id.reviewed_by
         assert not pr_id.squash
 
-    def test_update_incorrect_commits_count(self, port, env, project, repo, config, users):
+    def test_update_incorrect_commits_count(self, port, env, project, repo, config, users, partners):
         """This is not a great test but it aims to kinda sorta simulate the
         behaviour when a user retargets and updates a PR at about the same time:
         github can send the hooks in the wrong order, which leads to the correct
@@ -2484,7 +2484,7 @@ Please check and re-approve.
             ('<p>Pull Request created</p>', []),
             ('', [('head', c, '0'*40)]),
             ('', [('head', '0'*40, c), ('squash', 1, 0)]),
-            ('', [('reviewed_by', '', 'Reviewer'), ('state', 'Opened', 'Approved')]),
+            ('', [('reviewed_by', '', partners['reviewer'].name), ('state', 'Opened', 'Approved')]),
             (f'<p>statuses changed on {c}</p>', [('state', 'Approved', 'Ready')]),
         ]
         assert pr_id.staging_id
