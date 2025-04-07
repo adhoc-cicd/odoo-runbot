@@ -1305,7 +1305,7 @@ def test_resume_manual_detached(env, config, make_repo, users, triggered, kind):
         pr1 = prod.make_pr(target='a', head='abranch')
         prod.post_status('abranch', 'success')
         pr1.post_comment('hansen r+', config['role_reviewer']['token'])
-
+    with prod:
         prod.make_commits('a', Commit('cc', tree={'y': '0'}), ref="heads/bbranch")
         pr2 = prod.make_pr(target='a', head='bbranch')
         prod.post_status('bbranch', 'success')

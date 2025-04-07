@@ -998,7 +998,6 @@ class Repo:
             token: Optional[str] = None
     ) -> PR:
         assert self.hook
-        self.hook = 2
 
         if title is None:
             assert ":" not in head, \
@@ -1025,7 +1024,7 @@ class Repo:
             },
         )
         assert 200 <= r.status_code < 300, r.text
-
+        time.sleep(1)
         return PR(self, r.json()['number'])
 
     def post_status(self, ref, status, context='default', **kw):

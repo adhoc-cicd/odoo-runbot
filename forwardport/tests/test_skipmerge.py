@@ -327,12 +327,11 @@ def test_suppress_ping_on_conflict(env, config, make_repo, users):
     """
     r1, _ = make_basic(env, config, make_repo, statuses='default')
     r2, _ = make_basic(env, config, make_repo, statuses='default')
-    with r1:
+    with r1, r2:
         r1.make_commits("a", Commit("c", tree={'x': '0'}), ref="heads/hugechange")
         # setup conflict for forward port
         r1.make_commits("b", Commit("conflict", tree={'x': '1'}), ref="heads/b")
         pr1_1 = r1.make_pr(target='a', title="super important change", head='hugechange')
-    with r2:
         r2.make_commits("a", Commit("c", tree={'x': '0'}), ref="heads/hugechange")
         pr2_1 = r2.make_pr(target='a', title="super important change", head='hugechange')
         pr2_1.post_comment('hansen fw=skipmerge', config['role_reviewer']['token'])
