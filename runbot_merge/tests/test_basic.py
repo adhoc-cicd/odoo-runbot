@@ -2483,29 +2483,25 @@ Please check and re-approve.
         assert pr_id.merge_date
 
 class TestBatching(object):
-    def _pr(self, repo, prefix, trees, *, target='master', user, reviewer,
-            statuses=(('default', 'success'),)
-        ):
+    def _pr(self, repo, prefix, trees, *, target='master', user, reviewer, statuses=(('default', 'success'),)):
         """ Helper creating a PR from a series of commits on a base
         """
         *_, c = repo.make_commits(
             'heads/{}'.format(target),
             *(
-                repo.Commit('commit_{}_{:02}'.format(prefix, i), tree=t)
+                repo.Commit(f'commit_{prefix}_{i:02}', tree=t)
                 for i, t in enumerate(trees)
             ),
-            ref='heads/{}'.format(prefix)
+            ref=f'heads/{prefix}'
         )
-        pr = repo.make_pr(title='title {}'.format(prefix), body='body {}'.format(prefix),
+        pr = repo.make_pr(title=f'title {prefix}', body=f'body {prefix}',
                           target=target, head=prefix, token=user)
 
         for context, result in statuses:
             repo.post_status(c, result, context)
         if reviewer:
-            pr.post_comment(
-                'hansen r+%s' % (' rebase-merge' if len(trees) > 1 else ''),
-                reviewer
-            )
+            command = ' rebase-merge' if len(trees) > 1 else ''
+            pr.post_comment(f'hansen r+{command}', reviewer)
         return pr
 
     def test_staging_batch(self, env, repo, users, config):
