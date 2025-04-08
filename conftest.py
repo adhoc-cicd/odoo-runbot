@@ -270,7 +270,7 @@ def partners(env, config, rolemap):
         conf = config[f'role_{role}']
         m[role] = env['res.partner'].create({
             'name': conf.get('name', login),
-            'email': conf.get('email') or u['email'] or False,
+            'email': u['email'] or conf.get('email') or False,
             'github_login': login,
         })
     return m
