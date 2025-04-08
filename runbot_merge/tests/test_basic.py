@@ -3,6 +3,7 @@ import itertools
 import json
 import textwrap
 import time
+from operator import itemgetter
 from typing import Callable
 from unittest import mock
 
@@ -1920,14 +1921,10 @@ Signed-off-by: {reviewer}"""
         )
         assert log_to_node(repo.log('heads/master')), expected
 
-    def test_squash_merge(self, repo, env, config, users):
-        other_user = requests.get('https://api.github.com/user', headers={
-            'Authorization': 'token %s' % config['role_other']['token'],
-        }).json()
+    def test_squash_merge(self, project, repo, env, config, users):
         other_user = {
-            'name': other_user['name'] or other_user['login'],
-            # FIXME: not guaranteed
-            'email': other_user['email'] or 'other@example.org',
+            'name': config['role_other']['name'],
+            'email': config['role_other']['email'],
         }
         a_user = {'name': 'bob', 'email': 'builder@example.org', 'date': '1999-04-12T08:19:30Z'}
         with repo:
@@ -1998,20 +1995,12 @@ Signed-off-by: {get_partner(env, users["reviewer"]).formatted_email}\
             "the commit date of the merged commit should be about now, despite" \
             " the source commit being >20 years old"
 
-        # FIXME: should probably get the token from the project to be sure it's
-        #        the bot user
-        current_user = repo._session.get('https://api.github.com/user').json()
-        current_user = {
-            'name': current_user['name'] or current_user['login'],
-            # FIXME: not guaranteed
-            'email': current_user['email'] or 'user@example.org',
-        }
         # since there are two authors & two committers on pr2, the auhor and
         # committer of a squash commit should be reset to the bot's identity
-        assert two['commit']['committer']['name'] == current_user['name']
-        assert two['commit']['committer']['email'] == current_user['email']
-        assert two['commit']['author']['name'] == current_user['name']
-        assert two['commit']['author']['email'] == current_user['email']
+        bot_id = project.github_name, project.github_email
+        getid = itemgetter('name', 'email')
+        assert getid(two['commit']['committer']) == bot_id
+        assert getid(two['commit']['author']) == bot_id
         assert two['commit']['message'] == f"""second pr
 
 closes {pr2_id.display_name}
