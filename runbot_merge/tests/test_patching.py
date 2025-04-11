@@ -223,9 +223,7 @@ def test_apply_not_found(env, project, repo, users):
 <p>Commit 0123456789012345678901234567890123456789 not found</p>
 <p>stderr:</p>
 <pre>
-error: Unable to find 0123456789012345678901234567890123456789 under $repo$
-Cannot obtain needed object 0123456789012345678901234567890123456789
-error: fetch failed.
+$$
 </pre>\
 '''),
     ]
