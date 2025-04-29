@@ -4,10 +4,15 @@
         <field name="model">runbot_merge.pull_requests.backport</field>
         <field name="arch" type="xml">
             <form>
-                <field name="pr_id" invisible="1"/>
-                <field name="project_id" invisible="1"/>
-                <field name="source_seq" invisible="1"/>
-                <field name="target" class="w-100"/>
+                <sheet>
+                    <field name="pr_id" invisible="1"/>
+                    <field name="project_id" invisible="1"/>
+                    <field name="source_seq" invisible="1"/>
+                    <field name="target" class="w-100"/>
+                </sheet>
+                <footer>
+                    <button type="object" name="action_apply" string="Backport" class="btn-primary"/>
+                </footer>
             </form>
         </field>
     </record>
