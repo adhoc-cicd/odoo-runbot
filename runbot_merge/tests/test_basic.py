@@ -3,6 +3,7 @@ import itertools
 import json
 import textwrap
 import time
+from operator import itemgetter
 from typing import Callable
 from unittest import mock
 
@@ -49,7 +50,7 @@ def stagings(request, env, project, repo):
         with mock.patch.object(RepoType, "post_status", _post_status):
             yield
 
-def test_trivial_flow(env, repo, page, users, config, project):
+def test_trivial_flow(env, repo, page, users, config, project, partners):
     project.repo_ids.required_statuses = 'legal/cla,ci/runbot'
     # create base branch
     with repo:
@@ -181,9 +182,9 @@ def test_trivial_flow(env, repo, page, users, config, project):
         ('OdooBot', f'<p>statuses changed on {c2}</p>', [('state', 'Opened', 'Validated')]),
         # reviewer approved changing the state and setting reviewer as reviewer
         # plus set merge method
-        ('Reviewer', '', [
+        (partners['reviewer'].name, '', [
             ('merge_method', '', 'rebase and merge, using the PR as merge commit message'),
-            ('reviewed_by', '', 'Reviewer'),
+            ('reviewed_by', '', partners['reviewer'].name),
             ('state', 'Validated', 'Ready'),
         ]),
         # staging succeeded
@@ -1920,14 +1921,10 @@ Signed-off-by: {reviewer}"""
         )
         assert log_to_node(repo.log('heads/master')), expected
 
-    def test_squash_merge(self, repo, env, config, users):
-        other_user = requests.get('https://api.github.com/user', headers={
-            'Authorization': 'token %s' % config['role_other']['token'],
-        }).json()
+    def test_squash_merge(self, project, repo, env, config, users):
         other_user = {
-            'name': other_user['name'] or other_user['login'],
-            # FIXME: not guaranteed
-            'email': other_user['email'] or 'other@example.org',
+            'name': config['role_other']['name'],
+            'email': config['role_other']['email'],
         }
         a_user = {'name': 'bob', 'email': 'builder@example.org', 'date': '1999-04-12T08:19:30Z'}
         with repo:
@@ -1998,20 +1995,12 @@ Signed-off-by: {get_partner(env, users["reviewer"]).formatted_email}\
             "the commit date of the merged commit should be about now, despite" \
             " the source commit being >20 years old"
 
-        # FIXME: should probably get the token from the project to be sure it's
-        #        the bot user
-        current_user = repo._session.get('https://api.github.com/user').json()
-        current_user = {
-            'name': current_user['name'] or current_user['login'],
-            # FIXME: not guaranteed
-            'email': current_user['email'] or 'user@example.org',
-        }
         # since there are two authors & two committers on pr2, the auhor and
         # committer of a squash commit should be reset to the bot's identity
-        assert two['commit']['committer']['name'] == current_user['name']
-        assert two['commit']['committer']['email'] == current_user['email']
-        assert two['commit']['author']['name'] == current_user['name']
-        assert two['commit']['author']['email'] == current_user['email']
+        bot_id = project.github_name, project.github_email
+        getid = itemgetter('name', 'email')
+        assert getid(two['commit']['committer']) == bot_id
+        assert getid(two['commit']['author']) == bot_id
         assert two['commit']['message'] == f"""second pr
 
 closes {pr2_id.display_name}
@@ -2423,7 +2412,7 @@ Please check and re-approve.
         assert not pr_id.reviewed_by
         assert not pr_id.squash
 
-    def test_update_incorrect_commits_count(self, port, env, project, repo, config, users):
+    def test_update_incorrect_commits_count(self, port, env, project, repo, config, users, partners):
         """This is not a great test but it aims to kinda sorta simulate the
         behaviour when a user retargets and updates a PR at about the same time:
         github can send the hooks in the wrong order, which leads to the correct
@@ -2484,7 +2473,7 @@ Please check and re-approve.
             ('<p>Pull Request created</p>', []),
             ('', [('head', c, '0'*40)]),
             ('', [('head', '0'*40, c), ('squash', 1, 0)]),
-            ('', [('reviewed_by', '', 'Reviewer'), ('state', 'Opened', 'Approved')]),
+            ('', [('reviewed_by', '', partners['reviewer'].name), ('state', 'Opened', 'Approved')]),
             (f'<p>statuses changed on {c}</p>', [('state', 'Approved', 'Ready')]),
         ]
         assert pr_id.staging_id
@@ -2494,29 +2483,25 @@ Please check and re-approve.
         assert pr_id.merge_date
 
 class TestBatching(object):
-    def _pr(self, repo, prefix, trees, *, target='master', user, reviewer,
-            statuses=(('default', 'success'),)
-        ):
+    def _pr(self, repo, prefix, trees, *, target='master', user, reviewer, statuses=(('default', 'success'),)):
         """ Helper creating a PR from a series of commits on a base
         """
         *_, c = repo.make_commits(
             'heads/{}'.format(target),
             *(
-                repo.Commit('commit_{}_{:02}'.format(prefix, i), tree=t)
+                repo.Commit(f'commit_{prefix}_{i:02}', tree=t)
                 for i, t in enumerate(trees)
             ),
-            ref='heads/{}'.format(prefix)
+            ref=f'heads/{prefix}'
         )
-        pr = repo.make_pr(title='title {}'.format(prefix), body='body {}'.format(prefix),
+        pr = repo.make_pr(title=f'title {prefix}', body=f'body {prefix}',
                           target=target, head=prefix, token=user)
 
         for context, result in statuses:
             repo.post_status(c, result, context)
         if reviewer:
-            pr.post_comment(
-                'hansen r+%s' % (' rebase-merge' if len(trees) > 1 else ''),
-                reviewer
-            )
+            command = ' rebase-merge' if len(trees) > 1 else ''
+            pr.post_comment(f'hansen r+{command}', reviewer)
         return pr
 
     def test_staging_batch(self, env, repo, users, config):

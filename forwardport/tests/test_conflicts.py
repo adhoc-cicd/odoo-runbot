@@ -466,7 +466,7 @@ def test_multiple_commits_same_authorship(env, config, make_repo):
     assert get(c.committer) == get(committer)
 
 
-def test_multiple_commits_different_authorship(env, config, make_repo, users, rolemap):
+def test_multiple_commits_different_authorship(env, config, make_repo, users):
     """ When a PR has multiple commits by different authors, the resulting
     (squashed) conflict commit should have an empty email
     """

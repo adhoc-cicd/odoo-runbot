@@ -1070,23 +1070,24 @@ class TestBranchDeletion:
         than merged) should not get deleted
         """
         prod, other = make_basic(env, config, make_repo, statuses='default')
+        a_ref = prod.commit('a').id
         with prod, other:
-            a_ref = prod.commit('a').id
-            [c] = other.make_commits(a_ref, Commit('c1', tree={'1': '0'}), ref='heads/abranch')
-            pr1 = prod.make_pr(target='a', head='%s:abranch' % other.owner, title='a')
-            prod.post_status(c, 'success')
-            pr1.post_comment('hansen r+', config['role_reviewer']['token'])
+            [c1] = other.make_commits(a_ref, Commit('c1', tree={'1': '0'}), ref='heads/abranch')
+            pr1 = prod.make_pr(target='a', head=f'{other.owner}:abranch', title='a')
 
             other.make_commits(a_ref, Commit('c2', tree={'2': '0'}), ref='heads/bbranch')
-            pr2 = prod.make_pr(target='a', head='%s:bbranch' % other.owner, title='b')
-            pr2.close()
+            pr2 = prod.make_pr(target='a', head=f'{other.owner}:bbranch', title='b')
 
-            [c] = other.make_commits(a_ref, Commit('c3', tree={'3': '0'}), ref='heads/cbranch')
-            pr3 = prod.make_pr(target='a', head='%s:cbranch' % other.owner, title='c')
-            prod.post_status(c, 'success')
+            [c3] = other.make_commits(a_ref, Commit('c3', tree={'3': '0'}), ref='heads/cbranch')
+            pr3 = prod.make_pr(target='a', head=f'{other.owner}:cbranch', title='c')
 
             other.make_commits(a_ref, Commit('c3', tree={'4': '0'}), ref='heads/dbranch')
-            pr4 = prod.make_pr(target='a', head='%s:dbranch' % other.owner, title='d')
+            pr4 = prod.make_pr(target='a', head=f'{other.owner}:dbranch', title='d')
+        with prod, other:
+            prod.post_status(c1, 'success')
+            pr1.post_comment('hansen r+', config['role_reviewer']['token'])
+            pr2.close()
+            prod.post_status(c3, 'success')
             pr4.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 

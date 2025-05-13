@@ -1,221 +1,394 @@
+=========
 Merge Bot
 =========
 
-Odoo workflow
+The mergebot is Odoo's internal tool for merging PRs.
+
+It is conceptually rooted in Graydon Hoare's `"not rocket science" rule of
+software engineering`_:
+
+    "automatically maintain a repository of code that always passes all the tests"
+
+That is not only should PRs pass tests before being merged, PRs should be tested
+*as integrated*, in order to avoid logical conflicts (two PRs which pass tests
+independently but do not pass when merged together, or the PR was tested with
+an older version of the target branch but doesn't work with the latest).
+
+This idea has become a lot more popular and democratized with the advent of
+gitlab's `merge trains`_ and github's `merge queues`_.
+
+Justification of Existence
+==========================
+
+Although merge queues exist for the general public, they are unsuitable for Odoo
+for a number of reasons:
+
+- Odoo development has multi-repo dependencies, which merge queues simply do not
+  support (as of rewriting this readme, an odoo change can involve up to 6
+  repositories, some of which are co-dependent). This is by far the biggest
+  ticket as it makes merge queues a non-contender.
+- Github access rights are pretty rough, especially when using the old pricing
+  model (which limits roles to admin, write, and read).
+- Some cross-repository tasks should be synchronised with staging (e.g.
+  freezing, patching), though they could always just fuck with the queue.
+- Github does not support forward- or back-ports internally, which still
+  requires extra tooling to manage this (as well as ACLs on the ports).
+
+Development
+===========
+
+Because the mergebot has significant interactions with github (via git, the
+github API, and webhooks from github) it is not trivial to test. Not only that,
+but although it is possible to run the test suite against github actual because
+of the rate limits (primary and secondary) it takes literally days to go through
+the 500-odd integration tests [#github]_.
+
+As a result, the mergebot is mostly tested locally, which requires its specific
+setup and tooling.
+
+Shared Setup
+------------
+
+Although the mergebot might be testable in addons-path layout, it has only been
+tested with a ``PYTHONPATH`` layout, that is::
+
+    /
+    ├── odoo           ── odoo/odoo checkout here
+    ├── community
+    │   └── odoo
+    │       └── addons -> ../../odoo/addons
+    ├── enterprise
+    │   └── odoo
+    │       └── addons ── odoo/enterprise checkout here
+    └── runbot
+        └── odoo
+            └── addons ── odoo/runbot checkout here
+
+and using ``PYTHONPATH`` to add the addon directories to odoo via python
+namespaces (rather than ``--addons-path``).
+
+This also requires [#pytest.ini]_ a ``pytest.ini`` file such that pytest can know
+the project root (``rootpath``), and because the rootpath is not inside any
+repository (it's at the ``/`` in the block above) it has to be created by hand.
+
+A working sample file currently is:
+
+.. include:: ../pytest.ini.sample
+   :code: ini
+
+.. hint::
+
+    Assuming the sample works out of the box, you can just create a symlink to
+    that sample file from the root::
+
+        ln -s runbot/odoo/addons/pylint.ini.sample pylint.ini
+
+    Although you may not want to do that if you need local changes e.g. remove
+    the ``addopt`` because you want to change defaults or not use xdist
+    implicitly.
+
+.. [#pytest.ini] does it still?
+
+Local testing
 -------------
 
-The sticky branches are protected on the github odoo project to restrict
-push for the Merge Bot (MB) only.
+The test suite should mostly be run locally as it can be run at a much higher
+clip, and concurrently. However this requires some setup as the test harness was
+kept (mostly) unaware of the difference to limit the risk of divergences from
+github actual which absolutely plagued the previous mock-based version).
 
-The MB only works with PR's using the github API.
+Thus running the test suite locally requires:
 
-1. When a PR is created the github notifies the MB. The MB labels the PR
-   as 'seen 🙂' on github [#]_.
+- mitmproxy_ (follow instructions to set up locally), which is used to redirect
+  requests to Github (from both the test harness and the running Odoo instances)
+  to
+- dummy-central_, a simulator of the github API (mostly implementing the stuff
+  which is or used to be needed to run the test suite).
 
-2. Once the PR github statuses are green [#]_ , the MB labels the PR as
-   'CI 🤖'.
+  The mergebot was originally tested using mocks, but the asynchronous nature
+  of various operations and the difficulty of differential testing made hewing
+  close to github's behaviour impossible, leading to features working with mocks
+  but needing to be pretty much entirely rewritten when testing against github
+  actual, and thus the mock unit tests being largely useless.
 
-3. When a reviewer, known by the MB, approves the PR, the MB labels that
-   PR as 'r+ 👌'.
+  Dummy central has made local testing an infinitely better predictor of github
+  behaviour, with new tests mostly working out of the box against github once
+  they work against DC.
 
-4. At this moment, MB tries to merge the PR and labels the PR with
-   'merging 👷'.
+Configuration
+'''''''''''''
 
-5. If the merge is successfull, MB labels it 'merged 🎉', removes the
-   label 'merging 👷' and closes the PR. A message from MB gives a link
-   to the merge's commit [#]_.
+- mitmproxy should be run as::
 
-If an error occurs during the step 4, MB labels the PR with 'error 🙅'
-and adds a message in the conversion stating what kind of error.  For
-example 'Unable to stage PR (merge conflict)'.
+      mitmdump -M '|^https?://(\w+\.)?github.com/|http://localhost:$PORT/'
 
-If a new commit is pushed in the PR, the process starts again from the
-begining.
+  where ``$PORT`` is the port to which dummy-central is bound. It should also
+  have the following configuration keys set (in its config file, or via
+  ``--set`` parameters): ``upstream_cert: false`` and
+  ``connection_strategy: lazy``. Missing *either* of those causes mitmproxy to
+  connect to github.com unnecessarily, which
 
-It's possible to interact with the MB by the way of github messages
-containing `Commands`_. The message must start with the MB name (for
-instance 'robodoo').
+  - consumes github resources for no reason
+  - causes flakiness in the local test suite when the connection fails (e.g.
+    because github or the network is down)
+  - slows mitmproxy down
+- dummy-central should probably be run from a git checkout. It could be
+  installed but development to the mergebot may -- and likely will -- require
+  additions or changes to DC, leading to a local build being much easier::
 
-.. [#] Any activity on a PR the MB hasn't seen yet will bring it to the
-   MB's attention. e.g a comment on a PR.
+      cargo run --release -- $USERS_FILE -p $PORT
 
-.. [#] At this moment the statuses are: Runbot build is green and CLA is
-   signed if needed.  The expected statuses may change in the future.
+- the test suite *should* be run with ``pytest-xdist`` installed [#perf]_::
 
-.. [#] If a PR contains only one commit, the PR is rebased and the
-   commit is fast forwarded. With more than one commit, the PR is
-   rebased and the commits are merged with a merge commit. When one
-   wants to avoid the rebase, 'rebase-' command should be used.
+      HTTPS_PROXY=$PROXY_ADDR pytest -n logical --users $USERS_FILE
 
-Setup
------
+  .. note:: ``logical`` runs an xdist worker per thread which seems to work well
+            on a Ryzen 5 7530U (6 cores 12 threads) [#numprocesses]_.
 
-* Setup a project with relevant repositories and branches the bot
-  should manage (e.g. odoo/odoo and 10.0).
-* Set up reviewers (github_login + boolean flag on partners).
-* Add "Issue comments", "Pull request reviews", "Pull requests" and
-  "Statuses" webhooks to managed repositories.
-* If applicable, add "Statuses" webhook to the *source* repositories.
+``PROXY_ADDR``
+    The address on which mitmproxy is bound, defaults to
+    ``http://localhost:8080`` unless ``--listen-port`` (``-p``) is used.
+``USERS_FILE``
+    The description of the users roles / github users / github organisation,
+    see `users file`_.
 
-  Github does not seem to send statuses cross-repository when commits
-  get transmigrated so if a user creates a branch in odoo-dev/odoo,
-  waits for CI to run then creates a PR targeted to odoo/odoo the PR
-  will never get status-checked (unless we modify runbot to re-send
-  statuses on pull_request webhook).
+Users File
+''''''''''
 
-Working Principles
-------------------
+This is a JSON file which serves to:
 
-Useful information (new PRs, CI, comments, ...) is pushed to the MB
-via webhooks. Most of the staging work is performed via a cron job:
+- Tell dummy-central what github-level organisations and users to expose.
+- Tell the test suite what these users are (when communicating with
+  dummy-central, or github actual) and how they map to internal *roles*.
 
-1. for each active staging, check if they are done
+It should be shared between dummy-central and the test suite to ensure
+consistent behaviour. The users file is a JSON object, where each key is a
+github identifier (login), and each value is an object with the following
+entries:
 
-   1. if successful
+``type``
+    Can be either ``Organization`` or ``User``.
+``role``
+    The role of the user in the test suite, used to avoid addressing entities
+    in a way which is non-portable.
 
-      * ``push --ff`` to target branches
-      * close PRs
+    There should be 4 or 5 role-bearing entities in the array:
 
-   2. if only one batch, mark as failed
+    ``user``
+        Is the primary actor, used as the bot user, and should have write access
+        to...
+    ``owner``
+        The location where repositories are created by default, if present
+        should be an organisation, otherwise repositories are created in
+        ``user``'s account [#owner]_.
+    ``reviewer``
+        A non-bot user which is assigned review rights by default.
+    ``self_reviewer``
+        A non-bot user which is assigned self-review rights by default.
+    ``other``
+        A non-bot user which is assigned no rights by default (and does not even
+        have a partner setup), can represent an employee without special access
+        or a community member.
 
-      for batches of multiple PRs, the MB attempts to infer which
-      specific PR failed
+    .. note:: Since they have no special attachment (access to) the organisation
+              the last 3 roles should probably be removed and their users
+              selected at random for upgrade when a ``reviewer`` or
+              ``self_reviewer`` fixture is requested by a test, this would allow
+              providing more (though probably not less) users and would avoid
+              reliance on specific accounts creeping in.
+``email``
+    The email address of the entity, mostly used to compose git authorship.
+    information.
+``token``
+    An array of access tokens, the test suite will use the first of each array
+    to access github.
 
-   3. otherwise split staging in 2 (bisection search of problematic
-      batch)
-
-2. for each branch with no active staging
-
-   * if there are inactive stagings, stage one of them
-   * otherwise look for batches targeted to that PR (PRs grouped by
-     label with branch as target)
-   * attempt staging
-
-     1. reset temp branches (one per repo) to corresponding targets
-     2. merge each batch's PR into the relevant temp branch
-
-        * on merge failure, mark PRs as failed
-
-     3. once no more batch or limit reached, reset staging branches to
-        tmp
-     4. mark staging as active
-
-Commands
---------
-
-A command string is a line starting with the mergebot's name and
-followed by various commands. Self-reviewers count as reviewers for
-the purpose of their own PRs, but delegate reviewers don't.
-
-retry
-  resets a PR in error mode to ready for staging
-
-  can be used by a reviewer or the PR author to re-stage the PR after
-  it's been updated or the target has been updated & fixed.
-
-r(review)+
-  approves a PR, can be used by a reviewer or delegate reviewer
-
-  submitting an "approve" review implicitly r+'s the PR
-
-r(eview)-
-  removes approval from a PR, allows un-reviewing a PR in error (staging
-  failed) so it can be updated and re-submitted
-
-.. squash+/squash-
-..   marks the PR as squash or merge, can override squash inference or a
-..   previous squash command, can only be used by reviewers
-
-delegate+/delegate=<users>
-  adds either PR author or the specified (github) users as authorised
-  reviewers for this PR. ``<users>`` is a comma-separated list of
-  github usernames (no @), can be used by reviewers
-
-p(riority)=2|1|0
-  sets the priority to normal (2), pressing (1) or urgent (0),
-  lower-priority PRs are selected first and batched together, can be
-  used by reviewers
-
-rebase-
-  the default merge mode is to rebase and merge the PR into the
-  target, however for some situations this is not suitable and
-  a regular merge is necessary; this command toggles rebasing
-  mode off (and thus back to a regular merge)
-
-Structure
----------
-
-A *project* is used to manage multiple *repositories* across many
-*branches*.
-
-Each *PR* targets a specific branch in a specific repository.
-
-A *batch* is a number of co-dependent PRs, PRs which are assumed to
-depend on one another (the exact relationship is irrelevant) and thus
-always need to be batched together. Batches are normally created on
-the fly during staging.
-
-A *staging* is a number of batches (up to 8 by default) which will be
-tested together, and split if CI fails. Each staging applies to a
-single *branch* the target) across all managed repositories. Stagings
-can be active (currently live on the various staging branches) or
-inactive (to be staged later, generally as a result of splitting a
-failed staging).
-
-Notes
------
-
-* When looking for stageable batches, priority is taken in account and
-  isolating e.g. if there's a single high-priority PR, low-priority
-  PRs are ignored completely and only that will be staged on its own
-* Reviewers are set up on partners so we can e.g. have author-tracking
-  & delegate reviewers without needing to create proper users for
-  every contributor.
-* MB collates statuses on commits independently from other objects, so
-  a commit getting CI'd in odoo-dev/odoo then made into a PR on
-  odoo/odoo should be correctly interpreted assuming odoo-dev/odoo
-  sent its statuses to the MB.
-* Github does not support transactional sequences of API calls, so
-  it's possible that "intermediate" staging states are visible & have
-  to be rollbacked e.g. a staging succeeds in a 2-repo scenario,
-  A.{target} is ff-d to A.{staging}, then B.{target}'s ff to
-  B.{staging} fails, we have to rollback A.{target}.
-* Co-dependence is currently inferred through *labels*, which is a
-  pair of ``{repo}:{branchname}`` e.g. odoo-dev:11.0-pr-flanker-jke.
-  If this label is present in a PR to A and a PR to B, these two
-  PRs will be collected into a single batch to ensure they always
-  get batched (and failed) together.
-
-Previous Work
+Github actual
 -------------
 
-bors-ng
-~~~~~~~
+Running against github actual is not much less involved as it needs both several
+*actual* user accounts, and a tunnel to hook webhooks back in.
 
-* r+: accept (only for trusted reviewers)
-* r-: unaccept
-* r=users...: accept on behalf of users
-* delegate+: allows author to self-review
-* delegate=users...: allow non-reviewers users to review
-* try: stage build (to separate branch) but don't merge on succes
+Tunnels
+'''''''
 
-Why not bors-ng
-###############
+The test suite has first-class support for tunnels via the ``--tunnel``
+parameter which should link to a tunnel script. The repository bundles an
+``ngrok`` script which adapts the tunnel protocol for ngrok agents (ideally ran
+as a daemon, that avoids startup synchronisation issues)::
 
-* no concurrent staging (can only stage one target at a time)
-* can't do co-dependent repositories/multi-repo staging
-* cancels/forgets r+'d branches on FF failure (emergency pushes)
-  instead of re-staging
+    pytest --tunnel runbot_merge/ngrok
 
-homu
-~~~~
+should automatically create and teardown tunnels from github, and create
+webhooks to the remote end of the tunnel.
 
-Additionally to bors-ng's:
+The tunnel script simply takes the local port as first argument, should print
+the remote address of the tunnel on stdout (don't forget to flush so the test
+suite can read it), then close the tunnel on SIGTERM and SIGINT (the test suite
+uses SIGTERM to close tunnels, but when testing a tunnel script Ctrl+C sends
+SIGINT).
 
-* SHA option on r+/r=, guards
-* p=NUMBER: set priority (unclear if best = low/high)
-* rollup/rollup-: should be default
-* retry: re-attempt PR (flaky?)
-* delegate-: remove delegate+/delegate=
-* force: ???
-* clean: ???
+Accounts
+''''''''
+
+As the test suite itself requires multiple accounts, they also have to be
+provided when running against github actual, with a similar setup to
+`local testing`_, although:
+
+- the top-level keys (organisation and user logins) need to be valid github accounts
+- the TODO fields are not used
+- The accounts need to be legitimate
+
+  - While github has become more accepting of multiple user accounts (with an
+    integrated account switcher), accounts should be ramped up slowly lest
+    they be flagged as spam.
+
+    This is especially problematic for the non-``user`` roles here as their
+    near entire activity is leaving comments, which is a very spammy workload.
+  - Although attractive due to easier handling, the ``user`` role probably
+    should not be your primary github account: the main brake on running the
+    test suite is the secondary rate limit on pull requests creation [#git]_,
+    and once it is hit you will not be able to open PRs for several hours
+    *with that entire account*, including via the web UI and the online
+    vscode.
+- The personal tokens neeed to be valid
+
+  - Every user token needs ``public_repo`` and ``delete_repo``.
+  - The ``user`` role further needs ``admin:repo_hook`` and ``user:email`` (?).
+- xdist *may not* be enabled, github's TOS / API recommendation strongly
+  request no concurrency, and this will just trigger rate limits faster.
+- The test suite should be run in ``--sw`` (stepwise): it will stop at the first
+  failure (like ``-x``), but will then resume from the failed case, which allows
+
+  - Resuming after fix in case of true negative, limiting the need for duplicat
+    test runs (not an issue normally, but a major concern with rate limiting).
+  - Resuming immediately in case of false negative (e.g. concurrency / timeout
+    issue).
+  - Waiting a few hours in case of secondary rate limit failure (generally
+    translating to).
+
+.. warning::
+
+    If trying to both run the test suite against github actual and work with
+    local tests at the same time, it is necessary to use ``-o cache_dir``:
+    pytest's cache feature (which is used by stepwise, last-failed,
+    failed-first, etc...) is not compatible with concurrent runs so the two runs
+    will influence one another and generate strange run states.
+
+    It is likely preferrable for the run against github actual to use a bespoke
+    ``cache_dir``, and for the "default" cache to be used by the (much faster
+    and more reliable) local test runs.
+
+    See `configuration options: cache_dir
+    <https://docs.pytest.org/en/stable/reference/reference.html#confval-cache_dir>`_
+    for more details.
+
+Tracing
+-------
+
+Although assertions and logs usually make errors easy to diagnose, pipe
+(between the pytest test harness and the odoo process under test) and back and
+forth async operations (between the running odoo and dummy-central) can make
+understanding some issues difficult.
+
+To that end, tracing support was added to the test harness and to dummy central:
+
+- install pytest-opentelemetry (in the same environment as pytest)
+
+  .. note::
+
+    unless `#34`_ is merged, install the PR source::
+
+        pip install git+https://github.com/xmo-odoo/pytest-opentelemetry@trace-per-test
+
+    otherwise the plugin generates a trace for the entire test suite, which is
+    unusable, a trace per test is much clearer (and more compatible with otel
+    interfaces that I've seen)
+- setup an opentelemetry client / sink of some sort [#otel]_.
+- run dummy-central with ``--features otlp``, and the environment
+  ``OTEL_SERVICE_NAME=dummy-central OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317``
+- run the test suite with the parameters ``--export-traces --trace-per-test``
+
+This should export a trace for each test, with the entire test content
+(including Odoo and dummy-central paths, to the extent that they have spans
+defined either automatically or explicitly) nested under it.
+
+.. warning:: it looks like events don't carry over properly from tokio-tracing
+             to opentelemetry
+
+.. note::
+
+    One oddity to the setup is that webhook calls are nested within the
+    operation which triggered them, even though they are performed
+    asynchronously at some later time.
+
+    This is because I was not able to get `Span::follows_from`__ or
+    `OpenTelemetrySpanExt::add_link`__ to work correctly (or at least to show
+    up in any way in `otel desktop viewer`_ or venator_.
+
+__ https://docs.rs/tracing/latest/tracing/struct.Span.html#method.follows_from
+
+__ https://docs.rs/tracing-opentelemetry/latest/tracing_opentelemetry/trait.OpenTelemetrySpanExt.html#tymethod.add_link
+
+.. _"not rocket science" rule of software engineering:
+        https://graydon2.dreamwidth.org/1597.html
+.. _merge trains: https://docs.gitlab.com/ci/pipelines/merge_trains/
+.. _merge queues:
+        https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
+.. _mitmproxy: https://mitmproxy.org/
+.. _dummy-central: https://github.com/odoo/dummy-central
+.. _#34: https://github.com/chrisguidry/pytest-opentelemetry/pull/34
+.. _otel desktop viewer: https://github.com/CtrlSpice/otel-desktop-viewer
+.. _venator: https://github.com/kmdreko/venator
+
+.. [#github]
+    As of writing this document, the test suite against github took about 15
+    hours wallclock, however it was interrupted 9 times between github
+    misbehaving, the test suite not necessarily being 100% reliable, and having
+    to go home for the day(s).
+
+    .. 1 failed, 37 passed, 1 skipped in 7954.84s (2:12:34)
+       1 failed, 62 passed, 38 deselected in 12032.05s (3:20:32)
+       1 failed, 35 passed, 100 deselected in 6350.45s (1:45:50)
+       1 failed, 123 passed, 4 skipped, 135 deselected, 2 xfailed in 10389.24s (2:53:09)
+       1 failed, 16 passed, 264 deselected in 1619.17s (0:26:59)
+       1 failed, 3 passed, 280 deselected in 374.17s (0:06:14)
+       1 failed, 5 passed, 283 deselected in 1011.14s (0:16:51)
+       1 failed, 17 passed, 2 skipped, 288 deselected in 1682.49s (0:28:02)
+       1 failed, 7 passed, 307 deselected in 583.26s (0:09:43)
+       159 passed, 3 skipped, 314 deselected in 13287.71s (3:41:27)
+.. [#git] especially since the switch to using git directly, as the mergebot's
+          need to call the rate-limited github API has gone down
+          *significantly*: as of writing this it's down to ~1500 calls/h whe
+          running the test suite, ~300/h in production.
+.. [#perf]
+    Although it is not required, because of all the waiting around to leave time
+    for webhooks to be dispatched the test suite has a pretty low level of
+    average CPU utilisation (about 50%, of one core), and thus takes *ages* to
+    complete. Using xdist is a very easy way to fill up the CPU with work, and
+    thus complete the test suite faster.
+.. [#owner] well that's how it's supposed to work anyway, I'm not sure I've ever
+            tested it...
+.. [#numprocesses]
+    It does trigger the odd false negative but does so at a very reasonable
+    (low) rate. ``auto`` (worker per core) *might be slightly more reliable, but
+    on my current machine it mostly leads to a significant slowdown in wallclock
+    run time, from::
+
+        3 failed, 461 passed, 10 skipped, 2 xfailed in 1220.60s (0:20:20)
+        5436.98s user 901.32s system 518% cpu 20:22.01 total
+
+    to::
+
+        2 failed, 462 passed, 10 skipped, 2 xfailed in 1972.72s (0:32:52)
+        3687.33s user 671.44s system 220% cpu 32:54.30 total
+
+.. [#otel]
+    Some options are Jaeger, Grafana Tempo, Signoz, OpenObserve, or cloud
+    solutions like Datadog, New Relic, Honeycomb.
+
+    venator_ is a useful desktop sink, it should be run as::
+
+        venator -d :memory: -b localhost:4317
+
+    for otel compatibility

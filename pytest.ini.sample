@@ -1,0 +1,17 @@
+[pytest]
+;; makes `pytest` look for tests *just* in runbot/odoo/addons (not odoo/,
+;; community/, or enterprise/)
+testpaths = runbot/odoo/addons
+;; most efficient xdist strategy (otherwise one worker might still have a
+;; bunch of allocated tests while the rest are done with their queues)
+addopts = --dist worksteal
+;; tons of deprecation warnings triggered by odoo (especially old)
+filterwarnings =
+    error::
+    ignore::DeprecationWarning
+;; 15mn per test including setup as it can get stuck
+timeout=900
+;; not sure it's necessary but doesn't seem harmful
+consider_namespace_packages = True
+;; show full diff by default on assertion failure (if applicable)
+verbosity_assertions = 2
