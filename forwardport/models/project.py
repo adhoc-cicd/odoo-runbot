@@ -591,15 +591,21 @@ class Stagings(models.Model):
             for b in self.with_context(active_test=False).batch_ids:
                 if b.fw_policy == 'no':
                     continue
-
-                # if all PRs of a batch have parents they're part of an FP
-                # sequence and thus handled separately, otherwise they're
-                # considered regular merges
-                if not all(p.parent_id for p in b.prs):
-                    self.env['forwardport.batches'].create({
-                        'batch_id': b.id,
-                        'source': 'merge',
-                    })
+                # If all PRs of a batch have parents they're part of an FP
+                # sequence and thus handled separately (by all being ready
+                # which should have occurred before staging).
+                if all(p.parent_id for p in b.prs):
+                    continue
+                # If the batch has already been forward ported, no need for
+                # forward port it again obviously.
+                if self.env['runbot_merge.batch']\
+                        .with_context(active_test=False)\
+                        .search_count([('parent_id', '=', b.id)], limit=1):
+                    continue
+                self.env['forwardport.batches'].create({
+                    'batch_id': b.id,
+                    'source': 'merge',
+                })
         return r
 
 class Feedback(models.Model):

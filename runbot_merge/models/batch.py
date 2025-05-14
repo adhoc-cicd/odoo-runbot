@@ -306,7 +306,7 @@ class Batch(models.Model):
         # this is run by the cron, no need to check if otherwise scheduled:
         # either the scheduled job is this one, or it's an other scheduling
         # which will run after this one and will see the port already exists
-        if self.search_count([('parent_id', '=', self.id), ('target', '=', target.id)]):
+        if self.with_context(active_test=False).search_count([('parent_id', '=', self.id), ('target', '=', target.id)]):
             _logger.warning(
                 "Will not forward-port %s (%s): already ported",
                 self,
@@ -413,7 +413,7 @@ class Batch(models.Model):
             force_fw = force_fw or batch.source.fw_policy == 'skipmerge'
             prs = ', '.join(batch.prs.mapped('display_name'))
             _logger.info('Checking if forward-port %s (%s)', batch, prs)
-            # in cas of conflict or update individual PRs will "lose" their
+            # in case of conflict or update individual PRs will "lose" their
             # parent, which should prevent forward porting
             #
             # even if we force_fw, a *followup* should still only be for forward
@@ -446,7 +446,7 @@ class Batch(models.Model):
                     ', '.join(next_target.mapped('name')),
                 )
 
-            if n := self.search([
+            if n := self.with_context(active_test=False).search([
                 ('target', '=', next_target.id),
                 ('parent_id', '=', batch.id),
             ], limit=1):

@@ -1402,3 +1402,62 @@ def test_table_on_fp_interruption(env, config, make_repo, users, page, port):
     doc = pr_page(page, pr)
     [tbody] = doc.cssselect(".table-bordered tbody")
     assert len(tbody) == 3, "branches should still be a, b, c"
+
+@pytest.mark.parametrize('delete_branch', [True, False])
+def test_merge_after_followup_closed(env, config, make_repo, users, delete_branch):
+    """ If a forward port's followup is closed then the forward port is
+    merged, the mergebot should not try to re-create the followup.
+    Even if the forward port is detached.
+    """
+    prod, dev = make_basic(env, config, make_repo, statuses='default')
+    with prod:
+        prod.make_commits('a', Commit('c', tree={'x': '0'}), ref="heads/abranch")
+        pr = prod.make_pr(target='a', head='abranch')
+        prod.post_status('abranch', 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    pra_id, prb_id = env['runbot_merge.pull_requests'].search([], order='number')
+    assert prb_id.parent_id == pra_id
+    with prod:
+        prod.post_status(prb_id.head, 'success')
+    env.run_crons()
+
+    _pra_id, _prb_id, prc_id = env['runbot_merge.pull_requests'].search([], order='number')
+    assert prc_id.parent_id == prb_id
+    prb_id.write({
+        'parent_id': False,
+        'detach_reason': 'because',
+    })
+
+    prc = prod.get_pr(prc_id.number)
+    with prod:
+        prc.close()
+    if delete_branch:
+        with dev:
+            dev.delete_ref(prc.ref)
+    env.run_crons()
+    assert prc_id.state == 'closed'
+
+    # add a new commit to `c` to highlight the re-porting
+    with prod:
+        prod.make_commits('c', Commit('new commit', tree={'h': 'b'}), ref='heads/c')
+
+    with prod:
+        prod.get_pr(prb_id.number).post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+    with prod:
+        prod.post_status('staging.b', 'success')
+    env.run_crons()
+
+    assert pra_id.state == 'merged'
+    assert prb_id.state == 'merged'
+
+    env.run_crons()
+
+    assert env['forwardport.batches'].search_count([]) == 0
+    _pra_id, _prb_id, _prc_id = env['runbot_merge.pull_requests'].search([], order='number')
