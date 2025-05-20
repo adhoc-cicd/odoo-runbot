@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-import time
-import urllib.request
-import webbrowser
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -920,7 +917,9 @@ def test_missing_magic_ref(env, config, make_repo):
     # check that the batch is still here and targeted for the future
     req = env['forwardport.batches'].search([])
     assert len(req) == 1
-    assert req.retry_after > datetime.utcnow().isoformat(" ", "seconds")
+    assert req.retry_after > datetime.now(timezone.utc)\
+        .replace(tzinfo=None).isoformat(" ", "seconds")
+
     # reset retry_after
     req.retry_after = '1900-01-01 01:01:01'
 
