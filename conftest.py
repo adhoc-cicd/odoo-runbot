@@ -886,26 +886,6 @@ class Repo:
         })
         assert 200 <= r.status_code < 300, r.text
 
-    # FIXME: remove this (runbot_merge should use make_commits directly)
-    def make_commit(self, ref, message, author, committer=None, tree=None, wait=True):
-        assert tree
-        if isinstance(ref, list):
-            assert all(re.match(r'[0-9a-f]{40}', r) for r in ref)
-            ancestor_id = ref
-            ref = None
-        else:
-            ancestor_id = self.get_ref(ref) if ref else None
-            # if ref is already a commit id, don't pass it in
-            if ancestor_id == ref:
-                ref = None
-
-        [h] = self.make_commits(
-            ancestor_id,
-            MakeCommit(message, tree=tree, author=author, committer=committer, reset=True),
-            ref=ref
-        )
-        return h
-
     def make_commits(self, root, *commits, ref=None, make=True):
         assert self.hook
         if isinstance(root, list):

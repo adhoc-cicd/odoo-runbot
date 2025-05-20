@@ -37,10 +37,12 @@ def _simple_init(repo):
     """ Creates a very simple initialisation: a master branch with a commit,
     and a PR by 'user' with two commits, targeted to the master branch
     """
-    m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-    repo.make_ref('heads/master', m)
-    c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
-    c2 = repo.make_commit(c1, 'second', None, tree={'m': 'c2'})
+    [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
+    _, c2 = repo.make_commits(
+        m,
+        Commit('first', tree={'m': 'c1'}),
+        Commit('second', tree={'m': 'c2'}),
+    )
     prx = repo.make_pr(title='title', body='body', target='master', head=c2)
     return prx
 
@@ -207,7 +209,7 @@ def ensure_one(records):
 
 
 @contextlib.contextmanager
-def prevent_unstaging(st) -> None:
+def prevent_unstaging(st) -> typing.Iterator[None]:
     # hack: `Stagings.cancel` only cancels *active* stagings,
     # so if we disable the staging, do a thing, then re-enable
     # then things should work out

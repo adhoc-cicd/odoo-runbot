@@ -201,9 +201,8 @@ class TestCommitMessage:
         """ verify 'closes ...' is correctly added in the commit message
         """
         with repo:
-            c1 = repo.make_commit(None, 'first!', None, tree={'f': 'm1'})
-            repo.make_ref('heads/master', c1)
-            c2 = repo.make_commit(c1, 'simple commit message', None, tree={'f': 'm2'})
+            [c1] = repo.make_commits(None, Commit('first!', tree={'f': 'm1'}), ref='heads/master')
+            [c2] = repo.make_commits(c1, Commit('simple commit message', tree={'f': 'm2'}))
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
             repo.post_status(prx.head, 'success')
@@ -223,9 +222,8 @@ class TestCommitMessage:
         """ verify do not duplicate 'closes' instruction
         """
         with repo:
-            c1 = repo.make_commit(None, 'first!', None, tree={'f': 'm1'})
-            repo.make_ref('heads/master', c1)
-            c2 = repo.make_commit(c1, 'simple commit message that closes #1', None, tree={'f': 'm2'})
+            [c1] = repo.make_commits(None, Commit('first!', tree={'f': 'm1'}), ref='heads/master')
+            [c2] = repo.make_commits(c1, Commit('simple commit message that closes #1', tree={'f': 'm2'}))
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
             repo.post_status(prx.head, 'success')
@@ -246,9 +244,8 @@ class TestCommitMessage:
         """ verify do not duplicate 'closes' instruction
         """
         with repo:
-            c1 = repo.make_commit(None, 'first!', None, tree={'f': 'm1'})
-            repo.make_ref('heads/master', c1)
-            c2 = repo.make_commit(c1, 'simple commit message that closes odoo/enterprise#1', None, tree={'f': 'm2'})
+            [c1] = repo.make_commits(None, Commit('first!', tree={'f': 'm1'}), ref='heads/master')
+            [c2] = repo.make_commits(c1, Commit('simple commit message that closes odoo/enterprise#1', tree={'f': 'm2'}))
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
             repo.post_status(prx.head, 'success')
@@ -269,9 +266,8 @@ class TestCommitMessage:
         """ verify do not match on a wrong number
         """
         with repo:
-            c1 = repo.make_commit(None, 'first!', None, tree={'f': 'm1'})
-            repo.make_ref('heads/master', c1)
-            c2 = repo.make_commit(c1, 'simple commit message that closes #11', None, tree={'f': 'm2'})
+            [c1] = repo.make_commits(None, Commit('first!', tree={'f': 'm1'}), ref='heads/master')
+            [c2] = repo.make_commits(c1, Commit('simple commit message that closes #11', tree={'f': 'm2'}))
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
             repo.post_status(prx.head, 'success')
@@ -297,9 +293,8 @@ class TestCommitMessage:
             'email': users['other'] + '@example.org'
         })
         with repo:
-            c1 = repo.make_commit(None, 'first!', None, tree={'f': 'm1'})
-            repo.make_ref('heads/master', c1)
-            c2 = repo.make_commit(c1, 'simple commit message', None, tree={'f': 'm2'})
+            [c1] = repo.make_commits(None, Commit('first!', tree={'f': 'm1'}), ref='heads/master')
+            [c2] = repo.make_commits(c1, Commit('simple commit message', tree={'f': 'm2'}))
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
             repo.post_status(prx.head, 'success')
@@ -323,14 +318,13 @@ class TestCommitMessage:
         message
         """
         with repo:
-            c1 = repo.make_commit(None, 'first!', None, tree={'f': 'm1'})
-            repo.make_ref('heads/master', c1)
-            c2 = repo.make_commit(c1, '''simple commit message
+            [c1] = repo.make_commits(None, Commit('first!', tree={'f': 'm1'}), ref='heads/master')
+            [c2] = repo.make_commits(c1, Commit('''simple commit message
 
 
 Co-authored-by: Bob <bob@example.com>
 
-Fixes a thing''', None, tree={'f': 'm2'})
+Fixes a thing''', tree={'f': 'm2'}))
 
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
             repo.post_status(prx.head, 'success')
@@ -365,10 +359,9 @@ class TestWebhookSecurity:
         """ Test 1: didn't add a secret to the repo, should be ignored
         """
         with repo:
-            m = repo.make_commit(None, "initial", None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit("initial", tree={'a': 'some content'}), ref='heads/master')
 
-            c0 = repo.make_commit(m, 'replace file contents', None, tree={'a': 'some other content'})
+            [c0] = repo.make_commits(m, Commit('replace file contents', tree={'a': 'some other content'}))
             pr0 = repo.make_pr(title="gibberish", body="blahblah", target='master', head=c0)
 
         with pytest.raises(TimeoutError):
@@ -378,10 +371,9 @@ class TestWebhookSecurity:
         with repo:
             repo.set_secret("wrong secret")
 
-            m = repo.make_commit(None, "initial", None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit("initial", tree={'a': 'some content'}), ref='heads/master')
 
-            c0 = repo.make_commit(m, 'replace file contents', None, tree={'a': 'some other content'})
+            [c0] = repo.make_commits(m, Commit('replace file contents', tree={'a': 'some other content'}))
             pr0 = repo.make_pr(title="gibberish", body="blahblah", target='master', head=c0)
 
         with pytest.raises(TimeoutError):
@@ -391,10 +383,9 @@ class TestWebhookSecurity:
         with repo:
             repo.set_secret("a secret")
 
-            m = repo.make_commit(None, "initial", None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit("initial", tree={'a': 'some content'}), ref='heads/master')
 
-            c0 = repo.make_commit(m, 'replace file contents', None, tree={'a': 'some other content'})
+            [c0] = repo.make_commits(m, Commit('replace file contents', tree={'a': 'some other content'}))
             pr0 = repo.make_pr(title="gibberish", body="blahblah", target='master', head=c0)
 
         assert to_pr(env, pr0)
@@ -402,12 +393,14 @@ class TestWebhookSecurity:
 def test_staging_ongoing(env, repo, config):
     with repo:
         # create base branch
-        m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-        repo.make_ref('heads/master', m)
+        [m] = repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref='heads/master')
 
         # create PR
-        c0 = repo.make_commit(m, 'replace file contents', None, tree={'a': 'some other content'})
-        c1 = repo.make_commit(c0, 'add file', None, tree={'a': 'some other content', 'b': 'a second file'})
+        _, c1 = repo.make_commits(
+            m,
+            Commit('replace file contents', tree={'a': 'some other content'}),
+            Commit('add file', tree={'b': 'a second file'}),
+        )
         pr1 = repo.make_pr(title="gibberish", body="blahblah", target='master', head=c1)
         repo.post_status(c1, 'success')
         pr1.post_comment("hansen r+ rebase-merge", config['role_reviewer']['token'])
@@ -417,8 +410,11 @@ def test_staging_ongoing(env, repo, config):
 
     with repo:
         # create second PR and make ready for staging
-        c2 = repo.make_commit(m, 'other', None, tree={'a': 'some content', 'c': 'ccc'})
-        c3 = repo.make_commit(c2, 'other', None, tree={'a': 'some content', 'c': 'ccc', 'd': 'ddd'})
+        _, c3 = repo.make_commits(
+            m,
+            Commit('other', tree={'a': 'some content', 'c': 'ccc'}),
+            Commit('other', tree={'d': 'ddd'}),
+        )
         pr2 = repo.make_pr(title='gibberish', body='blahblah', target='master', head=c3)
         repo.post_status(c3, 'success')
         pr2.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
@@ -440,8 +436,7 @@ def test_staging_ongoing(env, repo, config):
 def test_staging_concurrent(env, repo, config):
     """ test staging to different targets, should be picked up together """
     with repo:
-        m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-        repo.make_ref('heads/1.0', m)
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/1.0')
         repo.make_ref('heads/2.0', m)
 
     env['runbot_merge.project'].search([]).write({
@@ -449,14 +444,20 @@ def test_staging_concurrent(env, repo, config):
     })
 
     with repo:
-        c10 = repo.make_commit(m, 'AAA', None, tree={'m': 'm', 'a': 'a'})
-        c11 = repo.make_commit(c10, 'BBB', None, tree={'m': 'm', 'a': 'a', 'b': 'b'})
+        _, c11 = repo.make_commits(
+            m,
+            Commit('AAA', tree={'m': 'm', 'a': 'a'}),
+            Commit('BBB', tree={'b': 'b'}),
+        )
         pr1 = repo.make_pr(title='t1', body='b1', target='1.0', head=c11)
         repo.post_status(pr1.head, 'success')
         pr1.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
 
-        c20 = repo.make_commit(m, 'CCC', None, tree={'m': 'm', 'c': 'c'})
-        c21 = repo.make_commit(c20, 'DDD', None, tree={'m': 'm', 'c': 'c', 'd': 'd'})
+        _, c21 = repo.make_commits(
+            m,
+            Commit('CCC', tree={'c': 'c'}),
+            Commit('DDD', tree={'d': 'd'}),
+        )
         pr2 = repo.make_pr(title='t2', body='b2', target='2.0', head=c21)
         repo.post_status(pr2.head, 'success')
         pr2.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
@@ -473,12 +474,18 @@ def test_staging_conflict_first(env, repo, users, config, page):
     marked as in error
     """
     with repo:
-        m1 = repo.make_commit(None, 'initial', None, tree={'f': 'm1'})
-        m2 = repo.make_commit(m1, 'second', None, tree={'f': 'm2'})
-        repo.make_ref('heads/master', m2)
+        m1, _ = repo.make_commits(
+            None,
+            Commit('initial', tree={'f': 'm1'}),
+            Commit('second', tree={'f': 'm2'}),
+            ref='heads/master',
+        )
 
-        c1 = repo.make_commit(m1, 'other second', None, tree={'f': 'c1'})
-        c2 = repo.make_commit(c1, 'third', None, tree={'f': 'c2'})
+        _, c2 = repo.make_commits(
+            m1,
+            Commit('other second', tree={'f': 'c1'}),
+            Commit('third', tree={'f': 'c2'}),
+        )
         pr = repo.make_pr(title='title', body='body', target='master', head=c2)
         repo.post_status(pr.head, 'success')
         pr.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
@@ -577,7 +584,7 @@ def test_staging_ci_timeout(env, repo, config, page, update_op: Callable[[int], 
 def test_timeout_bump_on_pending(env, repo, config, project):
     project.repo_ids.required_statuses = 'legal/cla,ci/runbot'
     with repo:
-        [m, c] = repo.make_commits(
+        m, c = repo.make_commits(
             None,
             Commit('initial', tree={'f': '0'}),
             Commit('c', tree={'f': '1'}),
@@ -611,11 +618,13 @@ def test_staging_ci_failure_single(env, repo, users, config, page):
     """ on failure of single-PR staging, mark & notify failure
     """
     with repo:
-        m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-        repo.make_ref('heads/master', m)
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-        c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
-        c2 = repo.make_commit(c1, 'second', None, tree={'m': 'c2'})
+        _, c2 = repo.make_commits(
+            m,
+            Commit('first', tree={'m': 'c1'}),
+            Commit('second', tree={'m': 'c2'}),
+        )
         pr = repo.make_pr(title='title', body='body', target='master', head=c2)
         repo.post_status(pr.head, 'success')
         pr.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
@@ -644,11 +653,13 @@ def test_staging_ci_failure_single(env, repo, users, config, page):
 def test_ff_failure(env, repo, config, page):
     """ target updated while the PR is being staged => redo staging """
     with repo:
-        m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-        repo.make_ref('heads/master', m)
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-        c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
-        c2 = repo.make_commit(c1, 'second', None, tree={'m': 'c2'})
+        _, c2 = repo.make_commits(
+            m,
+            Commit('first', tree={'m': 'c1'}),
+            Commit('second', tree={'m': 'c2'}),
+        )
         prx = repo.make_pr(title='title', body='body', target='master', head=c2)
         repo.post_status(prx.head, 'success')
         prx.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
@@ -657,7 +668,7 @@ def test_ff_failure(env, repo, config, page):
     assert st
 
     with repo:
-        m2 = repo.make_commit('heads/master', 'cockblock', None, tree={'m': 'm', 'm2': 'm2'})
+        [m2] = repo.make_commits('heads/master', Commit('cockblock', tree={'m': 'm', 'm2': 'm2'}), ref='heads/master', make=False)
     assert repo.commit('heads/master').id == m2
 
     # report staging success & run cron to merge
@@ -681,26 +692,34 @@ def test_ff_failure(env, repo, config, page):
 
 def test_ff_failure_batch(env, repo, users, config):
     with repo:
-        m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-        repo.make_ref('heads/master', m)
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-        a1 = repo.make_commit(m, 'a1', None, tree={'m': 'm', 'a': '1'})
-        a2 = repo.make_commit(a1, 'a2', None, tree={'m': 'm', 'a': '2'})
-        repo.make_ref('heads/A', a2)
+        repo.make_commits(
+            m,
+            Commit('a1', tree={'m': 'm', 'a': '1'}),
+            Commit('a2', tree={'m': 'm', 'a': '2'}),
+            ref='heads/A',
+        )
         A = repo.make_pr(title='A', body=None, target='master', head='A')
         repo.post_status(A.head, 'success')
         A.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
 
-        b1 = repo.make_commit(m, 'b1', None, tree={'m': 'm', 'b': '1'})
-        b2 = repo.make_commit(b1, 'b2', None, tree={'m': 'm', 'b': '2'})
-        repo.make_ref('heads/B', b2)
+        repo.make_commits(
+            m,
+            Commit('b1', tree={'m': 'm', 'b': '1'}),
+            Commit('b2', tree={'m': 'm', 'b': '2'}),
+            ref='heads/B',
+        )
         B = repo.make_pr(title='B', body=None, target='master', head='B')
         repo.post_status(B.head, 'success')
         B.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
 
-        c1 = repo.make_commit(m, 'c1', None, tree={'m': 'm', 'c': '1'})
-        c2 = repo.make_commit(c1, 'c2', None, tree={'m': 'm', 'c': '2'})
-        repo.make_ref('heads/C', c2)
+        repo.make_commits(
+            m,
+            Commit('c1', tree={'m': 'm', 'c': '1'}),
+            Commit('c2', tree={'m': 'm', 'c': '2'}),
+            ref='heads/C',
+        )
         C = repo.make_pr(title='C', body=None, target='master', head='C')
         repo.post_status(C.head, 'success')
         C.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
@@ -720,7 +739,7 @@ def test_ff_failure_batch(env, repo, users, config):
 
     # block FF
     with repo:
-        repo.make_commit('heads/master', 'NO!', None, tree={'m': 'm2'})
+        repo.make_commits('heads/master', Commit('NO!', tree={'m': 'm2'}), ref='heads/master', make=False)
 
     old_staging = repo.commit('staging.master')
     # confirm staging
@@ -761,13 +780,15 @@ class TestPREdition:
         })
 
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
             repo.make_ref('heads/1.0', m)
             repo.make_ref('heads/2.0', m)
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
-            c2 = repo.make_commit(c1, 'second', None, tree={'m': 'c2'})
+            _, c2 = repo.make_commits(
+                m,
+                Commit('first', tree={'m': 'c1'}),
+                Commit('second', tree={'m': 'c2'}),
+            )
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
             repo.post_status(prx.head, 'success')
             prx.post_comment('hansen rebase-ff r+', config['role_reviewer']['token'])
@@ -846,8 +867,7 @@ class TestPREdition:
         # check if things also work right when modifying the PR then
         # retargeting (don't see why not but...)
         with repo:
-            c2 = repo.make_commit(m2, 'xxx', None, tree={'m': 'm4'})
-            repo.update_ref(prx.ref, c2, force=True)
+            [c2] = repo.make_commits(m2, Commit('xxx', tree={'m': 'm4'}), ref=prx.ref, make=False)
         assert pr.head == c2
         assert not pr.squash
         with repo:
@@ -881,10 +901,9 @@ def test_close_staged(env, repo, config, page):
     When closing a staged PR, cancel the staging
     """
     with repo:
-        m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-        repo.make_ref('heads/master', m)
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-        c = repo.make_commit(m, 'fist', None, tree={'m': 'c1'})
+        [c] = repo.make_commits(m, Commit('fist', tree={'m': 'c1'}))
         prx = repo.make_pr(title='title', body='body', target='master', head=c)
         repo.post_status(prx.head, 'success')
         prx.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -917,12 +936,12 @@ def test_close_staged(env, repo, config, page):
 
 def test_forward_port(env, repo, config):
     with repo:
-        m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-        repo.make_ref('heads/master', m)
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-        head = m
-        for i in range(110):
-            head = repo.make_commit(head, 'c_%03d' % i, None, tree={'m': 'm', 'f': str(i)})
+        *_, head = repo.make_commits(
+            m,
+            *(Commit('c_%03d' % i, tree={'m': 'm', 'f': str(i)}) for i in range(110))
+        )
     # not sure why we wanted to wait here
 
     with repo:
@@ -966,17 +985,14 @@ def test_rebase_failure(env, repo, users, config):
     that call is performed *in a subprocess* when running <remote> tests.
     """
     with repo:
-        m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-        repo.make_ref('heads/master', m)
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-        commit_a = repo.make_commit(m, 'A', None, tree={'m': 'm', 'a': 'a'})
-        repo.make_ref('heads/a', commit_a)
+        repo.make_commits(m, Commit('A', tree={'m': 'm', 'a': 'a'}), ref='heads/a')
         pr_a = repo.make_pr(title='A', body=None, target='master', head='a')
         repo.post_status(pr_a.head, 'success')
         pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
 
-        commit_b = repo.make_commit(m, 'B', None, tree={'m': 'm', 'b': 'b'})
-        repo.make_ref('heads/b', commit_b)
+        repo.make_commits(m, Commit('B', tree={'m': 'm', 'b': 'b'}), ref='heads/b')
         pr_b = repo.make_pr(title='B', body=None, target='master', head='b')
         repo.post_status(pr_b.head, 'success')
         pr_b.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -1053,7 +1069,7 @@ class TestNoRequiredStatus:
         """
         env['runbot_merge.repository'].search([('name', '=', repo.name)]).status_ids = False
         with repo:
-            [m, c] = repo.make_commits(
+            m, c = repo.make_commits(
                 None,
                 Commit('initial', tree={'0': '0'}),
                 Commit('first', tree={'0': '1'}),
@@ -1073,7 +1089,7 @@ class TestNoRequiredStatus:
     def test_updated(self, env, repo, config):
         env['runbot_merge.repository'].search([('name', '=', repo.name)]).status_ids = False
         with repo:
-            [m, c] = repo.make_commits(
+            m, c = repo.make_commits(
                 None,
                 Commit('initial', tree={'0': '0'}),
                 Commit('first', tree={'0': '1'}),
@@ -1226,7 +1242,7 @@ class TestRetry:
             prx.post_comment('hansen r-', config['role_' + disabler]['token'])
         assert pr_id.state == 'validated'
         with repo:
-            repo.make_commit(prx.ref, 'third', None, tree={'m': 'c3'})
+            repo.make_commits(prx.ref, Commit('third', tree={'m': 'c3'}))
             # just in case, apparently in some case the first post_status uses the old head...
         with repo:
             repo.post_status(prx.head, 'success')
@@ -1242,11 +1258,14 @@ class TestMergeMethod:
         """ If single commit, default to rebase & FF
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/master', m2)
+            m, m2 = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/master',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
             repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -1302,17 +1321,20 @@ class TestMergeMethod:
         should be unflagged as squash
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/master', m2)
+            m, _ = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/master',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
         pr = to_pr(env, prx)
         assert pr.squash, "a PR with a single commit should be squashed"
 
         with repo:
-            repo.make_commit(prx.ref, 'second2', None, tree={'m': 'c2'})
+            repo.make_commits(prx.ref, Commit('second2', tree={'m': 'c2'}), ref=prx.ref, make=False)
         assert not pr.squash, "a PR with a single commit should not be squashed"
 
     def test_pr_reset_to_single_commit(self, repo, env):
@@ -1321,23 +1343,25 @@ class TestMergeMethod:
         re-flagged as squash
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/master', m2)
+            [m, _] = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/master',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
-            c2 = repo.make_commit(c1, 'second2', None, tree={'m': 'c2'})
+            [_, c2] = repo.make_commits(
+                m,
+                Commit('first', tree={'m': 'c1'}),
+                Commit('second2', tree={'m': 'c2'}),
+            )
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
         pr = to_pr(env, prx)
         pr.merge_method = 'rebase-merge'
         assert not pr.squash, "a PR with a single commit should not be squashed"
 
         with repo:
-            repo.update_ref(
-                prx.ref,
-                repo.make_commit(m, 'fixup', None, tree={'m': 'c2'}),
-                force=True
-            )
+            repo.make_commits(m, Commit('fixup', tree={'m': 'c2'}), ref=prx.ref, make=False)
         assert pr.squash, "a PR with a single commit should be squashed"
         assert not pr.merge_method, \
             "resetting a PR to a single commit should remove the merge method"
@@ -1383,13 +1407,19 @@ commits, I need to know how to merge it:
         """ Configuring the method should be independent from the review
         """
         with repo:
-            m0 = repo.make_commit(None, 'M0', None, tree={'m': '0'})
-            m1 = repo.make_commit(m0, 'M1', None, tree={'m': '1'})
-            m2 = repo.make_commit(m1, 'M2', None, tree={'m': '2'})
-            repo.make_ref('heads/master', m2)
+            _, m1, _ = repo.make_commits(
+                None,
+                Commit('M0', tree={'m': '0'}),
+                Commit('M1', tree={'m': '1'}),
+                Commit('M2', tree={'m': '2'}),
+                ref='heads/master',
+            )
 
-            b0 = repo.make_commit(m1, 'B0', None, tree={'m': '1', 'b': '0'})
-            b1 = repo.make_commit(b0, 'B1', None, tree={'m': '1', 'b': '1'})
+            _, b1 = repo.make_commits(
+                m1,
+                Commit('B0', tree={'m': '1', 'b': '0'}),
+                Commit('B1', tree={'m': '1', 'b': '1'}),
+            )
             prx = repo.make_pr(title='title', body='body', target='master', head=b1)
         pr = to_pr(env, prx)
         with repo:
@@ -1447,10 +1477,13 @@ commits, I need to know how to merge it:
                                                       +-------+
         """
         with repo:
-            m0 = repo.make_commit(None, 'M0', None, tree={'m': '0'})
-            m1 = repo.make_commit(m0, 'M1', None, tree={'m': '1'})
-            m2 = repo.make_commit(m1, 'M2', None, tree={'m': '2'})
-            repo.make_ref('heads/master', m2)
+            _, m1, m2 = repo.make_commits(
+                None,
+                Commit('M0', tree={'m': '0'}),
+                Commit('M1', tree={'m': '1'}),
+                Commit('M2', tree={'m': '2'}),
+                ref='heads/master',
+            )
 
             # test commit ordering issue while at it: github sorts commits on
             # author.date instead of doing so topologically which is absolutely
@@ -1458,8 +1491,11 @@ commits, I need to know how to merge it:
             committer = {'name': 'a', 'email': 'a', 'date': '2018-10-08T11:48:43Z'}
             author0 = {'name': 'a', 'email': 'a', 'date': '2018-10-01T14:58:38Z'}
             author1 = {'name': 'a', 'email': 'a', 'date': '2015-10-01T14:58:38Z'}
-            b0 = repo.make_commit(m1, 'B0', author=author0, committer=committer, tree={'m': '1', 'b': '0'})
-            b1 = repo.make_commit(b0, 'B1', author=author1, committer=committer, tree={'m': '1', 'b': '1'})
+            b0, b1 = repo.make_commits(
+                m1,
+                Commit('B0', author=author0, committer=committer, tree={'m': '1', 'b': '0'}),
+                Commit('B1', author=author1, committer=committer, tree={'m': '1', 'b': '1'}),
+            )
             prx = repo.make_pr(title='title', body='body', target='master', head=b1)
             repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+ rebase-merge', config['role_reviewer']['token'])
@@ -1624,10 +1660,9 @@ commits, I need to know how to merge it:
                gib-+
         """
         with repo:
-            m = repo.make_commit(None, "M", None, tree={'a': 'a'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit("M", tree={'a': 'a'}), ref='heads/master')
 
-            c0 = repo.make_commit(m, 'C0', None, tree={'a': 'b'})
+            [c0] = repo.make_commits(m, Commit('C0', tree={'a': 'b'}))
             prx = repo.make_pr(title="gibberish", body="blahblah", target='master', head=c0)
         env.run_crons(None)
 
@@ -1661,10 +1696,9 @@ commits, I need to know how to merge it:
         may have only a title
         """
         with repo:
-            m = repo.make_commit(None, "M", None, tree={'a': 'a'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit("M", tree={'a': 'a'}), ref='heads/master')
 
-            c0 = repo.make_commit(m, 'C0', None, tree={'a': 'b'})
+            [c0] = repo.make_commits(m, Commit('C0', tree={'a': 'b'}))
             prx = repo.make_pr(title="gibberish", body=None, target='master', head=c0)
         env.run_crons(None)
 
@@ -1849,12 +1883,15 @@ Signed-off-by: {reviewer}"""
         C1 [label = "\\N / MERGE"]
         """
         with repo:
-            m1 = repo.make_commit(None, "M1", None, tree={'a': '0'})
-            m2 = repo.make_commit(m1, "M2", None, tree={'a': '1'})
-            repo.make_ref('heads/master', m2)
+            [m1, m2] = repo.make_commits(
+                None,
+                Commit("M1", tree={'a': '0'}),
+                Commit("M2", tree={'a': '1'}),
+                ref='heads/master',
+            )
 
-            c0 = repo.make_commit(m1, 'C0', None, tree={'a': '0', 'b': '2'})
-            c1 = repo.make_commit([c0, m2], 'C1', None, tree={'a': '1', 'b': '2'})
+            [c0] = repo.make_commits(m1, Commit('C0', tree={'b': '2'}))
+            [c1] = repo.make_commits([c0, m2], Commit('C1', tree={'a': '1', 'b': '2'}))
             prx = repo.make_pr(title="T", body="TT", target='master', head=c1)
         env.run_crons()
 
@@ -1888,14 +1925,17 @@ Signed-off-by: {reviewer}"""
         MERGE -> C1
         """
         with repo:
-            m1 = repo.make_commit(None, "M1", None, tree={'a': '0'})
-            m2 = repo.make_commit(m1, "M2", None, tree={'a': '1'})
-            repo.make_ref('heads/master', m2)
+            m1, m2 = repo.make_commits(
+                None,
+                Commit("M1", tree={'a': '0'}),
+                Commit("M2", tree={'a': '1'}),
+                ref='heads/master',
+            )
 
-            b0 = repo.make_commit(m1, 'B0', None, tree={'a': '0', 'bb': 'bb'})
+            [b0] = repo.make_commits(m1, Commit('B0', tree={'bb': 'bb'}))
 
-            c0 = repo.make_commit(m1, 'C0', None, tree={'a': '0', 'b': '2'})
-            c1 = repo.make_commit([c0, b0], 'C1', None, tree={'a': '0', 'b': '2', 'bb': 'bb'})
+            [c0] = repo.make_commits(m1, Commit('C0', tree={'b': '2'}))
+            [c1] = repo.make_commits([c0, b0], Commit('C1', tree={'a': '0', 'b': '2', 'bb': 'bb'}))
             prx = repo.make_pr(title="T", body="TT", target='master', head=c1)
         env.run_crons()
 
@@ -2509,8 +2549,7 @@ class TestBatching(object):
         they should be staged together
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref='heads/master')
 
             pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
             pr2 = self._pr(repo, 'PR2', [{'c': 'CCC'}, {'d': 'DDD'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
@@ -2543,8 +2582,7 @@ class TestBatching(object):
         they should be staged together
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref='heads/master')
 
             pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
             pr1.post_comment('hansen merge', config['role_reviewer']['token'])
@@ -2583,8 +2621,7 @@ class TestBatching(object):
         they should be staged together
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref="heads/master")
 
             pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
             pr2 = self._pr(repo, 'PR2', [{'c': 'CCC'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
@@ -2613,8 +2650,7 @@ class TestBatching(object):
         # a single normal priority one
         env['runbot_merge.project'].search([]).batch_limit = 3
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref="heads/master")
 
             pr21 = self._pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
             pr22 = self._pr(repo, 'PR2', [{'c': 'CCC'}, {'d': 'DDD'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
@@ -2643,8 +2679,7 @@ class TestBatching(object):
     @pytest.mark.usefixtures("reviewer_admin")
     def test_batching_urgent(self, env, repo, config):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref="heads/master")
 
             pr11 = self._pr(repo, 'Pressing1', [{'x': 'x'}, {'y': 'y'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
             pr12 = self._pr(repo, 'Pressing2', [{'z': 'z'}, {'zz': 'zz'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
@@ -2765,8 +2800,7 @@ class TestBatching(object):
         of a staging having CI-failed and being split into sub-stagings)
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref="heads/master")
 
             pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
             pr2 = self._pr(repo, 'PR2', [{'a': 'some content', 'c': 'CCC'}, {'d': 'DDD'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
@@ -2802,8 +2836,7 @@ class TestBatching(object):
         """ Ensure pr[p=0,state=failed] don't get picked up
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref='heads/master')
 
             pr21 = self._pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
 
@@ -2872,8 +2905,7 @@ class TestBatching(object):
         """ on failure split batch & requeue
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'a': 'some content'})
-            repo.make_ref('heads/master', m)
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref='heads/master')
 
             pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
             pr2 = self._pr(repo, 'PR2', [{'a': 'some content', 'c': 'CCC'}, {'d': 'DDD'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
@@ -2918,11 +2950,14 @@ class TestReviewing:
         attributes) taken in account
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/master', m2)
+            m, _ = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/master',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
             repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_other']['token'])
@@ -2975,7 +3010,7 @@ class TestReviewing:
         """
         self_reviewer = config['role_self_reviewer']['token']
         with repo:
-            [m, _] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), Commit('second', tree={'m': 'm', 'm2': 'm2'}), ref='heads/master')
+            [m, _] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), Commit('second', tree={'m2': 'm2'}), ref='heads/master')
             with repo.fork(token=self_reviewer) as f:
                 f.make_commits(m, Commit('first', tree={'m': 'c1'}), ref='heads/change')
             prx = repo.make_pr(title='title', body='body', target='master', head=f'{f.owner}:change', token=self_reviewer)
@@ -2996,11 +3031,14 @@ class TestReviewing:
             'email': users['user'] + '@example.org',
         })
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/master', m2)
+            m, _ = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/master',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
             repo.post_status(prx.head, 'success')
             prx.post_comment('hansen delegate+', config['role_reviewer']['token'])
@@ -3015,11 +3053,14 @@ class TestReviewing:
         the PR or an other user without review rights
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/master', m2)
+            m, _ = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/master',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
             repo.post_status(prx.head, 'success')
             # flip case to check that github login is case-insensitive
@@ -3042,10 +3083,9 @@ class TestReviewing:
 
     def test_delegate_prefixes(self, env, repo, config):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'c'})
+            [c] = repo.make_commits(m, Commit('first', tree={'m': 'c'}))
             prx = repo.make_pr(title='title', body=None, target='master', head=c)
             prx.post_comment('hansen delegate=foo,@bar,#baz', config['role_reviewer']['token'])
 
@@ -3057,11 +3097,14 @@ class TestReviewing:
         """ treat github reviews as regular comments
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/master', m2)
+            m, _ = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/master',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
         pr = to_pr(env, prx)
 
@@ -3155,11 +3198,14 @@ class TestUnknownPR:
     """
     def test_rplus_unknown(self, repo, env, config, users):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/master', m2)
+            m, _ = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/master',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
             repo.post_status(prx.head, 'success', target_url="http://example.org/wheee")
         env.run_crons()
@@ -3323,11 +3369,14 @@ class TestUnknownPR:
         """ r+ on an unmanaged target should notify about
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/branch', m2)
+            m, _ = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/branch',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='branch', head=c1)
             repo.post_status(prx.head, 'success')
 
@@ -3346,11 +3395,14 @@ class TestUnknownPR:
         """ r+ reviews can take a different path than comments
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            m2 = repo.make_commit(m, 'second', None, tree={'m': 'm', 'm2': 'm2'})
-            repo.make_ref('heads/branch', m2)
+            m, _ = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm'}),
+                Commit('second', tree={'m2': 'm2'}),
+                ref='heads/branch',
+            )
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='branch', head=c1)
             repo.post_status(prx.head, 'success')
 
@@ -3371,10 +3423,9 @@ class TestRecognizeCommands:
         bot names capitalised or titlecased or uppercased or whatever
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'c'})
+            [c] = repo.make_commits(m, Commit('first', tree={'m': 'c'}))
             prx = repo.make_pr(title='title', body=None, target='master', head=c)
 
         pr = to_pr(env, prx)
@@ -3406,10 +3457,9 @@ class TestRecognizeCommands:
 
     def test_unknown_commands(self, repo, env, config, users):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'c'})
+            [c] = repo.make_commits(m, Commit('first', tree={'m': 'c'}))
             pr = repo.make_pr(title='title', body=None, target='master', head=c)
             pr.post_comment("hansen do the thing", config['role_reviewer']['token'])
             pr.post_comment('hansen @bobby-b r+ :+1:', config['role_reviewer']['token'])
@@ -3488,10 +3538,9 @@ class TestRMinus:
         """ approved -> r- -> opened
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'c'})
+            [c] = repo.make_commits(m, Commit('first', tree={'m': 'c'}))
             prx = repo.make_pr(title='title', body=None, target='master', head=c)
 
         pr = to_pr(env, prx)
@@ -3520,10 +3569,9 @@ class TestRMinus:
         """ ready -> r- -> validated
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'c'})
+            [c] = repo.make_commits(m, Commit('first', tree={'m': 'c'}))
             prx = repo.make_pr(title='title', body=None, target='master', head=c)
             repo.post_status(prx.head, 'success')
         env.run_crons()
@@ -3554,10 +3602,9 @@ class TestRMinus:
         """ staged -> r- -> validated
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'c'})
+            [c] = repo.make_commits(m, Commit('first', tree={'m': 'c'}))
             prx = repo.make_pr(title='title', body=None, target='master', head=c)
             repo.post_status(prx.head, 'success')
         env.run_crons()
@@ -3607,17 +3654,14 @@ class TestRMinus:
         entirely.
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'm', '1': '1'})
-            repo.make_ref('heads/p1', c)
+            repo.make_commits(m, Commit('first', tree={'1': '1'}), ref='heads/p1')
             prx1 = repo.make_pr(title='t1', body='b1', target='master', head='p1')
             repo.post_status(prx1.head, 'success')
             prx1.post_comment('hansen r+', config['role_reviewer']['token'])
 
-            c = repo.make_commit(m, 'first', None, tree={'m': 'm', '2': '2'})
-            repo.make_ref('heads/p2', c)
+            repo.make_commits(m, Commit('first', tree={'2': '2'}), ref='heads/p2')
             prx2 = repo.make_pr(title='t2', body='b2', target='master', head='p2')
             repo.post_status(prx2.head, 'success')
             prx2.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -3651,10 +3695,9 @@ class TestRMinus:
 class TestComments:
     def test_address_method(self, repo, env, config):
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
 
             repo.post_status(prx.head, 'success')
@@ -3671,17 +3714,16 @@ class TestComments:
         """ Comments being deleted should be ignored
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
         pr = to_pr(env, prx)
 
         with repo:
             cid = prx.post_comment('hansen r+', config['role_reviewer']['token'])
             # unreview by pushing a new commit
-            repo.update_ref(prx.ref, repo.make_commit(c1, 'second', None, tree={'m': 'c2'}), force=True)
+            repo.make_commits(c1, Commit('second', tree={'m': 'c2'}), ref=prx.ref, make=False)
         assert pr.state == 'opened'
         with repo:
             prx.delete_comment(cid, config['role_reviewer']['token'])
@@ -3692,17 +3734,16 @@ class TestComments:
         """ Comments being edited should be ignored
         """
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
         pr = to_pr(env, prx)
 
         with repo:
             cid = prx.post_comment('hansen r+', config['role_reviewer']['token'])
             # unreview by pushing a new commit
-            repo.update_ref(prx.ref, repo.make_commit(c1, 'second', None, tree={'m': 'c2'}), force=True)
+            repo.make_commits(c1, Commit('second', tree={'m': 'c2'}), ref=prx.ref, make=False)
         assert pr.state == 'opened'
         with repo:
             prx.edit_comment(cid, 'hansen r+ edited', config['role_reviewer']['token'])
@@ -3747,10 +3788,9 @@ class TestFeedback:
     def test_review_failed(self, repo, env, users, config):
         """r+-ing a PR with failed CI sends feedback"""
         with repo:
-            m = repo.make_commit(None, 'initial', None, tree={'m': 'm'})
-            repo.make_ref('heads/master', m)
+            [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
 
-            c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='master', head=c1)
         pr = to_pr(env, prx)
 
@@ -3777,12 +3817,15 @@ class TestInfrastructure:
         """ force-pushing on a protected ref should fail
         """
         with repo:
-            m0 = repo.make_commit(None, 'initial', None, tree={'m': 'm0'})
-            m1 = repo.make_commit(m0, 'first', None, tree={'m': 'm1'})
-            repo.make_ref('heads/master', m1)
+            m0, m1 = repo.make_commits(
+                None,
+                Commit('initial', tree={'m': 'm0'}),
+                Commit('first', tree={'m': 'm1'}),
+                ref='heads/master',
+            )
             repo.protect('master')
 
-            c1 = repo.make_commit(m0, 'other', None, tree={'m': 'c1'})
+            [c1] = repo.make_commits(m0, Commit('other', tree={'m': 'c1'}))
             with pytest.raises(AssertionError):
                 repo.update_ref('heads/master', c1, force=True)
         assert repo.get_ref('heads/master') == m1

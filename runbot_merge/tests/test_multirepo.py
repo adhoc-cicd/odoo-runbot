@@ -420,7 +420,7 @@ def test_merge_fail(env, project, repo_a, repo_b, users, config):
         )
 
         # add a conflicting commit to B so the staging fails
-        repo_b.make_commit('heads/master', 'cn', None, tree={'a': 'cn'})
+        repo_b.make_commits('heads/master', Commit('cn', tree={'a': 'cn'}), ref='heads/master', make=False)
 
         # and a second set of PRs which should get staged while the first set
         # fails
@@ -487,7 +487,7 @@ def test_ff_fail(env, project, repo_a, repo_b, config):
 
     # add second commit blocking FF
     with repo_b:
-        cn = repo_b.make_commit('heads/master', 'second', None, tree={'a': 'b_0', 'b': 'other'})
+        [cn] = repo_b.make_commits('heads/master', Commit('second', tree={'b': 'other'}), ref='heads/master')
     assert repo_b.commit('heads/master').id == cn
 
     with repo_a, repo_b:
