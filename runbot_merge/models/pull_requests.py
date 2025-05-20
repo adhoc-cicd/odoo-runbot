@@ -1404,7 +1404,7 @@ For your own safety I've ignored *everything in your entire comment*.
                          "ON runbot_merge_pull_requests "
                          "USING hash (head)")
 
-    def _get_batch(self, *, target, label):
+    def _get_batch(self, *, target: str, label: str, create: bool = True) -> 'Batch':
         batch = self.env['runbot_merge.batch']
         if not re.search(r':patch-\d+$', label):
             batch = batch.search([
@@ -1412,7 +1412,9 @@ For your own safety I've ignored *everything in your entire comment*.
                 ('prs.target', '=', target),
                 ('prs.label', '=', label),
             ])
-        return batch or batch.create({})
+        if create:
+            return batch or batch.create({})
+        return batch
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -1496,12 +1498,21 @@ For your own safety I've ignored *everything in your entire comment*.
                     p.reviewed_by = self.env.user.partner_id.id
 
         for pr in self:
-            if (t := vals.get('target')) is not None and pr.target.id != t:
+            if (t := vals.get('target')) and pr.target.id != t:
                 pr.unstage(
                     "target (base) branch was changed from %r to %r",
                     pr.target.display_name,
                     self.env['runbot_merge.branch'].browse(t).display_name,
                 )
+                if (
+                    'batch_id' not in vals
+                and (other_batch := self._get_batch(target=t, label=vals.get('label') or pr.label, create=False))
+                and other_batch != pr.batch_id
+                and not any(p.repository == pr.repository for p in other_batch.prs)
+                ):
+                    assert len(self) == 1, \
+                        "unable to migrate multiple PRs to the same batch"
+                    vals['batch_id'] = other_batch.id
 
             if 'message' in vals:
                 merge_method = vals['merge_method'] if 'merge_method' in vals else pr.merge_method

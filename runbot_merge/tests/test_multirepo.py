@@ -234,6 +234,100 @@ def test_different_targets(env, project, repo_a, repo_b, config):
     env.run_crons()
     assert pr_a.state == 'merged'
 
+def test_rejoin_different_batches(env, project, repo_a, repo_b, config):
+    """In the case where a user makes a mistake and creates PRs with the same
+    label targeting different branches, we want a retarget to merge the batches
+    so the PRs get rejoined.
+    """
+    project.write({'branch_ids': [(0, 0, {'name': 'other'})]})
+    with repo_a, repo_b:
+        repo_a.make_commits(None, Commit('initial', tree={'master': 'a_0'}), ref='heads/master')
+        repo_b.make_commits(None, Commit('initial', tree={'master': 'b_0'}), ref='heads/master')
+        repo_a.make_commits(None, Commit('initial', tree={'other': 'a_0'}), ref='heads/other')
+        repo_b.make_commits(None, Commit('initial', tree={'other': 'b_0'}), ref='heads/other')
+    with repo_a, repo_b:
+        pr1 = make_pr(
+            repo_a, "foo", [{'x': 'y'}],
+            target='master',
+            user=config['role_user']['token'],
+            reviewer=config['role_reviewer']['token'],
+        )
+        pr2 = make_pr(
+            repo_b, "foo", [{'x': 'y'}],
+            target="other",
+            user=config['role_user']['token'],
+            reviewer=config['role_reviewer']['token'],
+        )
+    env.run_crons()
+
+    pr1_id = to_pr(env, pr1)
+    pr2_id = to_pr(env, pr2)
+    # the PRs are in different batches, and because they target different
+    # branches they should also be in different stagings
+    assert pr1_id.batch_id != pr2_id.batch_id
+    assert pr1_id.staging_id and pr2_id.staging_id
+    assert pr1_id.staging_id != pr2_id.staging_id
+
+    with repo_b:
+        pr2.base = 'master'
+    assert pr1_id.target == pr2_id.target
+    assert pr1_id.batch_id == pr2_id.batch_id
+    env.run_crons()
+    assert pr1_id.staging_id and pr2_id.staging_id
+    assert pr1_id.staging_id == pr2_id.staging_id
+
+def test_rejoin_no_duplicates(env, project, repo_a, repo_b, config):
+    """An exclusionary subcase of the previous is if the candidate batch for
+    merging already has a PR for the repository.
+
+    This is pretty unlikely to happen (barring on the fly renames /
+    reattachments) as the duplicates would need to be created from the same
+    branch or something...
+    """
+    project.write({'branch_ids': [(0, 0, {'name': 'other'})]})
+    with repo_a, repo_b:
+        repo_a.make_commits(None, Commit('initial', tree={'master': 'a_0'}), ref='heads/master')
+        repo_b.make_commits(None, Commit('initial', tree={'master': 'b_0'}), ref='heads/master')
+        repo_a.make_commits(None, Commit('initial', tree={'other': 'a_0'}), ref='heads/other')
+        repo_b.make_commits(None, Commit('initial', tree={'other': 'b_0'}), ref='heads/other')
+    with repo_a:
+        pr1_a = make_pr(
+            repo_a, "foo", [{'x': 'y'}],
+            target='master',
+            user=config['role_user']['token'],
+            reviewer=config['role_reviewer']['token'],
+        )
+    with repo_b:
+        pr1_b = make_pr(
+            repo_b, "foo", [{'x': 'y'}],
+            target='master',
+            user=config['role_user']['token'],
+            reviewer=config['role_reviewer']['token'],
+        )
+        # can't use `foo` as label / branch, because it fucks with pr1_b
+        pr2 = make_pr(
+            repo_b, "foo2", [{'z': 'q'}],
+            target="other",
+            user=config['role_user']['token'],
+            reviewer=config['role_reviewer']['token'],
+        )
+    time.sleep(5)
+    env.run_crons()
+
+    pr1_a_id = to_pr(env, pr1_a)
+    pr1_b_id = to_pr(env, pr1_b)
+    assert not pr1_a_id.blocked and not pr1_b_id.blocked
+    assert pr1_a_id.batch_id == pr1_b_id.batch_id
+    pr2_id = to_pr(env, pr2)
+    # cheat: we need to fixup the label to match the existing batch
+    pr2_id.label = pr1_b_id.label
+    assert not pr2_id.blocked
+
+    with repo_b:
+        pr2.base = 'master'
+    assert pr1_a_id.target == pr2_id.target
+    assert pr1_a_id.batch_id != pr2_id.batch_id
+
 def test_stage_different_statuses(env, project, repo_a, repo_b, config):
     project.batch_limit = 1
 
