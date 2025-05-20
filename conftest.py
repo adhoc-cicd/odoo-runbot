@@ -1300,6 +1300,10 @@ class Environment:
         self.login('admin', 'admin')
         self._context = {}
 
+    @functools.cached_property
+    def user(self):
+        return Model(self, 'res.users', [self._uid])
+
     def with_user(self, login, password):
         env = copy.copy(self)
         env.login(login, password)

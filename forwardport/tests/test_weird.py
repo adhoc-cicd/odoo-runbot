@@ -920,6 +920,18 @@ def test_missing_magic_ref(env, config, make_repo):
     assert req.retry_after > datetime.now(timezone.utc)\
         .replace(tzinfo=None).isoformat(" ", "seconds")
 
+    # check notifications
+    assert not req.cannot_apply
+    env['res.users'].search([]).notification_type = 'inbox'
+    req.retry_after = "9999-12-31 23:59:59"
+    assert req.cannot_apply
+    notifications = env['mail.notification'].search([])
+    assert notifications
+    assert all(
+        notification.mail_message_id.body.startswith("<p>Cannot forward port")
+        for notification in notifications
+    )
+
     # reset retry_after
     req.retry_after = '1900-01-01 01:01:01'
 

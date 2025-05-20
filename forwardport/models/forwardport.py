@@ -140,7 +140,16 @@ class ForwardPortTasks(models.Model):
     @api.depends('retry_after')
     def _compute_cannot_apply(self):
         for t in self:
+            prev = t.cannot_apply
             t.cannot_apply = t.retry_after > (t.create_date + timedelta(days=1))
+            if not prev and t.cannot_apply:
+                # notify as odoobot to make sure every relevant user always
+                # gets notified even if this latch is triggered through a user
+                # updating a record
+                t.with_user(1).message_notify(
+                    body=f"Cannot forward port {t.batch_id.name}, disabling.",
+                    partner_ids=self.env.ref('runbot_merge.group_admin').users.partner_id.ids,
+                )
 
     def _on_failure(self):
         super()._on_failure()
