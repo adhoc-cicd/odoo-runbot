@@ -348,6 +348,7 @@ class DbDict(dict):
                 'odoo', '--no-http',
                 *(['--addons-path', self._adpath] if self._adpath else []),
                 '-d', db, '-i', module + ',saas_worker,auth_oauth',
+                '--without-demo=all',
                 '--max-cron-threads', '0',
                 '--stop-after-init',
                 '--log-level', 'warn',
