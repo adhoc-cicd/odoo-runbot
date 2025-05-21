@@ -383,7 +383,7 @@ class Batch(models.Model):
                     repository=pr.repository,
                     pull_request=pr.number,
                     token_field='fp_github_token',
-                    format_args={'source': source, 'pr': pr, 'new': new_pr, 'footer': FOOTER},
+                    format_args={'source': source, 'pr': pr._suppress_ping(), 'new': new_pr, 'footer': FOOTER},
                 )
 
         for pr, new_pr in zip(prs, new_batch):

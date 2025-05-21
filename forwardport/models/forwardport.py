@@ -291,22 +291,23 @@ class ForwardPortTasks(models.Model):
                     _logger.warning("Deleting %s:%s=%s", remote_target, ref, d.text)
                 raise RuntimeError(f"Forwardport failure: {pr.display_name} ({r.text})")
 
+            report_conflicts = conflict and self.batch_id.fw_policy != 'skipmerge'
             new_pr = PullRequests._from_gh(
                 r.json(),
                 batch_id=descendant.id,
                 merge_method=pr.merge_method,
                 source_id=source_id.id,
-                parent_id=False if conflict else pr.id,
-                detach_reason="{1}\n{2}".format(*conflict).strip() if conflict else None
+                parent_id=False if report_conflicts else pr.id,
+                detach_reason="{1}\n{2}".format(*conflict).strip() if report_conflicts else None
             )
             _logger.info("Created forward-port PR %s", new_pr.display_name)
 
-            if conflict:
+            if report_conflicts:
                 self.env.ref('runbot_merge.forwardport.failure.conflict')._send(
                     repository=pr.repository,
                     pull_request=pr.number,
                     token_field='fp_github_token',
-                    format_args={'source': source, 'pr': pr, 'new': new_pr, 'footer': FOOTER},
+                    format_args={'source': source, 'pr': pr._suppress_ping(), 'new': new_pr, 'footer': FOOTER},
                 )
             new_pr._fp_conflict_feedback(pr, {pr: conflict})
 
@@ -380,7 +381,7 @@ class UpdateQueue(models.Model):
                         repository=previous.repository,
                         pull_request=previous.number,
                         token_field='fp_github_token',
-                        format_args={'pr': previous, 'next': child},
+                        format_args={'pr': previous._suppress_ping(), 'next': child},
                     )
                     self.env.ref('runbot_merge.forwardport.updates.conflict.child')._send(
                         repository=child.repository,
@@ -388,7 +389,7 @@ class UpdateQueue(models.Model):
                         token_field='fp_github_token',
                         format_args={
                             'previous': previous,
-                            'pr': child,
+                            'pr': child._suppress_ping(),
                             'stdout': (f'\n\nstdout:\n```\n{out.strip()}\n```' if out.strip() else ''),
                             'stderr': (f'\n\nstderr:\n```\n{err.strip()}\n```' if err.strip() else ''),
                         },
