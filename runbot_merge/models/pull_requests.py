@@ -1541,7 +1541,10 @@ For your own safety I've ignored *everything in your entire comment*.
             for p in self:
                 if not (writer := authors.get(p.id)):
                     writer = self.env.user.partner_id
-                p.unstage("updated by %s", writer.github_login or writer.name)
+                if vals.get('closed') is False:
+                    p.unstage("reopened by %s", writer.github_login or writer.name)
+                else:
+                    p.unstage("updated by %s", writer.github_login or writer.name)
             # this can be batched
             c = self.env['runbot_merge.commit'].search([('sha', '=', newhead)])
             self._validate(c.statuses)

@@ -252,7 +252,7 @@ def test_close_pr_in_staged_batch(env, project, make_repo2, config, page):
     assert len(batch) == 2,\
         "the batch should still show both PRs"
 
-def test_reopen_pr_in_staged_batch(env, project, make_repo2, config):
+def test_reopen_pr_in_staged_batch(env, project, make_repo2, config, users):
     """Reopening a closed PR from a staged batch should cancel the staging
     """
     repo1 = make_repo2('a')
@@ -292,13 +292,16 @@ def test_reopen_pr_in_staged_batch(env, project, make_repo2, config):
     env.run_crons(None)
 
     assert pr2_id.state == 'closed'
-    assert batch_id.staging_ids.filtered(lambda s: s.active)
+    staging = batch_id.staging_ids.filtered(lambda s: s.active)
+    assert staging
 
     with repo2:
         pr2.open()
     assert pr2_id.state == 'opened'
     assert not batch_id.staging_ids.filtered(lambda s: s.active)
     assert batch_id.blocked
+    assert staging.state == 'cancelled'
+    assert staging.reason == f"{pr2_id.display_name} reopened by {users['user']}"
 
 def test_reopen_pr_in_merged_batch(env, project, make_repo2, config, users):
     """If the batch is merged, the pr should just be re-closed with a message
