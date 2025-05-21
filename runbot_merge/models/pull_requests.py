@@ -559,6 +559,9 @@ class PullRequests(models.Model):
             s = ' '.join(f'@{p.github_login}' for p in contacts)
             pr.ping = s and (s + ' ')
 
+    def _suppress_ping(self):
+        return self.with_context(suppress_ping=self.source_id.batch_id.fw_policy=='skipmerge')
+
     @api.depends('repository.name', 'number')
     def _compute_url(self):
         base = werkzeug.urls.url_parse(self.env['ir.config_parameter'].sudo().get_param('web.base.url', 'http://localhost:8069'))
@@ -1718,7 +1721,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 )
             template = 'runbot_merge.forwardport.failure'
             format_args = {
-                'pr': self.with_context(suppress_ping=self.source_id.batch_id.fw_policy=='skipmerge'),
+                'pr': self._suppress_ping(),
                 'commits': lines,
                 'stdout': sout,
                 'stderr': serr,
@@ -1727,7 +1730,7 @@ For your own safety I've ignored *everything in your entire comment*.
         elif any(conflicts.values()):
             template = 'runbot_merge.forwardport.linked'
             format_args = {
-                'pr': self.with_context(suppress_ping=self.source_id.batch_id.fw_policy=='skipmerge'),
+                'pr': self._suppress_ping(),
                 'siblings': ', '.join(p.display_name for p in (self.batch_id.prs - self)),
                 'footer': FOOTER,
             }

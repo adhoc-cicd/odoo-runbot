@@ -70,7 +70,7 @@ class Batch(models.Model):
         ('default', "Default"),
         ('skipci', "Skip CI"),
         ('skipmerge', "Skip merge"),
-    ], required=True, default="default", string="Forward Port Policy", tracking=True)
+    ], required=True, default="default", string="Forward Port Policy", tracking=True, readonly=True)
 
     merge_date = fields.Datetime(tracking=True)
     # having skipchecks skip both validation *and approval* makes sense because
@@ -383,7 +383,7 @@ class Batch(models.Model):
                     repository=pr.repository,
                     pull_request=pr.number,
                     token_field='fp_github_token',
-                    format_args={'source': source, 'pr': pr, 'new': new_pr, 'footer': FOOTER},
+                    format_args={'source': source, 'pr': pr._suppress_ping(), 'new': new_pr, 'footer': FOOTER},
                 )
 
         for pr, new_pr in zip(prs, new_batch):
