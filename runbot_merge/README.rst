@@ -118,6 +118,37 @@ Thus running the test suite locally requires:
 Configuration
 '''''''''''''
 
+The test suite *should* be run with ``pytest-xdist`` installed [#perf]_::
+
+    pytest -n logical --users $USERS_FILE
+
+``USERS_FILE``
+    The description of the users roles / github users / github organisation,
+    see `users file`_.
+
+.. note:: ``logical`` runs an xdist worker per thread which seems to work well
+            on a Ryzen 5 7530U (6 cores 12 threads) [#numprocesses]_.
+
+Autoconf
+~~~~~~~~
+
+As long as ``mitmdump`` and ``dummy_central`` are on the ``PATH``, the test
+suite will run them internally as needed. This should work out of the box.
+
+Manual Setup
+~~~~~~~~~~~~
+
+In some cases (e.g. trying to update or debug dummy central, running with
+tracing, ...) it can be necessary to run the test suite with externally setup
+mitmproxy / dummy-central.
+
+In those cases:
+
+- dummy-central *must not* be on the path
+- dummy-central should probably be run from a git checkout and started manually::
+
+      cargo run --release -- $USERS_FILE -p $PORT
+
 - mitmproxy should be run as::
 
       mitmdump -M '|^https?://(\w+\.)?github.com/|http://localhost:$PORT/'
@@ -132,25 +163,14 @@ Configuration
   - causes flakiness in the local test suite when the connection fails (e.g.
     because github or the network is down)
   - slows mitmproxy down
-- dummy-central should probably be run from a git checkout. It could be
-  installed but development to the mergebot may -- and likely will -- require
-  additions or changes to DC, leading to a local build being much easier::
 
-      cargo run --release -- $USERS_FILE -p $PORT
-
-- the test suite *should* be run with ``pytest-xdist`` installed [#perf]_::
+- the test suite *must* be run with the proxy specified::
 
       HTTPS_PROXY=$PROXY_ADDR pytest -n logical --users $USERS_FILE
 
-  .. note:: ``logical`` runs an xdist worker per thread which seems to work well
-            on a Ryzen 5 7530U (6 cores 12 threads) [#numprocesses]_.
-
-``PROXY_ADDR``
-    The address on which mitmproxy is bound, defaults to
-    ``http://localhost:8080`` unless ``--listen-port`` (``-p``) is used.
-``USERS_FILE``
-    The description of the users roles / github users / github organisation,
-    see `users file`_.
+  ``PROXY_ADDR``
+      The address on which mitmproxy is bound, defaults to
+      ``http://localhost:8080`` unless ``--listen-port`` (``-p``) is used.
 
 Users File
 ''''''''''
@@ -217,12 +237,12 @@ parameter which should link to a tunnel script. The repository bundles an
 ``ngrok`` script which adapts the tunnel protocol for ngrok agents (ideally ran
 as a daemon, that avoids startup synchronisation issues)::
 
-    pytest --tunnel runbot_merge/ngrok
+    pytest --tunnel runbot/odoo/addons/runbot_merge/ngrok
 
 should automatically create and teardown tunnels from github, and create
 webhooks to the remote end of the tunnel.
 
-The tunnel script simply takes the local port as first argument, should print
+A tunnel script simply takes the local port as first argument, should print
 the remote address of the tunnel on stdout (don't forget to flush so the test
 suite can read it), then close the tunnel on SIGTERM and SIGINT (the test suite
 uses SIGTERM to close tunnels, but when testing a tunnel script Ctrl+C sends
@@ -294,16 +314,6 @@ understanding some issues difficult.
 To that end, tracing support was added to the test harness and to dummy central:
 
 - install pytest-opentelemetry (in the same environment as pytest)
-
-  .. note::
-
-    unless `#34`_ is merged, install the PR source::
-
-        pip install git+https://github.com/xmo-odoo/pytest-opentelemetry@trace-per-test
-
-    otherwise the plugin generates a trace for the entire test suite, which is
-    unusable, a trace per test is much clearer (and more compatible with otel
-    interfaces that I've seen)
 - setup an opentelemetry client / sink of some sort [#otel]_.
 - run dummy-central with ``--features otlp``, and the environment
   ``OTEL_SERVICE_NAME=dummy-central OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317``

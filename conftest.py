@@ -1,50 +1,7 @@
-"""
-Configuration:
-
-* an ``odoo`` binary in the path, which runs the relevant odoo; to ensure a
-  clean slate odoo is re-started and a new database is created before each
-  test (technically a "template" db is created first, then that DB is cloned
-  and the fresh clone is used for each test)
-
-* pytest.ini (at the root of the runbot repo or higher) with the following
-  sections and keys
-
-  ``github``
-    - owner, the name of the account (personal or org) under which test repos
-      will be created & deleted (note: some repos might be created under role
-      accounts as well)
-    - token, either personal or oauth, must have the scopes ``public_repo``,
-      ``delete_repo`` and ``admin:repo_hook``, if personal the owner must be
-      the corresponding user account, not an org. Also user:email for the
-      forwardport / forwardbot tests
-
-  ``role_reviewer``, ``role_self_reviewer`` and ``role_other``
-    - name (optional, used as partner name when creating that, otherwise github
-      login gets used)
-    - email (optional, used as partner email when creating that, otherwise
-      github email gets used, reviewer and self-reviewer must have an email)
-    - token, a personal access token with the ``public_repo`` scope (otherwise
-      the API can't leave comments), maybe eventually delete_repo (for personal
-      forks)
-
-    .. warning:: the accounts must *not* be flagged, or the webhooks on
-                 commenting or creating reviews will not trigger, and the
-                 tests will fail
-
-* either ``ngrok`` or ``lt`` (localtunnel) available on the path. ngrok with
-  a configured account is recommended: ngrok is more reliable than localtunnel
-  but a free account is necessary to get a high-enough rate limiting for some
-  of the multi-repo tests to work
-
-Finally the tests aren't 100% reliable as they rely on quite a bit of network
-traffic, it's possible that the tests fail due to network issues rather than
-logic errors.
-"""
 from __future__ import annotations
 
 import base64
 import collections
-import configparser
 import contextlib
 import copy
 import datetime
@@ -205,19 +162,21 @@ def _set_socket_timeout():
     socket.setdefaulttimeout(120.0)
 
 @pytest.fixture(scope="session")
-def config(pytestconfig: pytest.Config) -> dict[str, dict[str, str]]:
-    """ Flat version of the pytest config file (pytest.ini), parses to a
-    simple dict of {section: {key: value}}
-
-    """
+def users_file(pytestconfig: pytest.Config) -> pathlib.Path:
     if p := pytestconfig.getoption('--users'):
-        with pytestconfig.invocation_params.dir.joinpath(p).open('rb') as f:
-            users = json.load(f)
+        return pytestconfig.invocation_params.dir.joinpath(p)
     elif p := pytestconfig.getini('users'):
-        with pytestconfig.inipath.parent.joinpath(p).open('rb') as f:
-            users = json.load(f)
+        return pytestconfig.inipath.parent.joinpath(p)
     else:
         raise ValueError("A users json file is required.")
+
+@pytest.fixture(scope="session")
+def config(users_file: pathlib.Path) -> dict[str, dict[str, str]]:
+    """ Flat version of the pytest config file (pytest.ini), parses to a
+    simple dict of {section: {key: value}}
+    """
+    with users_file.open('rb') as f:
+        users = json.load(f)
 
     cnf = {
         f'role_{e["role"]}': {
@@ -317,6 +276,99 @@ def tunnel(pytestconfig: pytest.Config, port: int) -> Iterator[str]:
             p.wait(30)
     else:
         yield f'http://localhost:{port}'
+
+@pytest.fixture(scope='session', autouse=True)
+def http_proxy(pytestconfig: pytest.Config, users_file: pathlib.Path) -> Iterator[None]:
+    if pytestconfig.getoption('--tunnel'):
+        yield
+        return
+
+    # if we don't find dummy_central on the path, assume the environment is set
+    # up externally *somehow* e.g. `HTTPS_PROXY` is set, and mitmdump (or some
+    # other rewriting proxy) and DC (or equivalent) are running and properly
+    # configured
+    if not shutil.which('dummy_central'):
+        yield
+        return
+
+    with contextlib.ExitStack() as cleanup:
+        datadir = pathlib.Path(cleanup.enter_context(tempfile.TemporaryDirectory()))
+
+        portfile = datadir / 'dcportfile'
+        gh = cleanup.enter_context(subprocess.Popen(
+            ['dummy_central', users_file, '-p', '0', '--portfile', portfile],
+            stdout=sys.stdout.fileno(),
+            stderr=sys.stderr.fileno(),
+            env={**os.environ, 'RUST_BACKTRACE': '1'},
+        ))
+        cleanup.callback(gh.wait, 30)
+        cleanup.callback(gh.terminate)
+
+        gh_port = waitfile(portfile, lambda f: int(f.read_text()), ValueError)
+        gh_url = f'http://localhost:{gh_port}/'
+
+        proxy = cleanup.enter_context(subprocess.Popen([
+            'mitmdump',
+            '-p', '0',
+            # do not look up github's certificate details
+            '--set', 'upstream_cert=false',
+            # do not immediately connect to github (otherwise even with the
+            # option above mitmproxy connects to github just in case)
+            '--set', 'connection_strategy=lazy',
+            # map github.com to our fake github
+            '--map-remote', rf'|^https?://(\w+\.)?github.com/|{gh_url}',
+            # write portfile once init completes
+            '-s', pathlib.Path(__file__).parent / 'runbot_merge/portfile',
+            '--set', f'datadir={datadir}',
+        ],
+            stdout=sys.stdout.fileno(),
+            stderr=sys.stderr.fileno(),
+        ))
+        cleanup.callback(proxy.wait, 30)
+        cleanup.callback(proxy.terminate)
+
+        proxy_port = waitfile(
+            datadir / 'portfile',
+            lambda f: json.loads(f.read_text())['regular'],
+            json.JSONDecodeError,
+        )
+        # writing our own env is icky but seems like the easiest way to
+        # ensure the proxy configuration is picked up by urllib and requests
+        # and subprocesses (git, odoo)
+        os.environ['HTTPS_PROXY'] = f'http://localhost:{proxy_port}'
+
+        yield
+
+T = typing.TypeVar('T')
+def waitfile(
+    f: pathlib.Path,
+    conv: typing.Callable[[pathlib.Path], T],
+    conv_err: type,
+    timeout: int = 10,
+) -> T:
+    """Waits until file `f` has been created and can be converted via `conv`,
+    or timeout.
+
+    `conv_err` allows setting a not-yet-convertible state for non-atomic file
+    creations e.g. a json file created in-place in multiple `write(2)` calls in
+    which case intermediate states should be ignored.
+    """
+    timeout = time.time() + timeout
+    while time.time() < timeout:
+        if f.is_file():
+            break
+        else:
+            time.sleep(0.1)
+    else:
+        raise TimeoutError(f"Timed out waiting for {f}")
+
+    while time.time() < timeout:
+        try:
+            return conv(f)
+        except conv_err:
+            time.sleep(0.1)
+    raise TimeoutError(f"Timed out waiting for {f}")
+
 
 class DbDict(dict):
     def __init__(self, adpath, shared_dir):
