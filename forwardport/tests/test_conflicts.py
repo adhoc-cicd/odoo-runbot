@@ -239,7 +239,6 @@ def test_massive_conflict(env, config, make_repo):
         # update all the files
         repo.make_commits(
             'a',
-            Commit(random.randbytes(20).hex(), tree={'a': '1'}),
             Commit(random.randbytes(20).hex(), tree={'x': '1'}, reset=True),
             ref='heads/change',
         )
