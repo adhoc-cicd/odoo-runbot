@@ -187,41 +187,29 @@ github identifier (login), and each value is an object with the following
 entries:
 
 ``type``
-    Can be either ``Organization`` or ``User``.
+    Can be either ``Organization`` or ``User``. Only the ``owner`` entry should
+    be an ``Organization``.
 ``role``
     The role of the user in the test suite, used to avoid addressing entities
     in a way which is non-portable.
 
-    There should be 4 or 5 role-bearing entities in the array:
-
-    ``user``
+    ``user`` (mandatory)
         Is the primary actor, used as the bot user, and should have write access
-        to...
-    ``owner``
+        to the default repository location, which is either implicit (itself)
+        or the ``owner`` organisation.
+    ``owner`` (optional)
         The location where repositories are created by default, if present
         should be an organisation, otherwise repositories are created in
         ``user``'s account [#owner]_.
-    ``reviewer``
-        A non-bot user which is assigned review rights by default.
-    ``self_reviewer``
-        A non-bot user which is assigned self-review rights by default.
-    ``other``
-        A non-bot user which is assigned no rights by default (and does not even
-        have a partner setup), can represent an employee without special access
-        or a community member.
-
-    .. note:: Since they have no special attachment (access to) the organisation
-              the last 3 roles should probably be removed and their users
-              selected at random for upgrade when a ``reviewer`` or
-              ``self_reviewer`` fixture is requested by a test, this would allow
-              providing more (though probably not less) users and would avoid
-              reliance on specific accounts creeping in.
-``email``
+``email`` (optional)
     The email address of the entity, mostly used to compose git authorship.
     information.
 ``token``
     An array of access tokens, the test suite will use the first of each array
-    to access github.
+    to access github. The ``owner`` does not need (and can not use) a token.
+
+The users file needs to have *at least* 4 entries, if none has the ``owner``
+role. If one has the ``owner`` role then it needs *at least* 5 entries.
 
 Github actual
 -------------

@@ -13,6 +13,7 @@ import itertools
 import json
 import os
 import pathlib
+import random
 import re
 import secrets
 import select
@@ -178,19 +179,30 @@ def config(users_file: pathlib.Path) -> dict[str, dict[str, str]]:
     with users_file.open('rb') as f:
         users = json.load(f)
 
-    cnf = {
-        f'role_{e["role"]}': {
+    picks = []
+    cnf = {}
+    for k, e in users.items():
+        val = {
             **e,
             'login': k,
             'token': (e.get('token') or [None])[0],
         }
-        for k, e in users.items()
-        if 'role' in e
-    }
-
+        match r := e.get('role'):
+            case 'user' | 'owner':
+                cnf[f'role_{r}'] = val
+            case _ if e['type'] == 'User':
+                picks.append(val)
     cnf['github'] = dict(cnf['role_user'])
     if owner := cnf.get('role_owner'):
         cnf['github']['owner'] = owner['login']
+
+    cnf.update(zip(
+        ('role_reviewer', 'role_self_reviewer', 'role_other'),
+        random.sample(picks, k=3),
+    ))
+    print("     reviewer:", cnf['role_reviewer']['login'])
+    print("self-reviewer:", cnf['role_self_reviewer']['login'])
+    print("        other:", cnf['role_other']['login'])
 
     return cnf
 
@@ -198,16 +210,14 @@ def config(users_file: pathlib.Path) -> dict[str, dict[str, str]]:
 def rolemap(request, config):
     # only fetch github logins once per session
     rolemap = {}
-    for data in config.values():
+    for k, data in config.items():
         if not data['token']:
-            continue
-        if 'role' not in data:
             continue
 
         r = _rate_limited(lambda: requests.get('https://api.github.com/user', headers={'Authorization': f'token {data["token"]}'}))
         r.raise_for_status()
 
-        user = rolemap[data['role']] = r.json()
+        user = rolemap[k[5:]] = r.json()
         n = data['user'] = user['login']
         data.setdefault('name', n)
     return rolemap
