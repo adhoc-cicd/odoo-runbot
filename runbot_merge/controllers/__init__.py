@@ -21,6 +21,7 @@ from .. import utils, github
 _logger = logging.getLogger(__name__)
 
 def staging_dict(staging):
+    PRs = staging.env['runbot_merge.pull_requests']
     return {
         'id': staging.id,
         'pull_requests': staging.batch_ids.prs.mapped(lambda p: {
@@ -28,6 +29,18 @@ def staging_dict(staging):
             'repository': p.repository.name,
             'number': p.number,
         }),
+        'batches': [
+            [
+                {
+                    'repository': pr.repository_id.name,
+                    'number': pr.number,
+                    'head': pr.head,
+                    'merged_head': json.loads(pr.commits_map)[''],
+                }
+                for pr in PRs.browse(batch_info['prs'])
+            ]
+            for batch_info in staging.snapshot
+        ],
         'merged': {
             c.repository_id.name: c.commit_id.sha
             for c in staging.commits
