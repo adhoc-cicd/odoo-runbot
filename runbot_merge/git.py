@@ -63,12 +63,10 @@ def get_local(repository, *, clone: bool = True) -> 'Optional[Repo]':
             'git', *git_tracing_params(), 'clone', '--bare',
             source_url(repository), str(repo_dir)
         ], check=True)
-        # bare repos don't have fetch specs by default, and fetching *into*
-        # them is a pain in the ass, configure fetch specs so `git fetch`
-        # works properly
+        # All this could probably be removed since the shift to explicit fetches
+        # but not sure it's worth removing?
         repo = git(repo_dir)
         repo.config('--add', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*')
-        # negative refspecs require git 2.29
         repo.config('--add', 'remote.origin.fetch', '^refs/heads/tmp.*')
         repo.config('--add', 'remote.origin.fetch', '^refs/heads/staging.*')
         return repo

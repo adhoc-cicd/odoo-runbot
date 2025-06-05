@@ -5,6 +5,12 @@
         <field name="arch" type="xml">
             <form>
                 <field name="freeze_id" invisible="1"/>
+                <field name="warn_mergiraf" invisible="1"/>
+                <div class="alert alert-warning" role="alert"
+                     invisible="not warn_mergiraf">
+                    Mergiraf is enabled but not available.
+                    You should install it on the server.
+                </div>
                 <header>
                     <button type="object" name="action_prepare_freeze"
                             string="Freeze"
@@ -42,6 +48,7 @@
                             <field name="uniquifier"/>
                             <field name="ci_timeout"/>
                             <field name="batch_limit"/>
+                            <field name="use_mergiraf"/>
                         </group>
                     </group>
 

@@ -1,6 +1,7 @@
 import datetime
 import itertools
 import json
+import shutil
 import textwrap
 import time
 from operator import itemgetter
@@ -504,6 +505,53 @@ def test_staging_conflict_first(env, repo, users, config, page):
     assert dangerbox
     assert dangerbox[0].text.strip() == 'Unable to stage PR'
 
+
+@pytest.mark.skipif(not shutil.which('mergiraf'), reason='mergiraf not installed')
+def test_staging_textual_only_conflict(env, project, repo, users, config):
+    """If mergiraf is enabled and the conflict can be resolved by doing a
+    structural merge, then the staging should succeed
+    """
+    project.use_mergiraf = True
+    assert not project.warn_mergiraf
+    with repo:
+        m1, _ = repo.make_commits(
+            None,
+            Commit('initial', tree={'f.py': '''\
+def f():
+    a = 0
+    return a
+'''}),
+            Commit('second', tree={'f.py': '''\
+def f():
+    a = 1
+    return a
+'''}),
+            ref='heads/master',
+        )
+
+        [c2] = repo.make_commits(
+            m1,
+            Commit('other second', tree={'f.py': '''\
+def f():
+    b = 0
+    return b
+'''}),
+        )
+        pr = repo.make_pr(title='title', body='body', target='master', head=c2)
+        repo.post_status(pr.head, 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    pr_id = to_pr(env, pr)
+    assert pr_id.state == 'ready'
+    assert pr_id.staging_id, "the PR should have been staged"
+    assert repo.read_tree(repo.commit('staging.master')) == {
+        'f.py': '''\
+def f():
+    b = 1
+    return b
+'''
+    }
 
 def test_staging_conflict_second(env, repo, users, config):
     """ If the non-first batch of a staging triggers a conflict, the PR should

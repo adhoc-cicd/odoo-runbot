@@ -1,5 +1,6 @@
 import logging
 import re
+import shutil
 from typing import List
 
 import requests
@@ -65,6 +66,15 @@ class Project(models.Model):
              " unrelated build to trigger a failure if somebody is a dummy and"
              " includes repos they have no commit for."
     )
+
+    use_mergiraf = fields.Boolean(help="Use mergiraf as merge driver")
+    warn_mergiraf = fields.Boolean(compute='_compute_warn_mergiraf')
+
+    @api.depends('use_mergiraf')
+    def _compute_warn_mergiraf(self):
+        for project in self:
+            project.warn_mergiraf = \
+                project.use_mergiraf and not shutil.which('mergiraf')
 
     @api.depends('github_token')
     def _compute_identity(self):

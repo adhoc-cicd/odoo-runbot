@@ -7,6 +7,8 @@ import logging
 import os
 import pprint
 import re
+import shutil
+import tempfile
 from collections.abc import Mapping
 from difflib import Differ
 from operator import itemgetter
@@ -99,11 +101,23 @@ def try_staging(branch: Branch) -> Optional[Stagings]:
             log("staging ready PRs %s (prioritising largest)", batches)
 
     if not batches:
-        return
+        return None
 
     original_heads, staging_state = staging_setup(branch, batches)
 
-    staged = stage_batches(branch, batches, staging_state)
+    if branch.project_id.use_mergiraf and shutil.which('mergiraf'):
+        with tempfile.NamedTemporaryFile(buffering=0) as attrs:
+            attrs.write(b'* merge=mergiraf\n')
+            for conf in staging_state.values():
+                conf.repo = conf.repo.with_params(
+                    'merge.conflictStyle=diff3',
+                    'merge.mergiraf.name=mergiraf',
+                    'merge.mergiraf.driver=mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L',
+                    f'core.attributesfile={attrs.name}',
+                )
+            staged = stage_batches(branch, batches, staging_state)
+    else:
+        staged = stage_batches(branch, batches, staging_state)
 
     if not staged:
         return None

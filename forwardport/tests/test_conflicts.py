@@ -1,7 +1,10 @@
 import random
 import re
+import shutil
 import time
 from operator import itemgetter
+
+import pytest
 
 from utils import make_basic, Commit, validate_all, matches, seen, REF_PATTERN, to_pr
 
@@ -547,3 +550,114 @@ b
     ]
     assert pr2_id.state == 'error'
     assert not pr2_id.staging_id, "staging should have been rejected"
+
+@pytest.mark.skipif(not shutil.which('mergiraf'), reason="mergiraf not available")
+def test_structured_conflict_no_mergiraf(env, config, make_repo, users):
+    """Check that even if mergiraf is available it will only apply when
+    enabled (?)
+    """
+    _project, repo, _pr = setup_unstructured_conflict(env, config, make_repo)
+    env.run_crons()
+
+    with repo:
+        repo.post_status('staging.a', 'success')
+    env.run_crons()
+
+    _pra_id, prb_id = env['runbot_merge.pull_requests'].search([], order='number')
+    assert repo.read_tree(repo.commit(prb_id.head)) == {
+        'f.py': matches('''\
+def foo():
+<<<\x3c<<< $$
+    a = 5
+    return a
+||||||| $$
+    a = 0
+    return a
+=======
+    somevar = 0
+    return somevar
+>>>\x3e>>> $$
+'''),
+    }
+
+@pytest.mark.skipif(not shutil.which('mergiraf'), reason="mergiraf not available")
+def test_structured_conflict_mergiraf(env, config, make_repo, users):
+    """Check that if a conflict is not resolvable textually but is resolvable
+    structurally mergiraf handles it correctly (if available).
+    """
+    project, repo, _pr = setup_unstructured_conflict(env, config, make_repo)
+    project.use_mergiraf = True
+    env.run_crons()
+
+    with repo:
+        repo.post_status('staging.a', 'success')
+    env.run_crons()
+
+    _pra_id, prb_id = env['runbot_merge.pull_requests'].search([], order='number')
+    assert repo.read_tree(repo.commit(prb_id.head)) == {
+        'f.py': '''\
+def foo():
+    somevar = 5
+    return somevar
+''',
+    }
+
+def setup_unstructured_conflict(env, config, make_repo):
+    project = env['runbot_merge.project'].create({
+        'name': "test",
+        'github_token': config['github']['token'],
+        'github_prefix': 'hansen',
+        'github_name': config['github']['name'],
+        'github_email': "foo@example.org",
+        'fp_github_token': config['github']['token'],
+        'fp_github_name': 'herbert',
+        'branch_ids': [
+            (0, 0, {'name': 'a', 'sequence': 100}),
+            (0, 0, {'name': 'b', 'sequence': 80}),
+        ],
+    })
+    prod = make_repo("test")
+    env['runbot_merge.events_sources'].create({'repository': prod.name})
+    with prod:
+        [a, b] = prod.make_commits(
+            None,
+            Commit("a", tree={'f.py': """\
+def foo():
+    a = 0
+    return a
+"""}),
+            Commit("b", tree={'f.py': """\
+def foo():
+    a = 5
+    return a
+"""}),
+        )
+        prod.make_ref("heads/a", a)
+        prod.make_ref("heads/b", b)
+    other = prod.fork()
+    repo = env['runbot_merge.repository'].create({
+        'project_id': project.id,
+        'name': prod.name,
+        'required_statuses': "default",
+        'fp_remote_target': other.name,
+        'group_id': False,
+    })
+    env['res.partner'].search([
+        ('github_login', '=', config['role_reviewer']['user'])
+    ]).write({
+        'review_rights': [(0, 0, {'repository_id': repo.id, 'review': True})]
+    })
+
+    with prod:
+        prod.make_commits('a', Commit('change', tree={
+            'f.py': """\
+def foo():
+    somevar = 0
+    return somevar
+"""
+        }), ref="heads/mypr")
+        pr = prod.make_pr(target='a', head='mypr')
+        prod.post_status('mypr', 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+
+    return (project, prod, pr)

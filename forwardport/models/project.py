@@ -14,13 +14,15 @@ it up), ...
 from __future__ import annotations
 
 import collections
+import contextlib
 import datetime
 import itertools
 import json
 import logging
 import operator
-import re
+import shutil
 import subprocess
+import tempfile
 import typing
 from subprocess import CalledProcessError
 
@@ -48,6 +50,7 @@ class Project(models.Model):
 
     id: int
     github_prefix: str
+    use_mergiraf: bool
 
     def write(self, vals):
         # check on branches both active and inactive so disabling branches doesn't
@@ -378,7 +381,7 @@ class PullRequests(models.Model):
             conf = source.with_params(
                 'merge.renamelimit=0',
                 'merge.renames=copies',
-                'merge.conflictstyle=zdiff3'
+                'merge.conflictstyle=diff3'
             ).with_config(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             tree = conf.with_config(check=False).merge_tree(
@@ -439,78 +442,96 @@ class PullRequests(models.Model):
         commits = self.commits()
         logger.info(
             "%s: copy %s commits to %s (%s)%s",
-            self, len(commits), branch, head, ''.join(
+            self, len(commits), branch, head,
+            ''.join(
                 '\n- %s: %s' % (c['sha'], c['commit']['message'].splitlines()[0])
                 for c in commits
             )
         )
 
-        conf = repo.with_params(
-            'merge.renamelimit=0',
-            'merge.renames=copies',
-        ).with_config(
+        conf = repo.with_config(
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             check=False,
         )
-        for commit in commits:
-            commit_sha = commit['sha']
-            # merge-tree is a bit stupid and gets confused when the options
-            # follow the parameters
-            r = conf.merge_tree('--merge-base', commit['parents'][0]['sha'], head, commit_sha)
-            new_tree = r.stdout.decode().splitlines(keepends=False)[0]
-            if r.returncode:
-                # For merge-tree the stdout on conflict is of the form
-                #
-                # oid of toplevel tree
-                # conflicted file info+
-                #
-                # informational messages+
-                #
-                # to match cherrypick we only want the informational messages,
-                # so strip everything else
-                r.stdout = r.stdout.split(b'\n\n')[-1]
-            else:
-                # By default cherry-pick fails if a non-empty commit becomes
-                # empty (--empty=stop), also it fails when cherrypicking already
-                # empty commits which I didn't think we prevented but clearly we
-                # do...?
-                parent_tree = conf.rev_parse(f'{head}^{{tree}}').stdout.decode().strip()
-                if parent_tree == new_tree:
-                    r.returncode = 1
-                    r.stdout = f"You are currently cherry-picking commit {commit_sha}.".encode()
-                    r.stderr = b"The previous cherry-pick is now empty, possibly due to conflict resolution."
+        with contextlib.ExitStack() as atexit:
+            project = self.repository.project_id
+            if project.use_mergiraf and shutil.which('mergiraf'):
+                attrs = atexit.enter_context(tempfile.NamedTemporaryFile(buffering=0))
+                attrs.write(b'* merge=mergiraf\n')
 
-            logger.debug("Cherry-picked %s: %s\n%s\n%s", commit_sha, r.returncode, r.stdout.decode(), _clean_rename(r.stderr.decode()))
-            if r.returncode: # pick failed, bail
-                # try to log inflateInit: out of memory errors as warning, they
-                # seem to return the status code 128 (nb: may not work anymore
-                # with merge-tree, idk)
-                logger.log(
-                    logging.WARNING if r.returncode == 128 else logging.INFO,
-                    "forward-port of %s (%s) failed at %s",
-                    self, self.display_name, commit_sha)
-
-                raise CherrypickError(
-                    commit_sha,
-                    r.stdout.decode(),
-                    _clean_rename(r.stderr.decode()),
-                    commits
+                conf = conf.with_params(
+                    'merge.renamelimit=0',
+                    'merge.renames=copies',
+                    'merge.conflictStyle=diff3',
+                    'merge.mergiraf.name=mergiraf',
+                    'merge.mergiraf.driver=mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L',
+                    f'core.attributesfile={attrs.name}',
                 )
-            # get the "git" commit object rather than the "github" commit resource
-            cc = conf.commit_tree(
-                tree=new_tree,
-                parents=[head],
-                message=str(self._make_fp_message(commit)),
-                author=map_author(commit['commit']['author']),
-                committer=map_committer(commit['commit']['committer']),
-            )
-            if cc.returncode:
-                raise CherrypickError(commit_sha, cc.stdout.decode(), cc.stderr.decode(), commits)
+            else:
+                conf = conf.with_params(
+                    'merge.renamelimit=0',
+                    'merge.renames=copies',
+                )
 
-            head = cc.stdout.strip()
-            logger.info('%s -> %s', commit_sha, head)
+            for commit in commits:
+                commit_sha = commit['sha']
+                # merge-tree is a bit stupid and gets confused when the options
+                # follow the parameters
+                r = conf.merge_tree('--merge-base', commit['parents'][0]['sha'], head, commit_sha)
+                new_tree = r.stdout.decode().splitlines(keepends=False)[0]
+                if r.returncode:
+                    # For merge-tree the stdout on conflict is of the form
+                    #
+                    # oid of toplevel tree
+                    # conflicted file info+
+                    #
+                    # informational messages+
+                    #
+                    # to match cherrypick we only want the informational messages,
+                    # so strip everything else
+                    r.stdout = r.stdout.split(b'\n\n')[-1]
+                else:
+                    # By default cherry-pick fails if a non-empty commit becomes
+                    # empty (--empty=stop), also it fails when cherrypicking already
+                    # empty commits which I didn't think we prevented but clearly we
+                    # do...?
+                    parent_tree = conf.rev_parse(f'{head}^{{tree}}').stdout.decode().strip()
+                    if parent_tree == new_tree:
+                        r.returncode = 1
+                        r.stdout = f"You are currently cherry-picking commit {commit_sha}.".encode()
+                        r.stderr = b"The previous cherry-pick is now empty, possibly due to conflict resolution."
 
-        return head
+                logger.debug("Cherry-picked %s: %s\n%s\n%s", commit_sha, r.returncode, r.stdout.decode(), _clean_rename(r.stderr.decode()))
+                if r.returncode: # pick failed, bail
+                    # try to log inflateInit: out of memory errors as warning, they
+                    # seem to return the status code 128 (nb: may not work anymore
+                    # with merge-tree, idk)
+                    logger.log(
+                        logging.WARNING if r.returncode == 128 else logging.INFO,
+                        "forward-port of %s (%s) failed at %s",
+                        self, self.display_name, commit_sha)
+
+                    raise CherrypickError(
+                        commit_sha,
+                        r.stdout.decode(),
+                        _clean_rename(r.stderr.decode()),
+                        commits
+                    )
+                # get the "git" commit object rather than the "github" commit resource
+                cc = conf.commit_tree(
+                    tree=new_tree,
+                    parents=[head],
+                    message=str(self._make_fp_message(commit)),
+                    author=map_author(commit['commit']['author']),
+                    committer=map_committer(commit['commit']['committer']),
+                )
+                if cc.returncode:
+                    raise CherrypickError(commit_sha, cc.stdout.decode(), cc.stderr.decode(), commits)
+
+                head = cc.stdout.strip()
+                logger.info('%s -> %s', commit_sha, head)
+
+            return head
 
     def _make_fp_message(self, commit):
         cmap = json.loads(self.commits_map)
