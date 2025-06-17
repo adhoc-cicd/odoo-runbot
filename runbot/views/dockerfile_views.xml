@@ -43,14 +43,6 @@
                 <page string="Dockerfile">
                   <field name="dockerfile"/>
                 </page>
-                <page string="Views" groups="runbot.group_runbot_admin">
-                  <field name="view_ids" widget="one2many">
-                    <list>
-                      <field name="id"/>
-                      <field name="key"/>
-                    </list>
-                  </field>
-                </page>
                 <page string="Used in ">
                   <field name="bundle_ids" widget="one2many">
                     <list>
