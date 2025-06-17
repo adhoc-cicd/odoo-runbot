@@ -138,7 +138,6 @@ class Dockerfile(models.Model):
     always_pull = fields.Boolean('Always pull', help='Always Pull on the hosts, not only at the use time', default=False, tracking=True, copy=False)
     version_ids = fields.One2many('runbot.version', 'dockerfile_id', string='Versions')
     description = fields.Text('Description')
-    view_ids = fields.Many2many('ir.ui.view', compute='_compute_view_ids', groups="runbot.group_runbot_admin")
     project_ids = fields.One2many('runbot.project', 'dockerfile_id', string='Default for Projects')
     bundle_ids = fields.One2many('runbot.bundle', 'dockerfile_id', string='Used in Bundles')
     build_results = fields.One2many('runbot.docker_build_result', 'dockerfile_id', string='Build results')
