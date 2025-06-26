@@ -195,6 +195,7 @@ class FreezeWizard(models.Model):
         # everything so the new branch is the second one, just after the branch
         # it "forks"
         master, rest = project_id.branch_ids[0], project_id.branch_ids[1:]
+        master.staging_enabled = False
         if self.bump_pr_ids and master.active_staging_id:
             self.env.cr.execute(
                 'SELECT FROM runbot_merge_stagings WHERE id = %s FOR UPDATE NOWAIT',

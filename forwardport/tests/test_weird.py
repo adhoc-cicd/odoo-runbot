@@ -837,14 +837,19 @@ def test_freeze(env, config, make_repo, users):
     assert not w_id.errors
     w_id.action_freeze()
 
-    assert project.branch_ids.mapped('name') == ['c', 'post-b', 'b', 'a']
+    assert release_id.state == 'merged'
 
+    assert project.branch_ids.mapped('name') == ['c', 'post-b', 'b', 'a']
+    # the tip branch should have staging disabled
+    tip = project.branch_ids.filtered(lambda b: b.name == 'c')
+    assert tip.staging_enabled == False
+
+    # re-enable staging
+    tip.staging_enabled = True
     # re-enable forward-port cron after freeze
     _, cron_id = env['ir.model.data'].check_object_reference('forwardport', 'port_forward', context={'active_test': False})
     env['ir.cron'].browse([cron_id]).active = True
     env.run_crons('forwardport.port_forward')
-
-    assert release_id.state == 'merged'
     assert not env['runbot_merge.pull_requests'].search([
         ('source_id', '=', release_id.id),
     ]), "the release PRs should not be forward-ported"
