@@ -109,7 +109,7 @@ class PullRequestBackport(models.TransientModel):
             json={
                 'base': self.target.name,
                 'head': f'{owner}:{bp_branch}',
-                'title': '[Backport]' + ('' if title[0] == '[' else ' ') + title,
+                'title': title,
                 'body': body
             }
         )

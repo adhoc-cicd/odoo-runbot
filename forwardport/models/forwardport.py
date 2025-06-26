@@ -276,7 +276,7 @@ class ForwardPortTasks(models.Model):
             r = gh.post(f'https://api.github.com/repos/{pr.repository.name}/pulls', json={
                 'base': target.name,
                 'head': f'{owner}:{ref}',
-                'title': '[FW]' + (' ' if title[0] != '[' else '') + title,
+                'title': title,
                 'body': body
             })
             if not r.ok:

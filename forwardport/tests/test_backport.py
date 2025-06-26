@@ -52,7 +52,7 @@ def test_golden_path(env, repo, config, pr_id, backport_id, users):
 
 X-original-commit: {pr_id.head}\
 """
-    assert bp_id.message == f"[Backport] c\n\nBackport of {pr_id.display_name}"
+    assert bp_id.message == f"c\n\nBackport of {pr_id.display_name}"
     assert repo.get_pr(bp_id.number).labels == {"backport"}
 
     # check that the backport can actually be merged and forward-ports successfully...
