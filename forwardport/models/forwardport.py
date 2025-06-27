@@ -109,7 +109,7 @@ class ForwardPortTasks(models.Model):
         ('insert', 'New branch port'),
         ('complete', 'Complete ported batches'),
     ], required=True)
-    retry_after = fields.Datetime(required=True, default='1900-01-01 01:01:01')
+    retry_after = fields.Datetime(required=True, default='1900-01-01 01:01:01', tracking=True)
     cannot_apply = fields.Boolean(compute='_compute_cannot_apply', store=True)
     retry_after_relative = fields.Char(compute="_compute_retry_after_relative")
     pr_id = fields.Many2one('runbot_merge.pull_requests')
