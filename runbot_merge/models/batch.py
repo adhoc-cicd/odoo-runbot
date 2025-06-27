@@ -93,7 +93,7 @@ class Batch(models.Model):
         column_type=enum(_name, 'priority'),
     )
 
-    blocked = fields.Char(store=True, compute="_compute_blocked")
+    blocked = fields.Char(store=True, compute="_compute_blocked", tracking=True)
 
     # unlike on PRs, this does not get detached... ? (because batches can be
     # partially detached so that's a PR-level concern)
