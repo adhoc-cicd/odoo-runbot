@@ -9,25 +9,24 @@
         <!-- key block (hopefully) -->
         <xpath expr="//div[@id='alerts']" position="inside">
             <t t-if="env['runbot_merge.pull_requests'].check_access_rights('read', False)">
-                <t t-set="outstanding" t-value="env['runbot_merge.pull_requests'].search_count([
-                    ('source_id', '!=', False),
+                <t t-set="outstanding" t-value="env['runbot_merge.batch'].search([
+                    ('parent_id', '!=', False),
+                    ('merge_date', '=', False),
                     ('blocked', '!=', False),
-                    ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
                     ('create_date', '&lt;', datetime.datetime.now() - relativedelta(days=7)),
                 ])"/>
-                <t t-set="own" t-value="env['runbot_merge.pull_requests'].search_count([
-                    ('source_id', '!=', False),
-                    ('blocked', '!=', False),
-                    ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
-                    ('create_date', '&lt;', datetime.datetime.now() - relativedelta(days=7)),
-                    '|',
-                        ('source_id.author', '=', env.user.partner_id.id),
-                        ('source_id.reviewed_by', '=', env.user.partner_id.id),
-                ])"/>
-                <div t-if="outstanding != 0" class="alert col-md-12 alert-warning mb-0">
+                <div t-if="outstanding" class="alert col-md-12 alert-warning mb-0">
                     <a href="/forwardport/outstanding">
+                        <t t-set="own" t-value="
+                            sum(
+                                any(
+                                    p.reviewed_by == env.user.partner_id or p.author == env.user.partner_id
+                                    for p in b.source.prs
+                                )
+                                for b in outstanding
+                            )"/>
                         You have <t t-out="own"/> outstanding forward-ports
-                        out of <t t-out="outstanding"/> total
+                        out of <t t-out="len(outstanding)"/> total
                     </a>
                 </div>
             </t>
@@ -94,7 +93,7 @@
                         </a>
                     </span>
                 </t>
-                <h1>List of pull requests with outstanding forward ports</h1>
+                <h1>List of batches with outstanding forward ports</h1>
                 <h2 t-if="single">
                     for <span t-field="single.display_name" t-attf-title="@{{single.github_login}}"/>
                     <a t-att-href="link(partner=0)" title="All Users" class="btn fa fa-times"/>
@@ -116,25 +115,18 @@
                 </h2>
 
                 <dl><t t-foreach="outstanding" t-as="x">
-                    <t t-set="source" t-value="x['source']"/>
-                    <t t-if="not single or source.reviewed_by == single or source.author == single">
+                    <t t-if="not single or single in x.prs.reviewed_by or single in x.prs.author">
                         <dt>
-                            <a t-att-href="source.url"><span t-field="source.display_name"/></a>
-                            created by <span t-field="source.author.display_name"
-                                             t-attf-title="@{{source.author.github_login}}"/>
-                            merged <span t-field="source.merge_date"
-                                         t-options="{'widget': 'relative'}"
-                                         t-att-title="source.merge_date"/>
-                            by <span t-field="source.reviewed_by.display_name"
-                                     t-attf-title="@{{source.reviewed_by.github_login}}"/>
+                            <t t-call="forwardport.print-batch">
+                                <t t-set="b" t-value="x"/>
+                            </t>
                         </dt>
                         <dd>
-                            Outstanding forward-ports:
                             <ul>
-                                <li t-foreach="x['prs']" t-as="p">
-                                    <a t-att-href="p.url"><span t-field="p.display_name"/></a>
-                                    (<span t-field="p.state"/>)
-                                    targeting <span t-field="p.target.name"/>
+                                <li t-foreach="x_value" t-as="p">
+                                    <t t-call="forwardport.print-batch">
+                                        <t t-set="b" t-value="p"/>
+                                    </t>
                                 </li>
                             </ul>
                         </dd>
@@ -142,6 +134,24 @@
                 </t></dl>
             </div></div>
         </t>
+    </template>
+
+    <template id="print-batch">
+        <div t-if="b.merge_date">
+            <t t-out="b.name"/>
+            created by <t t-out="', '.join('{0.display_name}'.format(a) for a in b.prs.author)"/>
+            merged <span t-field="b.merge_date" t-options="{'widget': 'relative'}" t-att-title="b.merge_date"/>
+            by <t t-out="', '.join('{0.display_name}'.format(r) for r in b.prs.reviewed_by)"/>
+        </div>
+        <ul class="list-inline" style="display: inline-block; margin-bottom: 0;" t-foreach="b.prs" t-as="p">
+            <li class="list-inline-item">
+                <t t-set="created">created by <t t-out="p.author.display_name"/></t>
+                <t t-if="p.reviewed_by" t-set="created"><t t-out="created"/>, reviewed by <t t-out="p.reviewed_by.display_name"/></t>
+                <a t-att-href="p.url" t-att-title="created"><span t-field="p.display_name"/></a>
+                <t t-if="p.state != 'merged'">(state: <span t-field="p.state"/>)</t>
+            </li>
+        </ul>
+        <t t-if="not b.merge_date">targeting <span t-field="b.target.name"/></t>
     </template>
 
     <template id="view_pull_request" inherit_id="runbot_merge.view_pull_request">

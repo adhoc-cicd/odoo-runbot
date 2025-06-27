@@ -24,7 +24,6 @@ class Dashboard(MergebotDashboard):
     @route('/forwardport/outstanding', type='http', methods=['GET'], auth="user", website=True, sitemap=False)
     def outstanding(self, partner=0, authors=True, reviewers=True, group=0):
         Partners = request.env['res.partner']
-        PullRequests = request.env['runbot_merge.pull_requests']
         partner = Partners.browse(int(partner))
         group = Partners.browse(int(group))
         authors = int(authors)
@@ -45,47 +44,51 @@ class Dashboard(MergebotDashboard):
                 'link': link,
             })
 
-        partner_filter = []
-        if partner or group:
-            if partner:
-                suffix = ''
-                arg = partner.id
-            else:
-                suffix = '.commercial_partner_id'
-                arg = group.id
-
-            if authors:
-                partner_filter.append([(f'source_id.author{suffix}', '=', arg)])
-            if reviewers:
-                partner_filter.append([(f'source_id.reviewed_by{suffix}', '=', arg)])
+        partner_filter = None
+        if partner:
+            if authors and reviewers:
+                partner_filter = lambda p: p.author == partner or p.reviewed_by == partner
+            elif authors:
+                partner_filter = lambda p: p.author == partner
+            elif reviewers:
+                partner_filter = lambda p: p.reviewed_by == partner
+        elif group:
+            if authors and reviewers:
+                partner_filter = lambda p: \
+                    p.author.commercial_partner_id == group\
+                    or p.reviewed_by.commercial_partner_id == group
+            elif authors:
+                partner_filter = lambda p: p.author.commercial_partner_id == group
+            elif reviewers:
+                partner_filter = lambda p: p.reviewed_by.commercial_partner_id == group
 
         now = datetime.datetime.now()
-        outstanding = PullRequests.search([
-            ('source_id', '!=', False),
+        Batches = request.env['runbot_merge.batch']
+        outstanding = Batches.search([
+            ('parent_id', '!=', False),
+            ('merge_date', '=', False),
             ('blocked', '!=', False),
-            ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
             ('create_date', '<', now - DEFAULT_DELTA),
-            *(partner_filter and expression.OR(partner_filter)),
         ])
-
+        outstandings = collections.defaultdict(Batches.browse)
         outstanding_per_group = collections.Counter()
         outstanding_per_author = collections.Counter()
         outstanding_per_reviewer = collections.Counter()
-        outstandings = []
-        for source in outstanding.mapped('source_id').sorted(lambda s: s.merge_date or now):
-            prs = source.forwardport_ids.filtered(lambda p: p.state not in ['merged', 'closed'])
-            outstandings.append({
-                'source': source,
-                'prs': prs,
-            })
-            if authors:
-                outstanding_per_author[source.author] += len(prs)
-            if reviewers:
-                outstanding_per_reviewer[source.reviewed_by] += len(prs)
+        for batch in outstanding:
+            source = batch.source
+            if partner_filter and not any(partner_filter(p) for p in source.prs):
+                continue
 
-            # if both the source and reviewer have the same team, don't count the PRs twice
-            for team in source.author.commercial_partner_id | source.reviewed_by.commercial_partner_id:
-                outstanding_per_group[team] += len(prs)
+            outstandings[source] |= batch
+            sources = source.prs
+            if authors:
+                outstanding_per_author.update(sources.author)
+            if reviewers:
+                outstanding_per_reviewer.update(sources.reviewed_by)
+            outstanding_per_group.update(
+                sources.author.commercial_partner_id
+              | sources.reviewed_by.commercial_partner_id
+            )
 
         culprits = Partners.browse(p.id for p, _ in (outstanding_per_reviewer + outstanding_per_author).most_common())
         return request.render('forwardport.outstanding', {
@@ -98,6 +101,9 @@ class Dashboard(MergebotDashboard):
             'outstanding_per_author': outstanding_per_author,
             'outstanding_per_reviewer': outstanding_per_reviewer,
             'outstanding_per_group': outstanding_per_group,
-            'outstanding': outstandings,
+            'outstanding': dict(sorted(
+                outstandings.items(),
+                key=lambda item: item[0].merge_date or now,
+            )),
             'link': link,
         })
