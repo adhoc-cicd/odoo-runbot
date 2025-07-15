@@ -172,13 +172,31 @@ class OverrideRights(models.Model):
             ['context', 'coalesce(repository_id, 0)']
         )
 
+    def get_partner_ids(self, vals):
+        """Helper to extract partner_ids from Odoo commands."""
+        commands = vals.get('partner_ids', [])
+        if not commands:
+            return
+
+        # Handles [(6, 0, [id1, id2, ...])]
+        if commands[0][0] == Command.SET:
+            return commands[0][2]
+
+        # Handles [(4, id1), (4, id2), ...] or [(3, id1), (3, id2), ...]
+        pids = self.partner_ids.ids or []
+        for command in commands:
+            if command[0] == Command.LINK:
+                pids.append(command[1])
+            elif command[0] == Command.UNLINK:
+                pids.remove(command[1])
+        return pids
+
     @api.model_create_multi
     def create(self, vals_list):
         for partner, contexts in odoo.tools.groupby((
             (partner_id, vals['context'], vals['repository_id'])
             for vals in vals_list
-            # partner_ids is of the form [Command.set(ids)
-            for partner_id in vals.get('partner_ids', [(None, None, [])])[0][2]
+            for partner_id in self.get_partner_ids(vals)
         ), lambda p: p[0]):
             partner = self.env['res.partner'].browse(partner)
             for _, context, repository in contexts:
@@ -188,11 +206,11 @@ class OverrideRights(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        new = None
-        if pids := vals.get('partner_ids'):
-            new = self.env['res.partner'].browse(pids[0][2])
-        if new is not None:
-            for o in self:
+        for o in self:
+            new = None
+            if pids := o.get_partner_ids(vals):
+                new = self.env['res.partner'].browse(pids)
+            if new is not None:
                 added = new - o.partner_ids
                 removed = o.partner_ids - new
                 for p in added:
