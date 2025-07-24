@@ -119,7 +119,7 @@ def test_straightforward_flow(env, config, make_repo, users):
     env.run_crons()
     pr0_, pr1_, pr2 = env['runbot_merge.pull_requests'].search([], order='number')
     pr2.reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
 
 
     assert pr.comments == [
@@ -225,7 +225,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 
     prs = env['forwardport.branch_remover'].search([]).mapped('pr_id')
     assert prs == pr0 | pr1 | pr2, "pr1 and pr2 should be slated for branch deletion"
-    env.run_crons('forwardport.remover', context={'forwardport_merged_before': FAKE_PREV_WEEK})
+    env.run_crons('runbot_merge.remover', context={'forwardport_merged_before': FAKE_PREV_WEEK})
 
     # should not have deleted the base branch (wrong repo)
     assert other_user_repo.get_ref(pr.ref) == p_1
@@ -319,9 +319,9 @@ def test_empty(env, config, make_repo, users):
 
     # check reminder
     fail_id.reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
     fail_id.reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
 
     awaiting = (
         users['other'],
@@ -366,7 +366,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     with prod:
         fail_pr.close()
     fail_id.reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
     assert pr1.comments == [
         (users['reviewer'], 'hansen r+'),
         seen(env, pr1, users),
@@ -380,14 +380,14 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         prod.post_status(fail_id.head, 'success')
     assert fail_id.state == 'validated'
     fail_id.reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
     assert fail_pr.comments[2:] == [awaiting]*3, "check that message triggers again"
 
     with prod:
         fail_pr.post_comment('hansen r+', config['role_reviewer']['token'])
     assert fail_id.state == 'ready'
     fail_id.reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
     assert fail_pr.comments[2:] == [
         awaiting,
         awaiting,
@@ -897,7 +897,7 @@ class TestClosing:
         with prod:
             prod.post_status(pr1_id.head, 'success')
         env.run_crons()
-        env.run_crons('forwardport.reminder')
+        env.run_crons('runbot_merge.reminder')
 
         assert env['runbot_merge.pull_requests'].search([], order='number') == pr0_id | pr1_id,\
             "closing the PR should suppress the FP sequence"
@@ -1061,7 +1061,7 @@ class TestBranchDeletion:
         to_delete_branch = removers.mapped('pr_id')
         assert to_delete_branch == pr_id
 
-        env.run_crons('forwardport.remover', context={'forwardport_merged_before': FAKE_PREV_WEEK})
+        env.run_crons('runbot_merge.remover', context={'forwardport_merged_before': FAKE_PREV_WEEK})
         with pytest.raises(AssertionError, match="Not Found"):
             other.get_ref('heads/abranch')
 
@@ -1102,7 +1102,7 @@ class TestBranchDeletion:
             assert p_id.state == st
             pr_heads.append(p_id.head)
 
-        env.run_crons('forwardport.remover', context={'forwardport_merged_before': FAKE_PREV_WEEK})
+        env.run_crons('runbot_merge.remover', context={'forwardport_merged_before': FAKE_PREV_WEEK})
 
         # check that the branches still exist
         assert other.get_ref('heads/abranch') == pr_heads[0]

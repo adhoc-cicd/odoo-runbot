@@ -63,6 +63,12 @@ class FreezeWizard(models.Model):
          "There should be only one ongoing freeze per project"),
     ]
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        r = super().create(vals_list)
+        self.env.ref('runbot_merge.port_forward').active = False
+        return r
+
     @api.onchange('release_label')
     def _onchange_release_label(self):
         if not self.release_label:

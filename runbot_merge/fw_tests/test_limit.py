@@ -351,7 +351,7 @@ def test_limit_multiple_fw_tasks(env, config, make_repo, users):
     `_maybe_update_limit` assumed only one batch was possible.
     """
     # disable cron so we don't risk the entire thing running on us
-    env.ref('forwardport.port_forward').active = False
+    env.ref('runbot_merge.port_forward').active = False
     prod, _ = make_basic(env, config, make_repo, statuses='default')
     with prod:
         prod.make_commits('a', Commit('c', tree={'a': '0'}), ref='heads/abranch')

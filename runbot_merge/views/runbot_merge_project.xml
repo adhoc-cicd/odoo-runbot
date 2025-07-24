@@ -51,6 +51,14 @@
                             <field name="use_mergiraf"/>
                         </group>
                     </group>
+                    <group string="Forwardport Configuration">
+                        <group>
+                            <field string="Token" name="fp_github_token"/>
+                        </group>
+                        <group>
+                            <field string="Bot Name" name="fp_github_name" readonly="0"/>
+                        </group>
+                    </group>
 
                     <group class="oe_edit_only">
                         <group colspan="4">
@@ -69,6 +77,9 @@
                             <field name="name"/>
                             <field name="branch_filter"/>
                             <field name="status_ids" widget="many2many_tags"/>
+                            <field string="FP remote" name="fp_remote_target"
+                                   help="Repository where forward port branches will be created"
+                            />
                         </tree>
                     </field>
                     <separator string="Branches"/>

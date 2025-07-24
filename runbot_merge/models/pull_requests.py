@@ -8,7 +8,11 @@ import datetime
 import itertools
 import json
 import logging
+import operator
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 import typing
 from enum import IntEnum
@@ -26,11 +30,13 @@ from odoo import api, fields, models, tools, Command
 from odoo.addons.base.controllers.rpc import OdooMarshaller
 from odoo.exceptions import AccessError, UserError
 from odoo.osv import expression
-from odoo.tools import html_escape, Reverse, mute_logger
+from odoo.tools import html_escape, Reverse, mute_logger, groupby
+
 from . import commands
+from .. import github, exceptions, controllers, utils, git
 from .utils import enum, readonly, dfm
 
-from .. import github, exceptions, controllers, utils
+Conflict = tuple[str, str, str, list[str]]
 
 _logger = logging.getLogger(__name__)
 FOOTER = '\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port\n'
@@ -117,6 +123,7 @@ class Repository(models.Model):
 
 All substitutions are tentatively applied sequentially to the input.
 """)
+    fp_remote_target = fields.Char(help="where FP branches get pushed")
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -480,6 +487,11 @@ class PullRequests(models.Model):
     batch_id = fields.Many2one('runbot_merge.batch', index=True)
     staging_id = fields.Many2one('runbot_merge.stagings', compute='_compute_staging', inverse=readonly, readonly=True, store=True)
     staging_ids = fields.Many2many('runbot_merge.stagings', string="Stagings", compute='_compute_stagings', inverse=readonly, readonly=True, context={"active_test": False})
+
+    reminder_next = fields.Datetime(
+        default=lambda self: self.env.cr.now() + datetime.timedelta(days=7),
+        index=True,
+    )
 
     @api.depends(
         'closed',
@@ -1421,8 +1433,24 @@ For your own safety I've ignored *everything in your entire comment*.
 
     @api.model_create_multi
     def create(self, vals_list):
+        created = []
+        to_create = []
+        old = self.browse()
         batches = {}
         for vals in vals_list:
+            # PR opened event always creates a new PR, override so we can precreate PRs
+            existing = self.search([
+                ('repository', '=', vals['repository']),
+                ('number', '=', vals['number']),
+            ])
+            created.append(not existing)
+            if existing:
+                old |= existing
+                continue
+            to_create.append(vals)
+            if vals.get('parent_id') and 'source_id' not in vals:
+                vals['source_id'] = self.browse(vals['parent_id']).root_id.id
+
             batch_key = vals['target'], vals['label']
             batch = batches.get(batch_key)
             if batch is None:
@@ -1443,9 +1471,11 @@ For your own safety I've ignored *everything in your entire comment*.
                             for p in batch.prs
                         )
                     )
+        if not to_create:
+            return old
 
-        prs = super().create(vals_list)
-        for pr in prs:
+        new = super().create(to_create)
+        for pr in new:
             c = self.env['runbot_merge.commit'].search([('sha', '=', pr.head)])
             pr._validate(c.statuses)
 
@@ -1455,7 +1485,20 @@ For your own safety I've ignored *everything in your entire comment*.
                     pull_request=pr.number,
                     format_args={'pr': pr},
                 )
-        return prs
+            # added a new PR to an already forward-ported batch: immediately
+            # port forward to complete the genealogy
+            if not pr.source_id and self.env['runbot_merge.batch'].search_count([
+                ('parent_id', '=', pr.batch_id.id),
+            ], limit=1):
+                self.env['forwardport.batches'].create({
+                    'batch_id': pr.batch_id.id,
+                    'source': 'complete',
+                    'pr_id': pr.id,
+                })
+
+        new = iter(new)
+        old = iter(old)
+        return self.browse(next(new).id if c else next(old).id for c in created)
 
     def _from_gh(self, description, author=None, branch=None, repo=None, **kwargs):
         if repo is None:
@@ -1522,21 +1565,72 @@ For your own safety I've ignored *everything in your entire comment*.
                 if merge_method not in (False, 'rebase-ff') and pr.message != vals['message']:
                     pr.unstage("merge message updated")
 
-        # FIXME: remove condition once mergebot and forwardbot modules are merged
-        remover = self.env.get('forwardport.branch_remover')
+        remover = self.env['forwardport.branch_remover']
         match vals.get('closed'):
             case True if not self.closed:
                 vals['reviewed_by'] = False
-                if remover is not None:
-                    remover.create([{'pr_id': self.id}])
+                remover.create([{'pr_id': self.id}])
             case False if self.closed and not self.batch_id:
                 vals['batch_id'] = self._get_batch(
                     target=vals.get('target') or self.target.id,
                     label=vals.get('label') or self.label,
                 )
-                if remover is not None:
-                    remover.search([('pr_id', '=', self.id)]).unlink()
+                remover.search([('pr_id', '=', self.id)]).unlink()
+
+        # if the PR's head is updated, detach (should split off the FP lines as this is not the original code)
+        # TODO: better way to do this? Especially because we don't want to
+        #       recursively create updates
+        # also a bit odd to only handle updating 1 head at a time, but then
+        # again 2 PRs with same head is weird so...
+        newhead = vals.get('head')
+        with_parents = {
+            p: p.parent_id
+            for p in self
+            if p.state not in ('merged', 'closed')
+            if p.parent_id
+        }
+        if newhead and not self.env.context.get('ignore_head_update') and newhead != self.head:
+            vals.setdefault('parent_id', False)
+            if with_parents and vals['parent_id'] is False:
+                vals['detach_reason'] = f"Head updated from {self.head} to {newhead}"
+            # if any children, this is an FP PR being updated, enqueue
+            # updating children
+            if self.search_count([('parent_id', '=', self.id)], limit=1):
+                self.env['forwardport.updates'].create({
+                    'original_root': self.root_id.id,
+                    'new_root': self.id
+                })
+
+        if vals.get('parent_id') and 'source_id' not in vals:
+            parent = self.browse(vals['parent_id'])
+            vals['source_id'] = (parent.source_id or parent).id
+
         w = super().write(vals)
+
+        if self.env.context.get('forwardport_detach_warn', True):
+            for p, parent in with_parents.items():
+                if p.parent_id:
+                    continue
+                self.env.ref('runbot_merge.forwardport.update.detached')._send(
+                    repository=p.repository,
+                    pull_request=p.number,
+                    token_field='fp_github_token',
+                    format_args={'pr': p.with_context(
+                        suppress_ping=p.source_id.batch_id.fw_policy=='skipmerge',
+                    )},
+                )
+                if parent.state not in ('closed', 'merged'):
+                    self.env.ref('runbot_merge.forwardport.update.parent')._send(
+                        repository=parent.repository,
+                        pull_request=parent.number,
+                        token_field='fp_github_token',
+                        format_args={
+                            'pr': parent.with_context(
+                                suppress_ping=p.source_id.batch_id.fw_policy=='skipmerge',
+                            ),
+                            'child': p,
+                        },
+                    )
 
         newhead = vals.get('head')
         if newhead:
@@ -1793,6 +1887,303 @@ For your own safety I've ignored *everything in your entire comment*.
             'batch_id': batch.create({}).id,
         })
 
+    def _create_port_branch(
+            self,
+            source: git.Repo,
+            target_branch: Branch,
+            *,
+            forward: bool,
+    ) -> tuple[typing.Optional[Conflict], str]:
+        """ Creates a forward-port for the current PR to ``target_branch`` under
+        ``fp_branch_name``.
+
+        :param source: the git repository to work with / in
+        :param target_branch: the branch to port ``self`` to
+        :param forward: whether this is a forward (``True``) or a back
+                        (``False``) port
+        :returns: a conflict if one happened, and the head of the port branch
+                  (either a succcessful port of the entire `self`, or a conflict
+                  commit)
+        """
+        logger = _logger.getChild(str(self.id))
+        root = self.root_id
+        logger.info(
+            "%s %s (%s) to %s",
+            "Forward-porting" if forward else "Back-porting",
+            self.display_name, root.display_name, target_branch.name,
+        )
+
+        try:
+            target_head = next(
+                c for c in source.fetch_heads(
+                    self.repository,
+                    f"refs/heads/{target_branch.name}",
+                    root.head,
+                ) if c != root.head
+            )
+        except subprocess.CalledProcessError as e:
+            raise ForwardPortError(
+                f"Git error while forward porting {self.display_name}:\n{e.stdout}\n{e.stderr}"
+            ) from None
+
+
+        logger.info("Fetched head of %s (%s)", root.display_name, root.head)
+
+        try:
+            return None, root._cherry_pick(source, target_branch.name, target_head)
+        except CherrypickError as e:
+            h, out, err, commits = e.args
+
+            # commits returns oldest first, so youngest (head) last
+            head_commit = commits[-1]['commit']
+
+            to_tuple = operator.itemgetter('name', 'email')
+            authors, committers = set(), set()
+            for commit in (c['commit'] for c in commits):
+                authors.add(to_tuple(commit['author']))
+                committers.add(to_tuple(commit['committer']))
+            fp_authorship = (self.repository.project_id.fp_github_name, '', '')
+            author = fp_authorship if len(authors) != 1 \
+                else authors.pop() + (head_commit['author']['date'],)
+            committer = fp_authorship if len(committers) != 1 \
+                else committers.pop() + (head_commit['committer']['date'],)
+            conf = source.with_params(
+                'merge.renamelimit=0',
+                'merge.renames=copies',
+                'merge.conflictstyle=diff3'
+            ).with_config(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            tree = conf.with_config(check=False).merge_tree(
+                '--merge-base', commits[0]['parents'][0]['sha'],
+                target_head,
+                root.head,
+            ).stdout.decode().splitlines(keepends=False)[0]
+            # if there was a single commit, reuse its message when committing
+            # the conflict
+            if len(commits) == 1:
+                msg = root._make_fp_message(commits[0])
+            else:
+                out = utils.shorten(out, 8*1024, '[...]')
+                err = utils.shorten(err, 8*1024, '[...]')
+                msg = f"Cherry pick of {h} failed\n\nstdout:\n{out}\nstderr:\n{err}\n"
+
+            # if a file is modified by the original PR and added by the forward
+            # port / conflict it's a modify/delete conflict: the file was
+            # deleted in the target branch, and the update (modify) in the
+            # original PR causes it to be added back
+            base = conf.remote_head(root.repository, root.target.name)
+            original_modified = set(conf.diff(
+                "--diff-filter=M", "--name-only",
+                "--merge-base", base,
+                root.head,
+            ).stdout.decode().splitlines(keepends=False))
+            conflict_added = set(conf.diff(
+                "--diff-filter=A", "--name-only",
+                target_head,
+                tree,
+            ).stdout.decode().splitlines(keepends=False))
+            if modify_delete := (conflict_added & original_modified):
+                # rewrite the tree with conflict markers added to modify/deleted blobs
+                tree = conf.modify_delete(tree, modify_delete)
+
+            commit = conf.commit_tree(
+                tree=tree,
+                parents=[target_head],
+                message=str(msg),
+                author=author,
+                committer=committer[:2],
+            )
+            assert commit.returncode == 0,\
+                f"commit failed\n\n{commit.stdout.decode()}\n\n{commit.stderr.decode}"
+            hh = commit.stdout.strip()
+
+            return (h, out, err, [c['sha'] for c in commits]), hh
+
+    def _cherry_pick(self, repo: git.Repo, branch: Branch, head: str) -> str:
+        """ Cherrypicks ``self`` into ``branch``
+
+        :return: the HEAD of the forward-port is successful
+        :raises CherrypickError: in case of conflict
+        """
+        # <xxx>.cherrypick.<number>
+        logger = _logger.getChild(str(self.id)).getChild('cherrypick')
+
+        commits = self.repository.github('fp_github_token').commits(self.number)
+        logger.info(
+            "%s: copy %s commits to %s (%s)%s",
+            self, len(commits), branch, head,
+            ''.join(
+                '\n- %s: %s' % (c['sha'], c['commit']['message'].splitlines()[0])
+                for c in commits
+            )
+        )
+
+        conf = repo.with_config(
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False,
+        )
+        with contextlib.ExitStack() as atexit:
+            project = self.repository.project_id
+            if project.use_mergiraf and shutil.which('mergiraf'):
+                attrs = atexit.enter_context(tempfile.NamedTemporaryFile(buffering=0))
+                attrs.write(b'* merge=mergiraf\n')
+
+                conf = conf.with_params(
+                    'merge.renamelimit=0',
+                    'merge.renames=copies',
+                    'merge.conflictStyle=diff3',
+                    'merge.mergiraf.name=mergiraf',
+                    'merge.mergiraf.driver=mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L',
+                    f'core.attributesfile={attrs.name}',
+                )
+            else:
+                conf = conf.with_params(
+                    'merge.renamelimit=0',
+                    'merge.renames=copies',
+                )
+
+            for commit in commits:
+                commit_sha = commit['sha']
+                # merge-tree is a bit stupid and gets confused when the options
+                # follow the parameters
+                r = conf.merge_tree('--merge-base', commit['parents'][0]['sha'], head, commit_sha)
+                new_tree = r.stdout.decode().splitlines(keepends=False)[0]
+                if r.returncode:
+                    # For merge-tree the stdout on conflict is of the form
+                    #
+                    # oid of toplevel tree
+                    # conflicted file info+
+                    #
+                    # informational messages+
+                    #
+                    # to match cherrypick we only want the informational messages,
+                    # so strip everything else
+                    r.stdout = r.stdout.split(b'\n\n')[-1]
+                else:
+                    # By default cherry-pick fails if a non-empty commit becomes
+                    # empty (--empty=stop), also it fails when cherrypicking already
+                    # empty commits which I didn't think we prevented but clearly we
+                    # do...?
+                    parent_tree = conf.rev_parse(f'{head}^{{tree}}').stdout.decode().strip()
+                    if parent_tree == new_tree:
+                        r.returncode = 1
+                        r.stdout = f"You are currently cherry-picking commit {commit_sha}.".encode()
+                        r.stderr = b"The previous cherry-pick is now empty, possibly due to conflict resolution."
+
+                logger.debug("Cherry-picked %s: %s\n%s\n%s", commit_sha, r.returncode, r.stdout.decode(), _clean_rename(r.stderr.decode()))
+                if r.returncode: # pick failed, bail
+                    # try to log inflateInit: out of memory errors as warning, they
+                    # seem to return the status code 128 (nb: may not work anymore
+                    # with merge-tree, idk)
+                    logger.log(
+                        logging.WARNING if r.returncode == 128 else logging.INFO,
+                        "forward-port of %s (%s) failed at %s",
+                        self, self.display_name, commit_sha)
+
+                    raise CherrypickError(
+                        commit_sha,
+                        r.stdout.decode(),
+                        _clean_rename(r.stderr.decode()),
+                        commits
+                    )
+                # get the "git" commit object rather than the "github" commit resource
+                cc = conf.commit_tree(
+                    tree=new_tree,
+                    parents=[head],
+                    message=str(self._make_fp_message(commit)),
+                    author=map_author(commit['commit']['author']),
+                    committer=map_committer(commit['commit']['committer']),
+                )
+                if cc.returncode:
+                    raise CherrypickError(commit_sha, cc.stdout.decode(), cc.stderr.decode(), commits)
+
+                head = cc.stdout.strip()
+                logger.info('%s -> %s', commit_sha, head)
+
+            return head
+
+    def _make_fp_message(self, commit):
+        cmap = json.loads(self.commits_map)
+        msg = Message.from_message(commit['commit']['message'])
+        # write the *merged* commit as "original", not the PR's
+        msg.headers['x-original-commit'] = cmap.get(commit['sha'], commit['sha'])
+        # don't stringify so caller can still perform alterations
+        return msg
+
+    def _reminder(self):
+        emails = collections.defaultdict(self.browse)
+        for source, prs in groupby(self.search([
+            ('source_id', '!=', False),
+            ('blocked', '!=', False),
+            ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
+            ('reminder_next', '<', self.env.cr.now()),
+        ], order='source_id, id'), lambda p: p.source_id):
+            # only remind on the "tip" of every chain of descendants as they
+            # will most likely lead to their parent being validated (?)
+            for pr in set(prs).difference(p.parent_id for p in prs):
+                # reminder every 7 days for the first 4 weeks, then every 4 weeks
+                age = pr.reminder_next - pr.create_date
+                if age < datetime.timedelta(days=28):
+                    pr.reminder_next += datetime.timedelta(days=7)
+                else:
+                    pr.reminder_next += datetime.timedelta(days=28)
+
+                # after 6 months, start sending emails
+                if age > datetime.timedelta(weeks=26):
+                    if author := source.author.email:
+                        emails[author] = emails[author].union(*prs)
+                    if reviewer := source.reviewed_by.email:
+                        emails[reviewer] = emails[reviewer].union(*prs)
+                self.env.ref('runbot_merge.forwardport.reminder')._send(
+                    repository=pr.repository,
+                    pull_request=pr.number,
+                    token_field='fp_github_token',
+                    format_args={'pr': pr, 'source': pr.source_id},
+                )
+
+        try:
+            self.env['mail.mail'].sudo().create([
+                {
+                    'email_to': email,
+                    'subject': f"You have {len(prs)} outstanding forward ports",
+                    'body': Markup(
+                        "<p>The following forward-ports are more than 6 months old "
+                        "and were either created or approved by you.</p>"
+                        "<p>Please process them appropriately (merge or close them)"
+                        "at the earliest.</p>"
+                        "<ul>{}</ul>"
+                    ).format(Markup("").join(
+                        Markup('<li><a href="{link}">{name}</a></li>').format(
+                            name=pr.display_name,
+                            link=pr.github_url,
+                        )
+                        for pr in prs
+                    ))
+                }
+                for email, prs in emails.items()
+            ])
+        except Exception:
+            _logger.exception("Failed to create mail")
+
+
+map_author = operator.itemgetter('name', 'email', 'date')
+map_committer = operator.itemgetter('name', 'email')
+
+class CherrypickError(Exception):
+    ...
+
+class ForwardPortError(Exception):
+    pass
+
+def _clean_rename(s):
+    """ Filters out the "inexact rename detection" spam of cherry-pick: it's
+    useless but there seems to be no good way to silence these messages.
+    """
+    return '\n'.join(
+        l for l in s.splitlines()
+        if not l.startswith('Performing inexact rename detection')
+    )
+
 
 class Ping(IntEnum):
     NO = 0
@@ -1920,7 +2311,7 @@ class Feedback(models.Model):
     message = fields.Char()
     close = fields.Boolean()
     token_field = fields.Selection(
-        [('github_token', "Mergebot")],
+        [('github_token', "Mergebot"), ('fp_github_token', 'Forwardport Bot')],
         default='github_token',
         string="Bot User",
         help="Token field (from repo's project) to use to post messages"
@@ -2250,6 +2641,27 @@ class Stagings(models.Model):
         if vals.get('active') is False:
             vals['staging_end'] = fields.Datetime.now()
             self.env.ref("runbot_merge.staging_cron")._trigger()
+
+            if self.state == 'success' and self.target.project_id.fp_github_token:
+                # check all batches to see if they should be forward ported
+                for b in self.with_context(active_test=False).batch_ids:
+                    if b.fw_policy == 'no':
+                        continue
+                    # If all PRs of a batch have parents they're part of an FP
+                    # sequence and thus handled separately (by all being ready
+                    # which should have occurred before staging).
+                    if all(p.parent_id for p in b.prs):
+                        continue
+                    # If the batch has already been forward ported, no need for
+                    # forward port it again obviously.
+                    if self.env['runbot_merge.batch']\
+                            .with_context(active_test=False)\
+                            .search_count([('parent_id', '=', b.id)], limit=1):
+                        continue
+                    self.env['forwardport.batches'].create({
+                        'batch_id': b.id,
+                        'source': 'merge',
+                    })
 
         return super().write(vals)
 

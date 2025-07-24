@@ -1,6 +1,6 @@
 {
     'name': 'merge bot',
-    'version': '1.17',
+    'version': '1.18',
     'depends': ['contacts', 'mail', 'website'],
     'data': [
         'security/security.xml',
@@ -21,6 +21,8 @@
         'models/staging_cancel/views.xml',
         'models/backport/views.xml',
         'models/ir_cron/views.xml',
+        'models/crons/forwardport.xml',
+        'models/crons/forwardport_views.xml',
     ],
     'assets': {
        'web._assets_primary_variables': [

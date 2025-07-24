@@ -7,8 +7,9 @@ import requests
 import sentry_sdk
 
 from odoo import models, fields, api
+from odoo.exceptions import UserError
 from odoo.osv import expression
-from odoo.tools import reverse_order
+from odoo.tools import reverse_order, groupby
 
 _logger = logging.getLogger(__name__)
 class Project(models.Model):
@@ -240,3 +241,123 @@ class Project(models.Model):
             [('project_id', '=', self.id)],
             domain or [],
         ]), order=reverse_order(Branches._order))
+
+    def write(self, vals):
+        # projects without an fw token can't have forward ports, thus don't need
+        # intermediates or followups being checked for
+        if fw_enabled := self.filtered('fp_github_token').with_context(active_test=False):
+            # check on branches both active and inactive so disabling branches doesn't
+            # make it look like the sequence changed.
+            previously_active_branches = {project: project.branch_ids.filtered('active') for project in fw_enabled}
+            branches_before = {project: project._forward_port_ordered() for project in fw_enabled}
+
+            r = super().write(vals)
+            fw_enabled._followup_prs(previously_active_branches)
+            fw_enabled._insert_intermediate_prs(branches_before)
+            return r
+        return super().write(vals)
+
+    def _followup_prs(self, previously_active_branches):
+        """If a branch has been disabled and had PRs without a followup (e.g.
+        because no CI or CI failed), create followup, as if the branch had been
+        originally disabled (and thus skipped over)
+        """
+        Batch = self.env['runbot_merge.batch']
+        ported = self.env['runbot_merge.pull_requests']
+        for p in self:
+            actives = previously_active_branches[p]
+            for deactivated in p.branch_ids.filtered(lambda b: not b.active) & actives:
+                # if a non-merged batch targets a deactivated branch which is
+                # not its limit
+                extant = Batch.search([
+                    ('parent_id', '!=', False),
+                    ('target', '=', deactivated.id),
+                    # if at least one of the PRs has a different limit
+                    ('prs.limit_id', '!=', deactivated.id),
+                    ('merge_date', '=', False),
+                ]).filtered(lambda b:\
+                    # and has a next target (should already be a function of
+                    # the search but doesn't hurt)
+                    b._find_next_target() \
+                    # and has not already been forward ported
+                    and Batch.search_count([('parent_id', '=', b.id)]) == 0
+                )
+
+                # PRs may have different limits in the same batch so only notify
+                # those which actually needed porting
+                ported |= extant._schedule_fp_followup(force_fw=True)\
+                    .prs.filtered(lambda p: p._find_next_target())
+
+        if not ported:
+            return
+
+        for feedback in self.env['runbot_merge.pull_requests.feedback'].search(expression.OR(
+            [('repository', '=', p.repository.id), ('pull_request', '=', p.number)]
+            for p in ported
+        )):
+            # FIXME: better signal
+            if 'disabled' in feedback.message:
+                feedback.message += '\n\nAs this was not its limit, it will automatically be forward ported to the next active branch.'
+
+    def _insert_intermediate_prs(self, branches_before):
+        """If new branches have been added to the sequence inbetween existing
+        branches (mostly a freeze inserted before the main branch), fill in
+        forward-ports for existing sequences
+        """
+        Branches = self.env['runbot_merge.branch']
+        for p in self:
+            # check if the branches sequence has been modified
+            bbefore = branches_before[p]
+            if not bbefore:
+                continue
+
+            bafter = p._forward_port_ordered()
+            if not bbefore <= bafter:
+                raise UserError("Branches can not be removed after saving the project.")
+            # branches inserted at the end is fine, forwardports will keep on keeping normally
+            if all(before == after for before, after in zip(bbefore, bafter)):
+                continue
+
+            logger = _logger.getChild('project').getChild(p.name)
+            logger.debug("branches updated %s -> %s", bbefore, bafter)
+            print(f"\n\nbranches updated {bbefore} -> {bafter}\n", flush=True)
+
+            # Last possibility: branch was inserted but not at end, get all
+            # branches before and all branches after
+            before = new = after = Branches
+            for b in bafter:
+                if b in bbefore:
+                    if new:
+                        after += b
+                    else:
+                        before += b
+                else:
+                    if new:
+                        raise UserError("Inserting multiple branches at the same time is not supported")
+                    new = b
+            if not before:
+                continue
+
+            logger.debug('before: %s new: %s after: %s', before.ids, new.ids, after.ids)
+            # find all FPs whose ancestry spans the insertion
+            leaves = self.env['runbot_merge.pull_requests'].search([
+                ('state', 'not in', ['closed', 'merged']),
+                ('target', 'in', after.ids),
+                ('source_id.target', 'in', before.ids),
+            ])
+            # get all PRs just preceding the insertion point which either are
+            # sources of the above or have the same source
+            candidates = self.env['runbot_merge.pull_requests'].search([
+                ('target', '=', before[-1].id),
+                '|', ('id', 'in', leaves.mapped('source_id').ids),
+                     ('source_id', 'in', leaves.mapped('source_id').ids),
+            ])
+            logger.debug("\nPRs spanning new: %s\nto port: %s", leaves, candidates)
+            # enqueue the creation of a new forward-port based on our candidates
+            # but it should only create a single step and needs to stitch back
+            # the parents linked list, so it has a special type
+            for _, cs in groupby(candidates, key=lambda p: p.label):
+                self.env['forwardport.batches'].create({
+                    'batch_id': cs[0].batch_id.id,
+                    'source': 'insert',
+                })

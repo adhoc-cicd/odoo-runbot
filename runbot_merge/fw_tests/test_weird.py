@@ -847,9 +847,9 @@ def test_freeze(env, config, make_repo, users):
     # re-enable staging
     tip.staging_enabled = True
     # re-enable forward-port cron after freeze
-    _, cron_id = env['ir.model.data'].check_object_reference('forwardport', 'port_forward', context={'active_test': False})
+    _, cron_id = env['ir.model.data'].check_object_reference('runbot_merge', 'port_forward', context={'active_test': False})
     env['ir.cron'].browse([cron_id]).active = True
-    env.run_crons('forwardport.port_forward')
+    env.run_crons('runbot_merge.port_forward')
     assert not env['runbot_merge.pull_requests'].search([
         ('source_id', '=', release_id.id),
     ]), "the release PRs should not be forward-ported"
@@ -1204,7 +1204,7 @@ def test_reminder_detached(env, config, make_repo, users):
 
     # region sanity check
     (pr_a_id | pr_b_id | pr_c_id).reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
 
     assert pr_b.comments == [
         seen(env, pr_b, users),
@@ -1239,7 +1239,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     # region check detached
     pr_c_id.write({'parent_id': False, 'detach_reason': 'because'})
     (pr_a_id | pr_b_id | pr_c_id).reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
 
     assert pr_b.comments[2:] == [
         (users['user'], "@%s @%s child PR %s was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross." % (

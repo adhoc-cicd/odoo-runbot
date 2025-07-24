@@ -29,6 +29,7 @@ from odoo.tools import file_open
 
 HORIZONTAL_PADDING = 20
 VERTICAL_PADDING = 5
+DEFAULT_DELTA = datetime.timedelta(days=7)
 
 _logger = logging.getLogger(__name__)
 
@@ -134,6 +135,94 @@ class MergebotDashboard(Controller):
             'merged_head': json.loads(pr_id.commits_map).get(''),
             'statuses': st
         })
+
+    @route('/forwardport/outstanding', type='http', methods=['GET'], auth="user", website=True, sitemap=False)
+    def outstanding(self, partner=0, authors=True, reviewers=True, group=0):
+        Partners = request.env['res.partner']
+        partner = Partners.browse(int(partner))
+        group = Partners.browse(int(group))
+        authors = int(authors)
+        reviewers = int(reviewers)
+        link = lambda **kw: '?' + werkzeug.urls.url_encode({'partner': partner.id or 0, 'authors': authors, 'reviewers': reviewers, **kw, })
+        groups = Partners.search([('is_company', '=', True), ('child_ids', '!=', False)])
+        if not (authors or reviewers):
+            return request.render('runbot_merge.outstanding', {
+                'authors': 0,
+                'reviewers': 0,
+                'single': partner,
+                'culprits': partner,
+                'groups': groups,
+                'current_group': group,
+                'outstanding': [],
+                'outstanding_per_author': {partner: 0},
+                'outstanding_per_reviewer': {partner: 0},
+                'link': link,
+            })
+
+        partner_filter = None
+        if partner:
+            if authors and reviewers:
+                partner_filter = lambda p: p.author == partner or p.reviewed_by == partner
+            elif authors:
+                partner_filter = lambda p: p.author == partner
+            elif reviewers:
+                partner_filter = lambda p: p.reviewed_by == partner
+        elif group:
+            if authors and reviewers:
+                partner_filter = lambda p: \
+                    p.author.commercial_partner_id == group\
+                    or p.reviewed_by.commercial_partner_id == group
+            elif authors:
+                partner_filter = lambda p: p.author.commercial_partner_id == group
+            elif reviewers:
+                partner_filter = lambda p: p.reviewed_by.commercial_partner_id == group
+
+        now = datetime.datetime.now()
+        Batches = request.env['runbot_merge.batch']
+        outstanding = Batches.search([
+            ('parent_id', '!=', False),
+            ('merge_date', '=', False),
+            ('blocked', '!=', False),
+            ('create_date', '<', now - DEFAULT_DELTA),
+        ])
+        outstandings = collections.defaultdict(Batches.browse)
+        outstanding_per_group = collections.Counter()
+        outstanding_per_author = collections.Counter()
+        outstanding_per_reviewer = collections.Counter()
+        for batch in outstanding:
+            source = batch.source
+            if partner_filter and not any(partner_filter(p) for p in source.prs):
+                continue
+
+            outstandings[source] |= batch
+            sources = source.prs
+            if authors:
+                outstanding_per_author.update(sources.author)
+            if reviewers:
+                outstanding_per_reviewer.update(sources.reviewed_by)
+            outstanding_per_group.update(
+                sources.author.commercial_partner_id
+              | sources.reviewed_by.commercial_partner_id
+            )
+
+        culprits = Partners.browse(p.id for p, _ in (outstanding_per_reviewer + outstanding_per_author).most_common())
+        return request.render('runbot_merge.outstanding', {
+            'authors': authors,
+            'reviewers': reviewers,
+            'single': partner,
+            'culprits': culprits,
+            'groups': groups,
+            'current_group': group,
+            'outstanding_per_author': outstanding_per_author,
+            'outstanding_per_reviewer': outstanding_per_reviewer,
+            'outstanding_per_group': outstanding_per_group,
+            'outstanding': dict(sorted(
+                outstandings.items(),
+                key=lambda item: item[0].merge_date or now,
+            )),
+            'link': link,
+        })
+
 
 def raster_render(pr):
     default_headers = {

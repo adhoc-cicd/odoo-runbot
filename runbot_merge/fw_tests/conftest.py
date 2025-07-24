@@ -30,11 +30,3 @@ def _check_scopes(config):
         token_scopes = set(re.split(r',\s+', x_oauth_scopes))
         assert token_scopes >= required_scopes, \
             "%s should have scopes %s, found %s" % (section, token_scopes, required_scopes)
-
-@pytest.fixture()
-def module():
-    """ When a test function is (going to be) run, selects the containing
-    module (as needing to be installed)
-    """
-    # NOTE: no request.fspath (because no request.function) in session-scoped fixture so can't put module() at the toplevel
-    return 'forwardport'

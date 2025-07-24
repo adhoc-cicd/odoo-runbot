@@ -5,7 +5,6 @@ import logging
 import re
 import sys
 from collections.abc import Mapping
-from contextlib import ExitStack
 from datetime import datetime, timedelta
 
 import requests
@@ -100,7 +99,7 @@ class ForwardPortTasks(models.Model):
     _name = 'forwardport.batches'
     _inherit = ['forwardport.queue', 'mail.thread']
     _description = 'Check merged batches to forward port'
-    _cron_name = 'forwardport.port_forward'
+    _cron_name = 'runbot_merge.port_forward'
 
     batch_id = fields.Many2one('runbot_merge.batch', required=True, index=True)
     source = fields.Selection([
@@ -329,7 +328,7 @@ class UpdateQueue(models.Model):
     _name = 'forwardport.updates'
     _inherit = ['forwardport.queue']
     _description = 'Update forward ports of an updated PR'
-    _cron_name = 'forwardport.updates'
+    _cron_name = 'runbot_merge.updates'
 
     original_root = fields.Many2one('runbot_merge.pull_requests')
     new_root = fields.Many2one('runbot_merge.pull_requests')
@@ -424,7 +423,7 @@ class DeleteBranches(models.Model):
     _name = 'forwardport.branch_remover'
     _inherit = ['forwardport.queue']
     _description = "Removes branches of merged and closed PRs"
-    _cron_name = 'forwardport.remover'
+    _cron_name = 'runbot_merge.remover'
 
     pr_id = fields.Many2one('runbot_merge.pull_requests', index=True)
 

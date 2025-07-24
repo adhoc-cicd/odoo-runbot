@@ -29,7 +29,7 @@ def test_base(env, config, make_repo, users, page):
 
     pr0_id, pr1_id, pr2_id = env['runbot_merge.pull_requests'].search([], order='number')
     pr2_id.reminder_next = datetime.now() - timedelta(days=1)
-    env.run_crons('forwardport.reminder')
+    env.run_crons('runbot_merge.reminder')
 
     assert pr0_id.number == pr0.number
     assert pr0.comments == [

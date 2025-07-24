@@ -152,7 +152,7 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
     if f := getattr(config, '_tmp_path_factory', None):
         for c in f.getbasetemp().iterdir():
-            if c.is_file() and c.name.startswith('template-'):
+            if c.is_file() and c.name == 'template':
                 subprocess.run(['dropdb', '--if-exists', c.read_text(encoding='utf-8')])
 
 @pytest.fixture(scope='session', autouse=True)
@@ -381,87 +381,78 @@ def waitfile(
     raise TimeoutError(f"Timed out waiting for {f}")
 
 
-class DbDict(dict):
-    def __init__(self, adpath, shared_dir):
-        super().__init__()
-        self._adpath = adpath
-        self._shared_dir = shared_dir
-    def __missing__(self, module):
-        with contextlib.ExitStack() as atexit:
-            f = atexit.enter_context(os.fdopen(os.open(
-                self._shared_dir / f'template-{module}',
-                os.O_CREAT | os.O_RDWR
-            ), mode="r+", encoding='utf-8'))
-            fcntl.lockf(f, fcntl.LOCK_EX)
-            atexit.callback(fcntl.lockf, f, fcntl.LOCK_UN)
-
-            db = f.read()
-            if db:
-                self[module] = db
-                return db
-
-            d = (self._shared_dir / f'shared-{module}')
-            try:
-                d.mkdir()
-            except FileExistsError:
-                pytest.skip(f"found shared dir for {module}, database creation has likely failed")
-
-            self[module] = db = 'template_%s' % uuid.uuid4()
-            subprocess.run([
-                'odoo', '--no-http',
-                *(['--addons-path', self._adpath] if self._adpath else []),
-                '-d', db, '-i', module + ',saas_worker,auth_oauth',
-                '--without-demo=all',
-                '--max-cron-threads', '0',
-                '--stop-after-init',
-                '--log-level', 'warn',
-                '--log-handler', 'py.warnings:ERROR',
-            ],
-                check=True,
-                env={**os.environ, 'XDG_DATA_HOME': str(d)}
-            )
-            f.write(db)
-            f.flush()
-            os.fsync(f.fileno())
-            subprocess.run(['psql', db, '-c', "UPDATE ir_cron SET nextcall = 'infinity'"])
-
-        return db
-
 @pytest.fixture(scope='session')
-def dbcache(
+def shared_dir(
         request: pytest.FixtureRequest,
         tmp_path_factory: pytest.TempPathFactory,
+) -> pathlib.Path:
+    shared_dir = tmp_path_factory.getbasetemp()
+    if is_manager(request.config):
+        return shared_dir
+
+    # xdist workers get a subdir as their basetemp, so we need to go one
+    # level up to deref it
+    return shared_dir.parent
+
+@pytest.fixture(scope='session')
+def template_db(
+        shared_dir: pathlib.Path,
         addons_path: str,
-) -> Iterator[DbDict]:
+) -> str:
     """ Creates template DB once per run, then just duplicates it before
     starting odoo and running the testcase
     """
-    shared_dir = tmp_path_factory.getbasetemp()
-    if not is_manager(request.config):
-        # xdist workers get a subdir as their basetemp, so we need to go one
-        # level up to deref it
-        shared_dir = shared_dir.parent
+    with contextlib.ExitStack() as atexit:
+        f = atexit.enter_context(os.fdopen(os.open(
+            shared_dir / f'template',
+            os.O_CREAT | os.O_RDWR
+        ), mode="r+", encoding='utf-8'))
+        fcntl.lockf(f, fcntl.LOCK_EX)
+        atexit.callback(fcntl.lockf, f, fcntl.LOCK_UN)
 
-    dbs = DbDict(addons_path, shared_dir)
-    yield dbs
+        db = f.read()
+        if db:
+            return db
+
+        d = (shared_dir / f'shared')
+        try:
+            d.mkdir()
+        except FileExistsError:
+            pytest.skip(f"found existing shared dir, database creation has likely failed")
+
+        db = f'template-{secrets.token_hex(16)}'
+        subprocess.run([
+            'odoo', '--no-http',
+            *(['--addons-path', addons_path] if addons_path else []),
+            '-d', db, '-i', 'runbot_merge,saas_worker,auth_oauth',
+            '--without-demo=all',
+            '--max-cron-threads', '0',
+            '--stop-after-init',
+            '--log-level', 'warn',
+            '--log-handler', 'py.warnings:ERROR',
+        ],
+            check=True,
+            env={**os.environ, 'XDG_DATA_HOME': str(d)}
+        )
+        f.write(db)
+        f.flush()
+        os.fsync(f.fileno())
+        subprocess.run(['psql', db, '-c', "UPDATE ir_cron SET nextcall = 'infinity'"])
+
+        return db
 
 @pytest.fixture
 def db(
         request: pytest.FixtureRequest,
-        module: str,
-        dbcache: DbDict,
+        shared_dir: pathlib.Path,
+        template_db: str,
         tmp_path: pathlib.Path,
 ) -> Iterator[str]:
-    template_db = dbcache[module]
-    rundb = str(uuid.uuid4())
+    rundb = f'mergebot-{secrets.token_hex(16)}'
     subprocess.run(['createdb', '-T', template_db, rundb], check=True)
     share = tmp_path.joinpath('share')
     share.mkdir()
-    shutil.copytree(
-        dbcache._shared_dir / f'shared-{module}',
-        share,
-        dirs_exist_ok=True,
-    )
+    shutil.copytree(shared_dir / f'shared', share, dirs_exist_ok=True)
     (share / 'Odoo' / 'filestore' / template_db).rename(
         share / 'Odoo' / 'filestore' / rundb)
 
@@ -473,7 +464,7 @@ def db(
 def wait_for_hook():
     time.sleep(WEBHOOK_WAIT_TIME)
 
-def wait_for_server(db: str, port: int, proc: subprocess.Popen, mod: str, timeout: int = 120) -> None:
+def wait_for_server(db: str, port: int, proc: subprocess.Popen, timeout: int = 120) -> None:
     """ Polls for server to be response & have installed our module.
 
     Raises socket.timeout on failure
@@ -493,7 +484,7 @@ def wait_for_server(db: str, port: int, proc: subprocess.Popen, mod: str, timeou
                 f'http://localhost:{port}/xmlrpc/2/object'
             ).execute_kw(
                 db, uid, 'admin', 'ir.module.module', 'search_read', [
-                    [('name', '=', mod)], ['state']
+                    [('name', '=', 'runbot_merge')], ['state']
                 ])
             if mods and mods[0].get('state') == 'installed':
                 break
@@ -546,7 +537,6 @@ def server(
         request: pytest.FixtureRequest,
         db: str,
         port: int,
-        module: str,
         addons_path: str,
         tmp_path: pathlib.Path,
 ) -> Iterator[tuple[subprocess.Popen, bytearray]]:
@@ -618,7 +608,7 @@ def server(
     threading.Thread(target=_move, daemon=True).start()
 
     try:
-        wait_for_server(db, port, p, module)
+        wait_for_server(db, port, p)
 
         yield p, buf
     finally:

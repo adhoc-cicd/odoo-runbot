@@ -1,8 +1,5 @@
 import pytest
 
-@pytest.fixture()
-def module():
-    return 'runbot_merge'
 
 @pytest.fixture
 def project(env, config, rolemap):
