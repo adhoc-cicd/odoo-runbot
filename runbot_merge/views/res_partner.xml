@@ -79,7 +79,7 @@
                                 following the Security training. Please ask DLE
                                 before granting access.
                             </div>
-                            <field colspan="2" name="override_rights" widget="many2many_tags"/>
+                            <field colspan="2" name="override_rights" widget="many2many_tags" options="{'no_create': True}"/>
                         </group>
                     </group>
                     <group>

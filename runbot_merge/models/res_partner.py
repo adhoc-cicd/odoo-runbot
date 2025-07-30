@@ -1,3 +1,4 @@
+import collections
 import random
 from email.utils import parseaddr
 
@@ -7,6 +8,10 @@ import odoo.tools
 from odoo import fields, models, tools, api, Command
 
 from .. import github
+
+LIST_TEMPLATE = Markup("<ul>{}</ul>")
+OVERRIDE_ADD_TEMPLATE = Markup("<li>added override rights for {!r} on {}</li>")
+OVERRIDE_REMOVE_TEMPLATE = Markup("<li>removed override rights for {!r} on {}</li>")
 
 class CIText(fields.Char):
     type = 'char'
@@ -69,12 +74,10 @@ class Partner(models.Model):
                 updated[id] = values
             #  could also be LINK for records which are not touched but we don't care
 
-        new_rights = None
-        if r := vals.get('override_rights'):
-            # only handle reset (for now?) even though technically e.g. 0 works
-            # the web client doesn't seem to use it (?)
-            if r[0][0] == 6:
-                new_rights = self.env['res.partner.override'].browse(r[0][2])
+        if 'override_rights' in vals:
+            overrides_before = {p: p.override_rights for p in self}
+        else:
+            overrides_before = {}
 
         Repo = self.env['runbot_merge.repository'].browse
         for p in self:
@@ -102,17 +105,29 @@ class Partner(models.Model):
                 )
                 for c in created
             )
-            if new_rights is not None:
-                for r in p.override_rights - new_rights:
-                    msgs.append(f"removed override rights for {r.context!r} on {r.repository_id.name}")
-                for r in new_rights - p.override_rights:
-                    msgs.append(f"added override rights for {r.context!r} on {r.repository_id.name}")
             if msgs:
-                p._message_log(body=Markup('<ul>{}</ul>').format(Markup().join(
+                p._message_log(body=LIST_TEMPLATE.format(Markup().join(
                     map(Markup('<li>{}</li>').format, reversed(msgs))
                 )))
 
-        return super().write(vals)
+        r = super().write(vals)
+        if 'override_rights' in vals:
+            for p in self:
+                overrides_after = p.override_rights
+                msgs = []
+                for o in overrides_after - overrides_before[p]:
+                    msgs.append(OVERRIDE_ADD_TEMPLATE.format(o.context, o.repository_id.name))
+                for o in overrides_before[p] - overrides_after:
+                    msgs.append(OVERRIDE_REMOVE_TEMPLATE.format(o.context, o.repository_id.name))
+                match msgs:
+                    case []:
+                        continue
+                    case [msg]:
+                        p._message_log(body=msg)
+                    case msgs:
+                        p._message_log(body=LIST_TEMPLATE.format(Markup().join(msgs)))
+
+        return r
 
 
 class PartnerMerge(models.TransientModel):
@@ -188,19 +203,30 @@ class OverrideRights(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        new = None
-        if pids := vals.get('partner_ids'):
-            new = self.env['res.partner'].browse(pids[0][2])
-        if new is not None:
-            for o in self:
-                added = new - o.partner_ids
-                removed = o.partner_ids - new
-                for p in added:
-                    p._message_log(body=f"added override rights for {o.context!r} on {o.repository_id.name}")
-                for r in removed:
-                    r._message_log(body=f"removed override rights for {o.context!r} on {o.repository_id.name}")
+        if 'partner_ids' in vals:
+            partners_before = {r: r.partner_ids for r in self}
+        else:
+            partners_before = {}
 
-        return super().write(vals)
+        r = super().write(vals)
+        if 'partner_ids' in vals:
+            msgs = collections.defaultdict(list)
+            for o in self:
+                partners_after = o.partner_ids
+                for p in partners_after - partners_before[o]:
+                    msgs[p].append(OVERRIDE_ADD_TEMPLATE.format(o.context, o.repository_id.name))
+                for p in partners_before[o] - partners_after:
+                    msgs[p].append(OVERRIDE_REMOVE_TEMPLATE.format(o.context, o.repository_id.name))
+            for p, msgs in msgs.items():
+                match msgs:
+                    case []:
+                        continue
+                    case [msg]:
+                        p._message_log(body=msg)
+                    case msgs:
+                        p._message_log(body=LIST_TEMPLATE.format(Markup().join(msgs)))
+
+        return r
 
     def unlink(self):
         for o in self:
