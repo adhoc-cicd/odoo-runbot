@@ -1592,7 +1592,7 @@ For your own safety I've ignored *everything in your entire comment*.
         if newhead and not self.env.context.get('ignore_head_update') and newhead != self.head:
             vals.setdefault('parent_id', False)
             if with_parents and vals['parent_id'] is False:
-                vals['detach_reason'] = f"Head updated from {self.head} to {newhead}"
+                vals['detach_reason'] = f"head updated from {self.head} to {newhead}"
             # if any children, this is an FP PR being updated, enqueue
             # updating children
             if self.search_count([('parent_id', '=', self.id)], limit=1):
@@ -1611,14 +1611,15 @@ For your own safety I've ignored *everything in your entire comment*.
             for p, parent in with_parents.items():
                 if p.parent_id:
                     continue
-                self.env.ref('runbot_merge.forwardport.update.detached')._send(
-                    repository=p.repository,
-                    pull_request=p.number,
-                    token_field='fp_github_token',
-                    format_args={'pr': p.with_context(
-                        suppress_ping=p.source_id.batch_id.fw_policy=='skipmerge',
-                    )},
-                )
+                if not self.search_count([('parent_id', '=', p.id)], limit=1):
+                    self.env.ref('runbot_merge.forwardport.update.detached')._send(
+                        repository=p.repository,
+                        pull_request=p.number,
+                        token_field='fp_github_token',
+                        format_args={'pr': p.with_context(
+                            suppress_ping=p.source_id.batch_id.fw_policy=='skipmerge',
+                        )},
+                    )
                 if parent.state not in ('closed', 'merged'):
                     self.env.ref('runbot_merge.forwardport.update.parent')._send(
                         repository=parent.repository,
@@ -1791,7 +1792,7 @@ For your own safety I've ignored *everything in your entire comment*.
             'parent_id': False,
             'detach_reason': f"Closed by {by}",
         })
-        self.search([('parent_id', '=', self.id)]).write({
+        self.search([('parent_id', '=', self.id), ('closed', '=', False)]).write({
             'parent_id': False,
             'detach_reason': f"{by} closed parent PR {self.display_name}",
         })

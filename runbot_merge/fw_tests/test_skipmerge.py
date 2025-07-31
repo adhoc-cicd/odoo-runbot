@@ -404,8 +404,9 @@ def test_suppress_ping_on_update(env, config, make_repo, users):
 
     pr2 = r1.get_pr(pr2_id.number)
     pr_repo, pr2_ref = pr2.branch
+    oldhead = pr2.head
     with pr_repo:
-        pr_repo.make_commits(
+        [c] = pr_repo.make_commits(
             r1.commit("b").id,
             Commit("cc", tree={'x': '1'}),
             ref=f'heads/{pr2_ref}',
@@ -416,13 +417,12 @@ def test_suppress_ping_on_update(env, config, make_repo, users):
     assert pr2.comments == [
         seen(env, pr2, users),
         (users['user'], "This PR targets b and is part of the forward-port chain. Further PRs will be created up to c.\n\nMore info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port\n"),
-        (users['user'], "this PR was modified / updated and has become a normal PR. It must be merged directly."),
     ]
     assert pr1.comments == [
         (users['reviewer'], "hansen fw=skipmerge"),
         seen(env, pr1, users),
         (users['user'], "Starting forward-port. Not waiting for merge to create followup forward-ports."),
-        (users['user'], f"child PR {pr2_id.display_name} was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross."),
+        (users['user'], f"child PR {pr2_id.display_name} has become a normal PR because head updated from {oldhead} to {c}. This PR (and any of its parents) will need to be merged independently as approvals won't cross."),
     ]
 
 

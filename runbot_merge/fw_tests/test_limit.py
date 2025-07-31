@@ -292,6 +292,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     ]
 
     # update pr2 to detach it from pr1
+    oldhead = p2.head
     with other:
         other.make_commits(
             prod.commit(p2.target.name).id,
@@ -308,7 +309,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     env.run_crons()
 
     assert pr2.comments[4:] == [
-        (users['user'], f"@{users['user']} @{users['reviewer']} this PR was modified / updated and has become a normal PR. It must be merged directly."),
+        (users['user'], f"@{users['user']} @{users['reviewer']} this PR has become a normal PR because head updated from {oldhead} to {p2.head}. It must be merged directly."),
         (users['reviewer'], 'hansen up to c'),
         (users['user'], "Forward-porting to 'c'."),
     ]

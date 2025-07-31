@@ -1242,7 +1242,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     env.run_crons('runbot_merge.reminder')
 
     assert pr_b.comments[2:] == [
-        (users['user'], "@%s @%s child PR %s was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross." % (
+        (users['user'], "@%s @%s child PR %s has become a normal PR because because. This PR (and any of its parents) will need to be merged independently as approvals won't cross." % (
             users['user'],
             users['reviewer'],
             pr_c_id.display_name,
@@ -1254,7 +1254,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         ))
     ], "the detached-from intermediate PR should now be reminded"
     assert pr_c.comments[3:] == [
-        (users['user'], "@%(user)s @%(reviewer)s this PR was modified / updated and has become a normal PR. It must be merged directly." % users),
+        (users['user'], "@%(user)s @%(reviewer)s this PR has become a normal PR because because. It must be merged directly." % users),
         (users['user'], "@%s @%s this forward port of %s is awaiting action (not merged or closed)." % (
             users['user'],
             users['reviewer'],

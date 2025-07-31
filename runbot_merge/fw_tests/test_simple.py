@@ -951,12 +951,76 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         assert pr2_id.state == 'opened'
         assert not pr2_id.parent_id, \
             "the descendant of a closed PR doesn't really make sense, maybe?"
+        pr2 = prod.get_pr(pr2_id.number)
+        assert pr2.comments == [
+            seen(env, pr2, users),
+            (users['user'], """\
+@{user} @{reviewer} this PR targets c and is the last of the forward-port chain containing:
+* {pr1_id.display_name}
+
+To merge the full chain, use
+> @hansen r+
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+""".format(pr1_id=pr1_id, **users)),
+            (users['user'], """\
+@{user} @{reviewer} this PR has become a normal PR because {user} closed \
+parent PR {pr1_id.display_name}. It must be merged directly.\
+""".format(pr1_id=pr1_id, **users)),
+        ]
 
         with prod:
             pr1.open()
         assert pr1_id.state == 'validated'
         assert not pr1_id.parent_id
         assert not pr2_id.parent_id
+
+    def test_closing_after_fp_second(self, env, config, make_repo, users):
+        """If we close a forward-ported PR whose child has a child, then we don't
+        need to send a notification on the child: while it is technically detached,
+        said detachment has no effect as it does not need forward porting anymore.
+        """
+        # region setup
+        prod, _ = make_basic(env, config, make_repo, statuses='default')
+        # region add one more branch to the project
+        proj = env['runbot_merge.project'].search([])
+        proj.write({'branch_ids': [(0, 0, {'name': 'd', 'sequence': 40})]})
+        with prod:
+            prod.make_commits(
+                'c',
+                Commit('1111', tree={'i': 'a'}),
+                ref='heads/d',
+            )
+        # endregion
+        with prod:
+            prod.make_commits('a', Commit('pr', tree={'x': '0'}), ref="heads/abranch")
+            pr_a = prod.make_pr(target='a', head='abranch')
+            prod.post_status('abranch', 'success')
+            pr_a.post_comment('hansen r+ fw=skipci', config['role_reviewer']['token'])
+        env.run_crons()
+        with prod:
+            prod.post_status('staging.a', 'success')
+        env.run_crons()
+
+        pr_a_id, pr_b_id, pr_c_id, pr_d_id = env['runbot_merge.pull_requests'].search([], order='number')
+        assert pr_d_id.parent_id == pr_c_id
+        assert pr_c_id.parent_id == pr_b_id
+        assert pr_b_id.parent_id == pr_a_id
+        # endregion
+
+        with prod:
+            prod.get_pr(pr_b_id.number).close()
+        assert pr_b_id.closed
+        assert not pr_c_id.parent_id
+        prc = prod.get_pr(pr_c_id.number)
+        assert prc.comments == [
+            seen(env, prc, users),
+            (users['user'], """\
+This PR targets c and is part of the forward-port chain. Further PRs will be created up to d.
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+"""),
+        ]
 
     def test_close_disabled(self, env, make_repo, users, config):
         """ If an fwport's target is disabled and its branch is closed, it

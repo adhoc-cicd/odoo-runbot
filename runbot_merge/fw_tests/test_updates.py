@@ -168,9 +168,9 @@ To merge the full chain, use
 
 More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 """),
-        (users['user'], f"@{users['user']} @{users['reviewer']} this PR was "
-                        f"modified / updated and has become a normal PR. It "
-                        f"must be merged directly."
+        (users['user'], f"@{users['user']} @{users['reviewer']} this PR has "
+                        "become a normal PR because testing. It must be "
+                        "merged directly."
         )
     ]
 
@@ -190,10 +190,10 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     else:
         assert pr2.comments[2:] == [
             (users['user'], f"@{users['user']} @{users['reviewer']} child PR "
-                            f"{pr3_id.display_name} was modified / updated and has "
-                            f"become a normal PR. This PR (and any of its parents) "
-                            f"will need to be merged independently as approvals "
-                            f"won't cross."),
+                            f"{pr3_id.display_name} has become a normal PR "
+                            "because testing. This PR (and any of its parents) "
+                            "will need to be merged independently as approvals "
+                            "won't cross."),
         ]
 
 def test_update_merged(env, make_repo, config, users):
@@ -449,8 +449,7 @@ conflict!
     # skip comments:
     # 1. link to mergebot status page
     # 2. "forward port chain" bit
-    # 3. updated / modified & got detached
-    assert pr2.comments[3:] == [
+    assert pr2.comments[2:] == [
         (users['user'], f"@{users['user']} @{users['reviewer']} WARNING: the latest change ({pr2_id.head}) triggered "
                         f"a conflict when updating the next forward-port "
                         f"({pr3_id.display_name}), and has been ignored.\n\n"

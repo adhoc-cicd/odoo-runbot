@@ -110,10 +110,10 @@ pr: PR where update followup conflict happened
 previous: parent PR which triggered the followup
 stdout: markdown-formatted stdout of git, if any
 stderr: markdown-formatted stderr of git, if any"
-runbot_merge.forwardport.update.detached,{pr.ping}this PR was modified / updated and has become a normal PR. It must be merged directly.,"Comment when a forwardport PR gets updated, documents that the PR now needs to be merged the “normal” way.
+runbot_merge.forwardport.update.detached,{pr.ping}this PR has become a normal PR because {pr.detach_reason}. It must be merged directly.,"Comment when a forwardport PR gets updated, documents that the PR now needs to be merged the “normal” way.
 
 pr: the pr in question "
-runbot_merge.forwardport.update.parent,{pr.ping}child PR {child.display_name} was modified / updated and has become a normal PR. This PR (and any of its parents) will need to be merged independently as approvals won't cross.,"Sent to an open PR when its direct child has been detached.
+runbot_merge.forwardport.update.parent,{pr.ping}child PR {child.display_name} has become a normal PR because {child.detach_reason}. This PR (and any of its parents) will need to be merged independently as approvals won't cross.,"Sent to an open PR when its direct child has been detached.
 
 pr: the pr
 child: its detached child"
