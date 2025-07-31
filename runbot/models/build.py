@@ -1310,7 +1310,7 @@ class BuildResult(models.Model):
                     if (trigger.ci_send_all or (commit.repo_id in trigger.repo_ids)):
                         repo_ids_to_notify[commit.repo_id.id] = commit.tree_hash
 
-                batches = self.slot_ids.batch_id
+                batches = build.slot_ids.batch_id
                 # not sure for this part: only send status if batch is the last_batch. Will avoid to send useless status, status of killed builds, ....
                 # we could have a special case if the last_batch is preparing and the new build is linked to the one that just sent a status,
                 # but we send the status when linking a build and it should be enough for this corner case. If the build is not linked, the result
