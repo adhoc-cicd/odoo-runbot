@@ -330,10 +330,7 @@ class Branch(models.Model):
     staging_ids = fields.One2many('runbot_merge.stagings', 'target')
     split_ids = fields.One2many('runbot_merge.split', 'target')
 
-    prs = fields.One2many('runbot_merge.pull_requests', 'target', domain=[
-        ('state', '!=', 'closed'),
-        ('state', '!=', 'merged'),
-    ])
+    prs = fields.One2many('runbot_merge.pull_requests', 'target', domain=[('open', '=', True)])
 
     active = fields.Boolean(default=True)
     sequence = fields.Integer(group_operator=None)
@@ -441,6 +438,21 @@ class PullRequests(models.Model):
         tracking=True,
         column_type=enum(_name, 'state'),
     )
+    open = fields.Boolean(compute='_compute_open', search='_search_open')
+
+    @api.depends('state')
+    def _compute_open(self):
+        for p in self:
+            p.open = p.state in ('opened', 'validated', 'approved', 'ready', 'error')
+
+    def _search_open(self, operator, value):
+        match (operator, value):
+            case ('=', True) | ('!=', False):
+                return [('state', 'in', ('opened', 'validated', 'approved', 'ready', 'error'))]
+            case ('=', False) | ('!=', True):
+                return [('state', 'in', ('merged', 'closed'))]
+            case op:
+                raise AssertionError(f"Unsupported predicate {op} for field `open`")
 
     number = fields.Integer(required=True, index=True, group_operator=None)
     author = fields.Many2one('res.partner', index=True)
@@ -677,7 +689,7 @@ class PullRequests(models.Model):
         )
         messages = ('is in draft', 'is not ready')
         for pr in self:
-            if pr.state in ('merged', 'closed'):
+            if not pr.open:
                 continue
 
             blocking, message = next((
@@ -905,9 +917,7 @@ For your own safety I've ignored *everything in your entire comment*.
                                 pull_request=self.number,
                                 format_args={'user': login, 'pr': self},
                             )
-                        if self.source_id.forwardport_ids.filtered(
-                            lambda p: p.reviewed_by and p.state not in ('merged', 'closed')
-                        ):
+                        if self.source_id.forwardport_ids.filtered(lambda p: p.reviewed_by and p.open):
                             feedback("Note that only this forward-port has been"
                                      " unapproved, sibling forward ports may"
                                      " have to be unapproved individually.")
@@ -1479,7 +1489,7 @@ For your own safety I've ignored *everything in your entire comment*.
             c = self.env['runbot_merge.commit'].search([('sha', '=', pr.head)])
             pr._validate(c.statuses)
 
-            if pr.state not in ('closed', 'merged'):
+            if pr.open:
                 self.env.ref('runbot_merge.pr.created')._send(
                     repository=pr.repository,
                     pull_request=pr.number,
@@ -1583,12 +1593,7 @@ For your own safety I've ignored *everything in your entire comment*.
         # also a bit odd to only handle updating 1 head at a time, but then
         # again 2 PRs with same head is weird so...
         newhead = vals.get('head')
-        with_parents = {
-            p: p.parent_id
-            for p in self
-            if p.state not in ('merged', 'closed')
-            if p.parent_id
-        }
+        with_parents = {p: p.parent_id for p in self if p.open if p.parent_id}
         if newhead and not self.env.context.get('ignore_head_update') and newhead != self.head:
             vals.setdefault('parent_id', False)
             if with_parents and vals['parent_id'] is False:
@@ -1611,7 +1616,13 @@ For your own safety I've ignored *everything in your entire comment*.
             for p, parent in with_parents.items():
                 if p.parent_id:
                     continue
-                if not self.search_count([('parent_id', '=', p.id)], limit=1):
+
+                forwardportable = (
+                    not self.search_count([('parent_id', '=', p.id)], limit=1)
+                    and
+                    p._find_next_target()
+                )
+                if forwardportable:
                     self.env.ref('runbot_merge.forwardport.update.detached')._send(
                         repository=p.repository,
                         pull_request=p.number,
@@ -1620,7 +1631,7 @@ For your own safety I've ignored *everything in your entire comment*.
                             suppress_ping=p.source_id.batch_id.fw_policy=='skipmerge',
                         )},
                     )
-                if parent.state not in ('closed', 'merged'):
+                if parent.open:
                     self.env.ref('runbot_merge.forwardport.update.parent')._send(
                         repository=parent.repository,
                         pull_request=parent.number,
@@ -1792,7 +1803,10 @@ For your own safety I've ignored *everything in your entire comment*.
             'parent_id': False,
             'detach_reason': f"Closed by {by}",
         })
-        self.search([('parent_id', '=', self.id), ('closed', '=', False)]).write({
+        self.search([
+            ('parent_id', '=', self.id),
+            ('open', '=', True),
+        ]).write({
             'parent_id': False,
             'detach_reason': f"{by} closed parent PR {self.display_name}",
         })
@@ -1834,7 +1848,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 f"* {p.display_name}\n"
                 for p in previous_pr._iter_ancestors()
                 if p.parent_id
-                if p.state not in ('closed', 'merged')
+                if p.open
                 if p.target.active
             )
             template = 'runbot_merge.forwardport.final'
@@ -2116,7 +2130,7 @@ For your own safety I've ignored *everything in your entire comment*.
         for source, prs in groupby(self.search([
             ('source_id', '!=', False),
             ('blocked', '!=', False),
-            ('state', 'in', ['opened', 'validated', 'approved', 'ready', 'error']),
+            ('open', '=', True),
             ('reminder_next', '<', self.env.cr.now()),
         ], order='source_id, id'), lambda p: p.source_id):
             # only remind on the "tip" of every chain of descendants as they
