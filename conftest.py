@@ -341,6 +341,7 @@ def http_proxy(pytestconfig: pytest.Config, users_file: pathlib.Path) -> Iterato
             datadir / 'portfile',
             lambda f: json.loads(f.read_text())['regular'],
             json.JSONDecodeError,
+            timeout=30,
         )
         # writing our own env is icky but seems like the easiest way to
         # ensure the proxy configuration is picked up by urllib and requests
