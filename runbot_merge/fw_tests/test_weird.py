@@ -1254,7 +1254,6 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         ))
     ], "the detached-from intermediate PR should now be reminded"
     assert pr_c.comments[3:] == [
-        (users['user'], "@%(user)s @%(reviewer)s this PR has become a normal PR because because. It must be merged directly." % users),
         (users['user'], "@%s @%s this forward port of %s is awaiting action (not merged or closed)." % (
             users['user'],
             users['reviewer'],

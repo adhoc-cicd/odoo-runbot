@@ -168,10 +168,6 @@ To merge the full chain, use
 
 More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 """),
-        (users['user'], f"@{users['user']} @{users['reviewer']} this PR has "
-                        "become a normal PR because testing. It must be "
-                        "merged directly."
-        )
     ]
 
     assert pr2.comments[:2] == [

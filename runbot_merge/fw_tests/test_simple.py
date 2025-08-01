@@ -963,10 +963,6 @@ To merge the full chain, use
 
 More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 """.format(pr1_id=pr1_id, **users)),
-            (users['user'], """\
-@{user} @{reviewer} this PR has become a normal PR because {user} closed \
-parent PR {pr1_id.display_name}. It must be merged directly.\
-""".format(pr1_id=pr1_id, **users)),
         ]
 
         with prod:

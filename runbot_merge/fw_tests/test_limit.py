@@ -309,7 +309,6 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     env.run_crons()
 
     assert pr2.comments[4:] == [
-        (users['user'], f"@{users['user']} @{users['reviewer']} this PR has become a normal PR because head updated from {oldhead} to {p2.head}. It must be merged directly."),
         (users['reviewer'], 'hansen up to c'),
         (users['user'], "Forward-porting to 'c'."),
     ]
@@ -340,8 +339,8 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         (users['reviewer'], "hansen up to c"),
         (users['user'], f"Forward-porting {p2.display_name} to 'c'."),
     ]
-    # 7 of previous check, plus r+
-    assert pr2.comments[8:] == [
+    # 6 of previous check, plus r+
+    assert pr2.comments[7:] == [
         (users['user'], f"Forward-porting to 'c' (from {p3.display_name}).")
     ]
 
