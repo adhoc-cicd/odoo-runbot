@@ -4,7 +4,6 @@ from email.utils import parseaddr
 
 from markupsafe import Markup
 
-import odoo.tools
 from odoo import fields, models, tools, api, Command
 
 from .. import github
@@ -189,18 +188,13 @@ class OverrideRights(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        for partner, contexts in odoo.tools.groupby((
-            (partner_id, vals['context'], vals['repository_id'])
-            for vals in vals_list
-            # partner_ids is of the form [Command.set(ids)
-            for partner_id in vals.get('partner_ids', [(None, None, [])])[0][2]
-        ), lambda p: p[0]):
-            partner = self.env['res.partner'].browse(partner)
-            for _, context, repository in contexts:
-                repository = self.env['runbot_merge.repository'].browse(repository)
-                partner._message_log(body=f"added override rights for {context!r} on {repository.name}")
-
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        for rec in records:
+            for partner in rec.partner_ids:
+                partner._message_log(
+                    body=f"added override rights for {rec.context!r} on {rec.repository_id.name}"
+                )
+        return records
 
     def write(self, vals):
         if 'partner_ids' in vals:
