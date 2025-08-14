@@ -165,7 +165,7 @@ class BuildErrorSeenMixin(models.AbstractModel):
                 date_str = date.date().strftime("%Y-%m-%d")
                 x_index = x_indexes.get(date_str)
                 y_index = y_indexes.get(version_id)
-                if x_index and y_index:
+                if x_index is not None and y_index is not None:
                     c = daily_version_freq[x_index][y_index] + count
                     daily_version_freq[x_index][y_index] = c
                     max_count = max(max_count, c)
