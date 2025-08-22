@@ -2555,7 +2555,7 @@ class Stagings(models.Model):
     target = fields.Many2one('runbot_merge.branch', required=True, index=True)
     parent_id = fields.Many2one('runbot_merge.stagings')
     child_ids = fields.One2many('runbot_merge.stagings', 'parent_id')
-    likely_false_positive = fields.Boolean(default=False)
+    likely_false_positive = fields.Boolean(default=False, tracking=True)
 
     staging_batch_ids = fields.One2many('runbot_merge.staging.batch', 'runbot_merge_stagings_id')
     batch_ids = fields.Many2many(
@@ -2571,14 +2571,14 @@ class Stagings(models.Model):
         ('pending', 'Pending'),
         ('cancelled', "Cancelled"),
         ('ff_failed', "Fast forward failed")
-    ], default='pending', index=True, store=True, compute='_compute_state')
-    active = fields.Boolean(default=True)
+    ], default='pending', index=True, store=True, compute='_compute_state', tracking=True)
+    active = fields.Boolean(default=True, tracking=True)
 
     staged_at = fields.Datetime(default=fields.Datetime.now, index=True)
     staging_end = fields.Datetime(store=True)
     staging_duration = fields.Float(compute='_compute_duration')
     timeout_limit = fields.Datetime(store=True, compute='_compute_timeout_limit')
-    reason = fields.Text("Reason for final state (if any)")
+    reason = fields.Text("Reason for final state (if any)", tracking=True)
 
     head_ids = fields.Many2many('runbot_merge.commit', relation='runbot_merge_stagings_heads', column1='staging_id', column2='commit_id')
     heads = fields.One2many('runbot_merge.stagings.heads', 'staging_id')
