@@ -15,7 +15,7 @@ import pytest
 import requests
 from lxml.etree import XPath
 
-from utils import seen, get_partner, pr_page, to_pr, Commit
+from utils import seen, get_partner, pr_page, to_pr, Commit, read_tracking_value
 
 
 @pytest.fixture
@@ -597,6 +597,120 @@ def test_ff_fail(env, project, repo_a, repo_b, config):
     st = env['runbot_merge.stagings'].search([])
     assert len(st) == 1
     assert len(st.batch_ids.prs) == 2
+
+def test_ff_fail_second_step(env, project, repo_a, repo_b, config, users):
+    """In a matched branch scenario, normally the safety_dance / ff dry run on
+    tmp handles FF errors, however it's possible for that to succeed then for
+    the "real" fast-forward to fail e.g. if github has transient errors.
+
+    We need to handle this special state, surface it, and allow recovery
+    because the branch might be partially updated:
+
+    - mark batches we have fully forward ported as merged
+    - put the partially ported batches in error
+    - disable staging on the branch
+    - send some sort of notification to admins?
+    """
+    # region setup
+    with repo_a, repo_b:
+        [a1] = repo_a.make_commits(None, Commit('initial', tree={'a': 'a_0'}), ref='heads/master')
+        [b1, _b2] = repo_b.make_commits(
+            None,
+            Commit('first', tree={'a': 'a_0'}),
+            Commit('second', tree={'a': 'a_1'}),
+            ref='heads/master',
+        )
+
+    with repo_a, repo_b:
+        repo_a.make_commits('master', Commit("Batch A", tree={'a': 'a_1'}), ref='heads/mybranch')
+        pr_a = repo_a.make_pr(target='master', head='mybranch')
+        pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
+        repo_a.post_status('heads/mybranch', 'success')
+
+        repo_b.make_commits('master', Commit('Batch B', tree={'a': 'b_1'}), ref='heads/mybranch2')
+        pr_b = repo_b.make_pr(target='master', head='mybranch2')
+        pr_b.post_comment('hansen r+', config['role_reviewer']['token'])
+        repo_b.post_status('heads/mybranch2', 'success')
+
+        repo_a.make_commits('master', Commit('Batch AB', tree={'xxx': "1"}), ref='heads/cross')
+        repo_b.make_commits('master', Commit('Batch AB', tree={'xxx': "1"}), ref='heads/cross')
+        pr_ab_a = repo_a.make_pr(target='master', head='cross')
+        pr_ab_b = repo_b.make_pr(target='master', head='cross')
+        pr_ab_a.post_comment('hansen r+', config['role_reviewer']['token'])
+        pr_ab_b.post_comment('hansen r+', config['role_reviewer']['token'])
+        repo_a.post_status('heads/cross', 'success')
+        repo_b.post_status('heads/cross', 'success')
+    env.run_crons()
+
+    with repo_a, repo_b:
+        repo_a.post_status('heads/staging.master', 'success')
+        repo_b.post_status('heads/staging.master', 'success')
+        repo_b.update_ref('heads/master', b1, force=True)
+    staging = env['runbot_merge.stagings'].search([])
+    assert staging
+    # endregion
+
+    # rollback the target branch on repo_b, to trigger the branch rules: rules
+    # don't trigger on a no-op, though that can still fail if github is on fire,
+    # so we need to emulate it
+    r = repo_b._get_session(None).post(
+        f"https://api.github.com/repos/{repo_b.name}/rulesets",
+        json={
+            "name": "Prevent push to repo b",
+            "target": "branch",
+            "enforcement": "active",
+            "bypass_actors": [],
+            "conditions": {
+                "ref_name": {
+                    "include": ["~ALL"],
+                    "exclude": ["refs/heads/staging.*", "refs/heads/tmp.*"],
+                }
+            },
+            "rules": [{"type": "update"}],
+        }
+    )
+    r.raise_for_status()
+
+    env.run_crons()
+    assert staging.state == 'failure'
+
+    # project state is now inconsistent
+    assert [c['commit']['message'].split('\n')[0] for c in repo_a.log('master')] \
+       == ['Batch AB', 'Batch A', 'initial']
+    assert [c['commit']['message'].split('\n')[0] for c in repo_b.log('master')] \
+       == ['first']  # missing Batch B and Batch AB
+
+    assert project.branch_ids.staging_enabled is False, \
+        "branch should have been disabled"
+    # since the error was on repo b, batches on just repo a should be marked merged
+    assert to_pr(env, pr_a).state == 'merged'
+    # batches on just b should be unmarked (they're basically unaffected)
+    assert to_pr(env, pr_b).state == "ready"
+    # batches on both should be in error
+    assert to_pr(env, pr_ab_a).state == "error"
+    assert to_pr(env, pr_ab_b).state == "error"
+    assert pr_ab_a.comments == [
+        (users['reviewer'], "hansen r+"),
+        seen(env, pr_ab_a, users),
+        (users['user'], "@{user} @{reviewer} staging failed: inconsistent integration - succeeded for {repo_a} but failed for {repo_b}.".format(
+            **users,
+            repo_a=repo_a.name,
+            repo_b=repo_b.name,
+        )),
+    ]
+
+    assert staging.message_ids[::-1].mapped(
+        lambda m: m.body.strip() or list(map(read_tracking_value, m.tracking_value_ids))
+    ) == [
+        "<p>A set of batches being tested for integration created</p>",
+        [('state', 'Pending', 'Success')],
+        "<p>Staging on master has been disabled pending investigation.</p>",
+        [
+            ('active', 1, 0),
+            ('reason', False, f'inconsistent integration - succeeded for {repo_a.name} but failed for {repo_b.name}.'),
+            ('state', 'Success', 'Failure'),
+        ],
+    ]
 
 class TestCompanionsNotReady:
     def test_one_pair(self, env, project, repo_a, repo_b, config, users):

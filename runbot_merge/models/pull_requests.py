@@ -2940,8 +2940,29 @@ class Stagings(models.Model):
                 )
                 self.write({
                     'state': 'ff_failed',
-                    'reason': str(e.__cause__ or e.__context__ or e)
+                    'reason': str(e.__cause__)
                 })
+            except exceptions.InconsistentIntegration as e:
+                merged, failed = e.args
+                merged_repos = merged.repository_id
+                failed_repos = failed.repository_id
+
+                merged_batches = self.batch_ids.filtered(lambda b: b.prs.repository <= merged_repos)
+                skipped_batches = self.batch_ids.filtered(lambda b: b.prs.repository <= failed_repos)
+                error_batches = self.batch_ids - (merged_batches | skipped_batches)
+
+                merged_batches.merge_date = fields.Datetime.now()
+                self.target.staging_enabled = False
+                self.fail(
+                    "inconsistent integration - "
+                    f"succeeded for {', '.join(r.name for r in merged_repos)} "
+                    f"but failed for {', '.join(r.name for r in failed_repos)}.",
+                    prs=error_batches.prs,
+                )
+                self.with_context(mail_post_autofollow=True).message_post(
+                    body=f"Staging on {self.target.name} has been disabled pending investigation.",
+                    partner_ids=self.env.ref("runbot_merge.group_admin").users.partner_id.ids,
+                )
             else:
                 prs = self.mapped('batch_ids.prs')
                 prs._track_set_log_message(f'staging {self.id} succeeded')
@@ -2987,16 +3008,10 @@ class Stagings(models.Model):
 
         To try and make this issue less likely, do the safety dance:
 
-        * First, perform a dry run using the tmp branches (which can be
-          force-pushed and sacrificed), that way if somebody pushed directly
-          to REPO_B during the staging we catch it. If we're really unlucky
-          they could still push after the dry run but...
-        * An other issue then is that the github call sometimes fails for no
-          noticeable reason (e.g. network failure or whatnot), if it fails
-          on REPO_B when REPO_A has already been updated things get pretty
-          bad. In that case, wait a bit and retry for now. A more complex
-          strategy (including disabling the branch entirely until somebody
-          has looked at and fixed the issue) might be necessary.
+        First, perform a dry run using the tmp branches (which can be
+        force-pushed and sacrificed), that way if somebody pushed directly
+        to REPO_B during the staging we catch it. If we're really unlucky
+        they could still push after the dry run but...
         """
         tmp_target = 'tmp.' + self.target.name
         # first force-push the current targets to all tmps
@@ -3008,6 +3023,9 @@ class Stagings(models.Model):
             gh[c.repository_id.name].fast_forward(tmp_target, c.commit_id.sha)
         # there is still a race condition here, but it's way
         # lower than "the entire staging duration"...
+        # TODO: skip for "nil" staging commits (iso current head) to limit GH
+        #       error sources?
+        # TODO: maybe ff commits in repository importance order as well?
         for i, c in enumerate(staging_commits):
             for pause in [0.1, 0.3, 0.5, 0.9, 0]: # last one must be 0/falsy of we lose the exception
                 try:
@@ -3015,11 +3033,20 @@ class Stagings(models.Model):
                         self.target.name,
                         c.commit_id.sha
                     )
-                except exceptions.FastForwardError:
+                except exceptions.FastForwardError as e:
+                    # If this is the first staging commit, nothing has happened
+                    # maybe, technically github could have both accepted and
+                    # errored if the incident is bad enough) so just signal an
+                    # FF error
+                    if not i:
+                        raise
                     if i and pause:
                         time.sleep(pause)
                         continue
-                    raise
+                    raise exceptions.InconsistentIntegration(
+                        staging_commits[:i],
+                        staging_commits[i:],
+                    ) from e
                 else:
                     break
 
