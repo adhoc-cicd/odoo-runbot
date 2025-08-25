@@ -657,7 +657,7 @@ def test_timeout_bump_on_pending(env, repo, config, project):
     st.timeout_limit = old_timeout
     # clear the statuses cache to remove the memoized status times
     st.statuses_cache = "{}"
-    st.commit_ids.statuses = "{}"
+    st.head_ids.statuses = "{}"
     with repo:
         repo.post_status('staging.master', 'success', 'legal/cla')
     env.run_crons(None)

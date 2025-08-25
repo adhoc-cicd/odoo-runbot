@@ -479,12 +479,10 @@ def test_sub_match(env, project, repo_a, repo_b, repo_c, config):
     assert s == list(st.ids)
 
     assert sorted(st.commit_ids.mapped('sha')) == sorted([
-        a_staging.parents[0],
         b_staging.id,
         c_staging.id,
     ])
     s = env['runbot_merge.stagings'].for_commits(
-        a_staging.parents[0],
         b_staging.id,
         c_staging.id,
     )

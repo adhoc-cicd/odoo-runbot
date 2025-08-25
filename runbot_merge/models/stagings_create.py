@@ -127,7 +127,7 @@ def try_staging(branch: Branch) -> Optional[Stagings]:
     commits = []
     issues = []
     for repo, it in staging_state.items():
-        if it.head == original_heads[repo] and branch.project_id.uniquifier:
+        if (no_op := it.head == original_heads[repo]) and branch.project_id.uniquifier:
             # if we didn't stage anything for that repo and uniquification is
             # enabled, create a dummy commit with a uniquifier to ensure we
             # don't hit a previous version of the same to ensure the staging
@@ -148,13 +148,11 @@ For-Commit-Id: {it.head}
 ''',
             ).stdout.strip()
 
-            # see above, ideally we don't need to mark the real head as
-            # `to_check` because it's an old commit but `DO UPDATE` is necessary
-            # for `RETURNING` to work, and it doesn't really hurt (maybe)
+            # see above, `DO UPDATE` is necessary for `RETURNING` to work
             env.cr.execute(
                 "INSERT INTO runbot_merge_commit (sha, to_check, statuses) "
                 "VALUES (%s, false, '{}'), (%s, true, '{}') "
-                "ON CONFLICT (sha) DO UPDATE SET to_check=true "
+                "ON CONFLICT (sha) DO UPDATE SET to_check=runbot_merge_commit.to_check "
                 "RETURNING id",
                 [it.head, dummy_head]
             )
@@ -177,10 +175,11 @@ For-Commit-Id: {it.head}
             'repository_id': repo.id,
             'commit_id': head,
         }))
-        commits.append(fields.Command.create({
-            'repository_id': repo.id,
-            'commit_id': commit,
-        }))
+        if not no_op:
+            commits.append(fields.Command.create({
+                'repository_id': repo.id,
+                'commit_id': commit,
+            }))
         issues.extend(
             {'repository_id': repo.id, 'number': i}
             for i in it.tasks

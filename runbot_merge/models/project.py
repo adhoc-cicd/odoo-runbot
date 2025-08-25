@@ -60,7 +60,7 @@ class Project(models.Model):
     freeze_reminder = fields.Text()
 
     uniquifier = fields.Boolean(
-        default=True,
+        default=False,
         help="Whether to add a uniquifier commit on repositories without PRs"
              " during staging. The lack of uniquifier can lead to CI conflicts"
              " as github works off of commits, so it's possible for an"

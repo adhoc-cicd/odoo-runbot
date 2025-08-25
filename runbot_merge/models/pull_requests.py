@@ -2719,7 +2719,7 @@ class Stagings(models.Model):
             if not s.target.project_id.staging_rpc:
                 continue
 
-            if not any(c.commit_id.sha == sha for c in s.commits):
+            if not any(h.sha == sha for h in s.head_ids):
                 raise ValueError(f"Staging {s.id} does not have the commit {sha}")
 
             st = json.loads(s.statuses_cache)
@@ -2931,7 +2931,7 @@ class Stagings(models.Model):
                 with sentry_sdk.start_span(description="merge staging") as span:
                     span.set_tag("staging", self.id)
                     span.set_tag("branch", self.target.name)
-                    self._safety_dance(gh, self.commits)
+                    self._safety_dance(gh)
             except exceptions.FastForwardError as e:
                 logger.warning(
                     "Could not fast-forward successful staging on %s:%s: %s",
@@ -3001,7 +3001,7 @@ class Stagings(models.Model):
     def is_timed_out(self):
         return fields.Datetime.from_string(self.timeout_limit) < datetime.datetime.now()
 
-    def _safety_dance(self, gh, staging_commits: StagingCommits):
+    def _safety_dance(self, gh):
         """ Reverting updates doesn't work if the branches are protected
         (because a revert is basically a force push). So we can update
         REPO_A, then fail to update REPO_B for some reason, and we're hosed.
@@ -3015,18 +3015,18 @@ class Stagings(models.Model):
         """
         tmp_target = 'tmp.' + self.target.name
         # first force-push the current targets to all tmps
-        for repo_name in staging_commits.mapped('repository_id.name'):
+        for repo_name in self.heads.repository_id.mapped('name'):
             g = gh[repo_name]
             g.set_ref(tmp_target, g.head(self.target.name))
         # then attempt to FF the tmp to the staging commits
-        for c in staging_commits:
+        for c in self.heads:
             gh[c.repository_id.name].fast_forward(tmp_target, c.commit_id.sha)
         # there is still a race condition here, but it's way
         # lower than "the entire staging duration"...
         # TODO: skip for "nil" staging commits (iso current head) to limit GH
         #       error sources?
         # TODO: maybe ff commits in repository importance order as well?
-        for i, c in enumerate(staging_commits):
+        for i, c in enumerate(self.commits):
             for pause in [0.1, 0.3, 0.5, 0.9, 0]: # last one must be 0/falsy of we lose the exception
                 try:
                     gh[c.repository_id.name].fast_forward(
@@ -3044,8 +3044,8 @@ class Stagings(models.Model):
                         time.sleep(pause)
                         continue
                     raise exceptions.InconsistentIntegration(
-                        staging_commits[:i],
-                        staging_commits[i:],
+                        self.commits[:i],
+                        self.commits[i:],
                     ) from e
                 else:
                     break
