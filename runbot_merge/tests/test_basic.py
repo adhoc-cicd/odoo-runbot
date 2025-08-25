@@ -47,6 +47,7 @@ def stagings(request, env, project, repo):
             branchname = ref.removeprefix('staging.').removeprefix('heads/staging.')
             env['runbot_merge.stagings'].search([('target.name', '=', branchname)])\
                 .post_status(c.id, context, status, **kw)
+            return
 
         with mock.patch.object(RepoType, "post_status", _post_status):
             yield
