@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import io
 import itertools
 import logging
 import os
@@ -92,6 +93,7 @@ def git(directory: str) -> 'Repo':
 
 
 Self = TypeVar("Self", bound="Repo")
+StdOutValue = Union[bool, int, None, io.IOBase]
 class Repo:
     def __init__(self, directory: str, **config: object) -> None:
         self._directory = str(directory)
@@ -119,12 +121,14 @@ class Repo:
                 _logger.error("git call error: %s", stream)
             raise
 
-    def stdout(self, flag: bool = True) -> Self:
-        if flag is True:
-            return self.with_config(stdout=subprocess.PIPE)
-        elif flag is False:
-            return self.with_config(stdout=None)
-        return self.with_config(stdout=flag)
+    def stdout(self, flag: StdOutValue = True) -> Self:
+        match flag:
+            case True:
+                return self.with_config(stdout=subprocess.PIPE)
+            case False:
+                return self.with_config(stdout=None)
+            case f:
+                return self.with_config(stdout=f)
 
     def check(self, flag: bool) -> Self:
         return self.with_config(check=flag)

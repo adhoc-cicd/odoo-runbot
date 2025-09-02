@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from utils import Commit, to_pr, seen
+from utils import Commit, to_pr, seen, read_tracking_value, matches
 
 
 def test_partner_merge(env):
@@ -431,3 +431,60 @@ def test_close_linked_issues(env, project, repo, config, users, partners, target
     assert pr_id.state == 'merged'
     assert i1.state == 'closed'
     assert i2.state == 'closed'
+
+def test_staging_push_blocked(env, project, repo, config, users):
+    """ If even pushing to the staging branch fails, there's something very
+    wrong with the repository's configuration, so disable staging (on that
+    branch as it might be a branch-specific protection issue) and warn everyone.
+    """
+
+    with repo:
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref="heads/master")
+
+        [c] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}), ref="heads/other")
+        pr = repo.make_pr(target='master', head='other')
+        repo.post_status(pr.head, 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+
+    r = repo._get_session(None).post(
+        f"https://api.github.com/repos/{repo.name}/rulesets",
+        json={
+            "name": "Prevent push to repo",
+            "target": "branch",
+            "enforcement": "active",
+            "bypass_actors": [],
+            "conditions": {
+                "ref_name": {
+                    "include": ["~ALL"],
+                    "exclude": [],
+                }
+            },
+            "rules": [{"type": "creation"}, {"type": "update"}],
+        }
+    )
+    assert r.ok, r.text
+
+    env.run_crons()
+    staging = env['runbot_merge.stagings'].search([('active', '=', False)])
+    assert staging.state == 'failure'
+    assert staging.reason == f'Failed pushing to {repo.name}'
+    assert staging.message_ids[::-1].mapped(
+        lambda m: m.body.strip() or list(map(read_tracking_value, m.tracking_value_ids))
+    ) == [
+        '<p>A set of batches being tested for integration created</p>',
+        matches(f"<p>Staging on master has been disabled because pushing to {repo.name} failed:</p>"
+        f"""\
+<pre>\
+remote: error: GH013: Repository rule violations found for refs/heads/staging.master.        
+remote: Review all repository rules        
+remote: 
+remote: - Cannot create ref due to creations being restricted.        
+remote: 
+To https://github.com/{repo.name}
+ ! [remote rejected] $$ -&gt; staging.master (push declined due to repository rule violations)
+error: failed to push some refs to 'https://github.com/{repo.name}'
+</pre>\
+"""),
+        # not sure why the tracking values don't appear...
+    ]
+    assert project.branch_ids.staging_enabled is False

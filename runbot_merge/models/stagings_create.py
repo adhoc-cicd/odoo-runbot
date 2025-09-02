@@ -8,6 +8,7 @@ import os
 import pprint
 import re
 import shutil
+import subprocess
 import tempfile
 from collections.abc import Mapping
 from difflib import Differ
@@ -15,6 +16,7 @@ from operator import itemgetter
 from subprocess import CalledProcessError
 from typing import Dict, Union, Optional, Literal, Callable, Iterator, Tuple, List, TypeAlias
 
+from markupsafe import Markup
 from werkzeug.datastructures import Headers
 
 from odoo import api, models, fields, Command
@@ -200,14 +202,31 @@ For-Commit-Id: {it.head}
             branch.project_id.name, repo.name, branch.name,
             it.head
         )
-        it.repo.stdout(False).check(True).push(
-            '-f',
-            git.source_url(repo),
-            f'{it.head}:refs/heads/staging.{branch.name}',
-        )
+        r = it.repo.with_config(stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False)\
+            .push('-f', git.source_url(repo), f'{it.head}:refs/heads/staging.{branch.name}')
+        if r.returncode:
+            branch.staging_enabled = False
+            st.write({
+                'active': False,
+                'state': 'failure',
+                'reason': f"Failed pushing to {repo.name}",
+            })
+            st.with_context(mail_post_autofollow=True).message_post(
+                body=Markup(
+                    "<p>Staging on {} has been disabled because pushing to {} failed:</p>"
+                    "<pre>{}</pre>"
+                ).format(branch.name, repo.name, r.stderr),
+                partner_ids=branch.env.ref("runbot_merge.group_admin").users.partner_id.ids,
+            )
+            _logger.error(
+                "Failed to create staging for branch %r:\n%s",
+                branch.name,
+                r.stderr
+            )
+            return None
 
     _logger.info("Created staging %s (%s) to %s", st, ', '.join(
-        '%s[%s]' % (batch, batch.prs)
+        f'{batch}[{batch.prs}]'
         for batch in staged
     ), st.target.name)
     return st
