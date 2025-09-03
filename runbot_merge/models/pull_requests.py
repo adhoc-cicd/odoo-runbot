@@ -2181,6 +2181,15 @@ For your own safety I've ignored *everything in your entire comment*.
             _logger.exception("Failed to create mail")
 
 
+def required_statuses(staging):
+    # map of commit_oid: statuses
+    cmap = json.loads(staging.statuses_cache)
+    for head in staging.heads:
+        statuses = cmap.get(head.commit_id.sha) or {}
+        for context in head.repository_id.status_ids._for_staging(staging).mapped('context'):
+            yield statuses.get(context, {})
+
+
 map_author = operator.itemgetter('name', 'email', 'date')
 map_committer = operator.itemgetter('name', 'email')
 
@@ -2757,27 +2766,20 @@ class Stagings(models.Model):
             if staging.state != 'pending':
                 continue
 
-            # maps commits to the statuses they need
-            required_statuses = [
-                (h.commit_id.sha, h.repository_id.status_ids._for_staging(staging).mapped('context'))
-                for h in staging.heads
-            ]
-            cmap = json.loads(staging.statuses_cache)
 
             last_pending = ""
             state = 'success'
-            for head, reqs in required_statuses:
-                statuses = cmap.get(head) or {}
-                for status in (statuses.get(n, {}) for n in reqs):
-                    v = status.get('state')
-                    if state == 'failure' or v in ('error', 'failure'):
-                        state = 'failure'
-                    elif v is None:
+            for status in required_statuses(staging):
+                match status.get('state'):
+                    case None:
                         state = 'pending'
-                    elif v == 'pending':
+                    case 'pending':
                         state = 'pending'
                         last_pending = max(last_pending, status.get('updated_at', ''))
-                    else:
+                    case 'error' | 'failure':
+                        state = 'failure'
+                        break
+                    case v:
                         assert v == 'success'
 
             staging.state = state
