@@ -4,11 +4,7 @@ import logging
 from odoo import Command
 from odoo.http import Controller, request, route
 
-try:
-    from odoo.addons.saas_worker.util import from_role
-except ImportError:
-    def from_role(*_, **__):
-        return lambda _: None
+from .utils import from_role
 
 _logger = logging.getLogger(__name__)
 class MergebotReviewerProvisioning(Controller):

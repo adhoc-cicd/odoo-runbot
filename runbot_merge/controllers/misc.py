@@ -1,12 +1,6 @@
-# -*- coding: utf-8 -*-
-
 from odoo.http import Controller, request, route
 
-try:
-    from odoo.addons.saas_worker.util import from_role
-except ImportError:
-    def from_role(*_, **__):
-        return lambda _: None
+from .utils import from_role
 
 class MergebotController(Controller):
 
