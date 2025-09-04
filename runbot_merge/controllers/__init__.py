@@ -16,6 +16,7 @@ from odoo.http import Controller, request, route, Response
 from . import dashboard
 from . import misc
 from . import reviewer_provisioning
+from . import statuses
 from .. import utils, github
 
 _logger = logging.getLogger(__name__)

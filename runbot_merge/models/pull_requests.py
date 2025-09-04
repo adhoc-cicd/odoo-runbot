@@ -1486,6 +1486,7 @@ For your own safety I've ignored *everything in your entire comment*.
 
         new = super().create(to_create)
         for pr in new:
+            # FIXME: only if commit based?
             c = self.env['runbot_merge.commit'].search([('sha', '=', pr.head)])
             pr._validate(c.statuses)
 
@@ -1595,6 +1596,7 @@ For your own safety I've ignored *everything in your entire comment*.
         newhead = vals.get('head')
         with_parents = {p: p.parent_id for p in self if p.open if p.parent_id}
         if newhead and not self.env.context.get('ignore_head_update') and newhead != self.head:
+            vals.setdefault('statuses', '{}')
             vals.setdefault('parent_id', False)
             if with_parents and vals['parent_id'] is False:
                 vals['detach_reason'] = f"head updated from {self.head} to {newhead}"
@@ -1654,9 +1656,13 @@ For your own safety I've ignored *everything in your entire comment*.
                     p.unstage("reopened by %s", writer.github_login or writer.name)
                 else:
                     p.unstage("updated by %s", writer.github_login or writer.name)
-            # this can be batched
-            c = self.env['runbot_merge.commit'].search([('sha', '=', newhead)])
-            self._validate(c.statuses)
+            if self.project.staging_statuses or self.project.staging_rpc:
+                c = self.env['runbot_merge.commit'].search([('sha', '=', newhead)])
+                self._validate(c.statuses)
+            else:
+                for p in self:
+                    p._validate(p.statuses)
+
         return w
 
     def _check_linked_prs_statuses(self, commit=False):

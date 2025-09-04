@@ -1,12 +1,16 @@
+import contextlib
 import datetime
 import itertools
 import json
+import re
 import shutil
 import textwrap
 import time
+from collections.abc import Iterator
 from operator import itemgetter
-from typing import Callable
+from typing import Callable, Literal
 from unittest import mock
+from urllib.parse import quote
 
 import pytest
 import requests
@@ -16,43 +20,80 @@ import odoo
 from utils import _simple_init, seen, matches, get_partner, Commit, pr_page, to_pr, part_of, ensure_one, read_tracking_value
 
 
-@pytest.fixture(autouse=True, params=["statuses", "rpc"])
-def stagings(request, env, project, repo):
-    """Hook in support for validating stagings via RPC calls instead of CI
-    webhooks. Transparent for the tests as long as they send statuses to
-    symbolic refs (branch names) rather than commits, although commits *would*
-    probably be doable (look up the head for the commit, then what staging it's
-    part of)
+@pytest.fixture(autouse=True, params=["statuses", "rpc", "runbot"])
+def status_mode(request, env, project, repo, port, RepoType) -> Iterator[Literal["statuses", "rpc", "runbot"]]:
+    """Hook in support for validation alternatives:
+
+    - github statuses (default)
+    - rpc
+    - runbot hook
+
+    The runbot hook is the only one which also affects the way PRs are validate
+    (rpc validates PRs via github statuses), as a result it can not persist
+    statuses on PRs when a HEAD changes.
     """
-    if request.param == "statuses":
-            yield
-    else:
-        env['res.users'].browse([env._uid]).write({
-            "groups_id": [(4, env.ref("runbot_merge.status").id, {})]
-        })
-        project.write({
-            "staging_rpc": True,
-            "staging_statuses": False,
-        })
-        RepoType = type(repo)
-        # apparently side_effect + wraps on unbound method don't work correctly,
-        # the wrapped method does get called when returning DEFAULT but *the
-        # instance (subject) is not sent along for the ride* so the call fails.
-        post_status = RepoType.post_status
-        def _post_status(repo, ref, status, context='default', **kw):
-            if not ref.startswith(('staging.', 'heads/staging.')):
-                return post_status(repo, ref, status, context, **kw)
+    # apparently side_effect + wraps on unbound method don't work correctly,
+    # the wrapped method does get called when returning DEFAULT but *the
+    # instance (subject) is not sent along for the ride* so the call fails.
+    post_status = RepoType.post_status
+    match request.param:
+        case "statuses":
+            project.write({"staging_rpc": False, "staging_statuses": True})
+            cm = contextlib.nullcontext()
 
-            c = repo.commit(ref)
-            branchname = ref.removeprefix('staging.').removeprefix('heads/staging.')
-            env['runbot_merge.stagings'].search([('target.name', '=', branchname)])\
-                .post_status(c.id, context, status, **kw)
-            return
+        case "rpc":
+            project.write({"staging_rpc": True, "staging_statuses": False})
+            env['res.users'].browse([env._uid]).write({
+                "groups_id": [(4, env.ref("runbot_merge.status").id, {})]
+            })
+            def _post_status(repo, ref, status, context='default', **kw):
+                if ref.startswith(('staging.', 'heads/staging.')):
+                    c = repo.commit(ref)
+                    branchname = ref.removeprefix('staging.').removeprefix('heads/staging.')
+                    env['runbot_merge.stagings'].search([('target.name', '=', branchname)])\
+                        .post_status(c.id, context, status, **kw)
+                else:
+                    post_status(repo, ref, status, context, **kw)
+            cm = mock.patch.object(RepoType, "post_status", _post_status)
+        case "runbot":
+            project.write({"staging_rpc": False, "staging_statuses": False})
+            def _post_status(repo, ref, status, context='default', **kw):
+                if ref.startswith(('staging.', 'heads/staging.')):
+                    branchname = ref.removeprefix('heads/').removeprefix('staging.')
+                    st = env['runbot_merge.stagings'].search([('target.name', '=', branchname)])
+                    oid = st.id
+                else:
+                    if re.fullmatch(r'[a-z0-9]{40}', ref, flags=re.IGNORECASE):
+                        cond = ('head', '=', ref)
+                    else:
+                        cond = ('label', '=like', '%:' + ref.removeprefix('heads/'))
+                    for i in range(5):
+                        pr = env['runbot_merge.pull_requests'].search([
+                            ('repository.name', '=', repo.name),
+                            cond
+                        ])
+                        if pr:
+                            oid = quote(pr.display_name.replace('#', '/'))
+                            break
+                        time.sleep(i)
+                    else:
+                        raise TimeoutError(f"could not find PR {cond }")
 
-        with mock.patch.object(RepoType, "post_status", _post_status):
-            yield
+                sha = repo.commit(ref).id
+                r = requests.post(
+                    f"http://localhost:{port}/runbot_merge/{oid}/statuses",
+                    data={'sha': sha, 'context': context, 'status': status, **kw},
+                )
+                assert r.ok, r.reason
+            cm = mock.patch.object(RepoType, "post_status", _post_status)
+        case mode:
+            raise ValueError(f"unknown staging mode {mode}")
 
-def test_trivial_flow(env, repo, page, users, config, project, partners):
+    with cm:
+        yield request.param
+
+
+def test_trivial_flow(env, repo, page, users, config, project, partners, status_mode):
     project.repo_ids.required_statuses = 'legal/cla,ci/runbot'
     # create base branch
     with repo:
@@ -155,21 +196,6 @@ def test_trivial_flow(env, repo, page, users, config, project, partners):
                              "\n\nSigned-off-by: {reviewer.formatted_email}"\
                              .format(repo=repo, reviewer=get_partner(env, users['reviewer']))
 
-    def get_tracking_values(record):
-        field_type = record.field_id.ttype
-        if not isinstance(field_type, str):
-            raise TypeError(f"{field_type!r} can't be a field type")
-
-        if field_type in ('integer', 'float', 'char', 'text', 'monetary', 'datetime'):
-            return record[f'old_value_{field_type}'], record[f'new_value_{field_type}']
-        elif field_type == 'date':
-            v1, v2 = record.old_value_datetime, record.new_value_datetime
-            return v1 and v1[:10], v2 and v2[:10]
-        elif field_type == 'boolean':
-            return bool(record.old_value_integer), bool(record.new_value_integer)
-        else:
-            return record.old_value_char, record.new_value_char
-
     # reverse because the messages are in newest-to-oldest by default
     # (as that's how you want to read them)
     messages = pr_id.message_ids[::-1].mapped(lambda m: (
@@ -178,10 +204,14 @@ def test_trivial_flow(env, repo, page, users, config, project, partners):
         list(map(read_tracking_value, m.tracking_value_ids)),
     ))
 
+    if status_mode == 'runbot':
+        statuses_msg = '<p>statuses updated by runbot</p>'
+    else:
+        statuses_msg = f'<p>statuses changed on {c2}</p>'
     assert list(messages) == [
         (users['user'], '<p>Pull Request created</p>', []),
         (users['user'], '', [('head', c1, c2)]),
-        ('OdooBot', f'<p>statuses changed on {c2}</p>', [('state', 'Opened', 'Validated')]),
+        ('OdooBot', statuses_msg, [('state', 'Opened', 'Validated')]),
         # reviewer approved changing the state and setting reviewer as reviewer
         # plus set merge method
         (partners['reviewer'].name, '', [
@@ -945,7 +975,7 @@ class TestPREdition:
         with repo:
             prx.base = 'master'
 
-def test_close_staged(env, repo, config, page):
+def test_close_staged(env, repo, config, page, request):
     """
     When closing a staged PR, cancel the staging
     """
@@ -2291,10 +2321,13 @@ class TestPRUpdate:
         with pytest.raises(TimeoutError):
             to_pr(env, prx)
 
-    def test_update_to_ci(self, env, repo):
+    def test_update_to_ci(self, env, repo, status_mode):
         """ If a PR is updated to a known-valid commit, it should be
         validated
         """
+        if status_mode == 'runbot':
+            pytest.xfail("No such thing as a valid commit in runbot status mode")
+
         with repo:
             [c] = repo.make_commits("master", Commit('fist', tree={'m': 'c1'}))
             [c2] = repo.make_commits("master", Commit('first', tree={'m': 'cc'}))
@@ -2312,7 +2345,7 @@ class TestPRUpdate:
         assert pr.head == c2
         assert pr.state == 'validated'
 
-    def test_update_missed(self, env, repo, config, users):
+    def test_update_missed(self, env, repo, config, users, status_mode):
         """ Sometimes github's webhooks don't trigger properly, a branch's HEAD
         does not get updated and we might e.g. attempt to merge a PR despite it
         now being unreviewed or failing CI or somesuch.
@@ -2343,36 +2376,38 @@ class TestPRUpdate:
         assert pr_id.state == 'ready'
         old_reviewer = pr_id.reviewed_by
 
-        # TODO: find way to somehow skip / ignore the update_ref?
         with repo:
-            # can't push a second commit because then the staging crashes due
+            # can't push a second commit because then the staging fails due
             # to the PR *actually* having more than 1 commit and thus needing
             # a configuration
             [c2] = repo.make_commits('heads/master', repo.Commit('c2', tree={'a': '2'}))
-            repo.post_status(c2, 'success')
-            repo.update_ref(pr.ref, c2, force=True)
+            if status_mode != 'runbot':
+                repo.post_status(c2, 'success')
+            # simulate missing a notification
+            with repo.disable_hooks():
+                repo.update_ref(pr.ref, c2, force=True)
 
+        # we missed the update notification so the db should still be at c and
+        # in a "ready" state
+        assert pr_id.head == c
+        assert pr_id.state == "ready"
+        assert pr_id.reviewed_by == old_reviewer
+
+        # do some more fucking up of the PR
         other = env['runbot_merge.branch'].create({
             'name': 'somethingelse',
             'project_id': env['runbot_merge.project'].search([]).id,
         })
-
-        # we missed the update notification so the db should still be at c and
-        # in a "ready" state
-        pr_id.write({
-            'head': c,
-            'reviewed_by': old_reviewer.id,
-            'message': "Something else",
-            'target': other.id,
-        })
-        assert pr_id.head == c
-        assert pr_id.state == "ready"
+        pr_id.write({'message': "Something else", 'target': other.id})
 
         env.run_crons()
 
         # the PR should not get merged, and should be updated
-        assert pr_id.state == 'validated'
         assert pr_id.head == c2
+        if status_mode == 'runbot':
+            assert pr_id.state == 'opened'
+        else:
+            assert pr_id.state == 'validated'
         assert pr_id.message == 'title\n\nbody'
         assert pr_id.target.name == 'master'
         assert pr.comments[-1]['body'] == f"""\
@@ -2409,6 +2444,7 @@ Please check and re-approve.
         # if the head commit doesn't change, that part should still be valid
         with repo:
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
+            repo.post_status(c2, 'success')  # redundant in !runbot case but...
         assert pr_id.state == 'ready'
         pr_id.write({'message': 'wrong'})
         env.run_crons()
@@ -2448,8 +2484,11 @@ Please check and re-approve.
         with repo:
             pr.post_comment('hansen check')
         env.run_crons()
-        assert pr_id.state == 'validated'
         assert pr_id.head == c2
+        if status_mode == 'runbot':
+            assert pr_id.state == 'opened'
+        else:
+            assert pr_id.state == 'validated'
         assert pr_id.message == 'title\n\nbody' # the commit's message was used for the PR
         assert pr_id.target.name == 'master'
         assert not pr_id.draft
@@ -2464,7 +2503,7 @@ Please check and re-approve.
         env.run_crons()
         assert pr_id.squash
 
-    def test_update_closed(self, env, repo, config):
+    def test_update_closed(self, env, repo, config, status_mode):
         with repo:
             [c] = repo.make_commits("master", repo.Commit('first', tree={'m': 'm3'}), ref='heads/abranch')
             pr = repo.make_pr(target='master', head=c)
@@ -2487,7 +2526,8 @@ Please check and re-approve.
         with repo:
             [c2] = repo.make_commits(c, Commit('xxx', tree={'m': 'm4'}))
             repo.update_ref(pr.ref, c2)
-            repo.post_status(c2, "success")
+            if status_mode != 'runbot':
+                repo.post_status(c2, "success")
 
         assert pr_id.state == 'closed'
         assert pr_id.head == c
@@ -2496,12 +2536,15 @@ Please check and re-approve.
 
         with repo:
             pr.open()
-        assert pr_id.state == 'validated'
+        if status_mode == 'runbot':
+            assert pr_id.state == 'opened'
+        else:
+            assert pr_id.state == 'validated'
         assert pr_id.head == c2
         assert not pr_id.reviewed_by
         assert not pr_id.squash
 
-    def test_update_incorrect_commits_count(self, port, env, project, repo, config, users, partners):
+    def test_update_incorrect_commits_count(self, port, env, project, repo, config, users, partners, status_mode):
         """This is not a great test but it aims to kinda sorta simulate the
         behaviour when a user retargets and updates a PR at about the same time:
         github can send the hooks in the wrong order, which leads to the correct
@@ -2555,6 +2598,10 @@ Please check and re-approve.
             repo.post_status(c, 'success')
         env.run_crons()
         assert not pr_id.blocked
+        if status_mode == 'runbot':
+            statuses_msg = '<p>statuses updated by runbot</p>'
+        else:
+            statuses_msg = f'<p>statuses changed on {c}</p>'
         assert pr_id.message_ids[::-1].mapped(lambda m: (
             ((m.subject or '') + '\n\n' + m.body).strip(),
             list(map(read_tracking_value, m.tracking_value_ids)),
@@ -2563,7 +2610,7 @@ Please check and re-approve.
             ('', [('head', c, '0'*40)]),
             ('', [('head', '0'*40, c), ('squash', 1, 0)]),
             ('', [('reviewed_by', '', partners['reviewer'].name), ('state', 'Opened', 'Approved')]),
-            (f'<p>statuses changed on {c}</p>', [('state', 'Approved', 'Ready')]),
+            (statuses_msg, [('state', 'Approved', 'Ready')]),
         ]
         assert pr_id.staging_id
         with repo:
@@ -3245,7 +3292,7 @@ class TestUnknownPR:
     => instead, create PRs on the fly when getting notifications related to
        valid but unknown PRs
     """
-    def test_rplus_unknown(self, repo, env, config, users):
+    def test_rplus_unknown(self, repo, env, config, users, status_mode):
         with repo:
             m, _ = repo.make_commits(
                 None,
@@ -3279,10 +3326,16 @@ class TestUnknownPR:
         env.run_crons()
         assert not Fetch.search([('repository', '=', repo.name), ('number', '=', prx.number)])
 
-        c = env['runbot_merge.commit'].search([('sha', '=', prx.head)])
-        assert json.loads(c.statuses) == {
-            'default': {'state': 'success', 'target_url': 'http://example.org/wheee', 'description': None, 'updated_at': matches("$$")}
-        }
+        if status_mode != 'runbot':
+            c = env['runbot_merge.commit'].search([('sha', '=', prx.head)])
+            assert json.loads(c.statuses) == {
+                'default': {
+                    'state': 'success',
+                    'target_url': 'http://example.org/wheee',
+                    'description': None,
+                    'updated_at': matches("$$"),
+                }
+            }
         assert prx.comments == [
             seen(env, prx, users),
             (users['reviewer'], 'hansen r+'),
@@ -3294,11 +3347,10 @@ class TestUnknownPR:
         ]
 
         pr = to_pr(env, prx)
-        assert pr.state == 'validated'
-
-        with repo:
-            prx.post_comment('hansen r+', config['role_reviewer']['token'])
-        assert pr.state == 'ready'
+        if status_mode == 'runbot':
+            assert pr.state == 'opened'
+        else:
+            assert pr.state == 'validated'
 
     def test_fetch_closed(self, env, repo, users, config):
         """ If an "unknown PR" is fetched while closed, it should be saved as
@@ -3427,16 +3479,12 @@ class TestUnknownPR:
 
             [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='branch', head=c1)
-            repo.post_status(prx.head, 'success')
-
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
-        env.run_crons(
-            'runbot_merge.fetch_prs_cron',
-        )
+        env.run_crons('runbot_merge.fetch_prs_cron')
 
         assert prx.comments == [
             (users['reviewer'], 'hansen r+'),
-            (users['user'], "This PR targets the un-managed branch %s:branch, it needs to be retargeted before it can be merged." % repo.name),
+            (users['user'], f"This PR targets the un-managed branch {repo.name}:branch, it needs to be retargeted before it can be merged."),
             (users['user'], "Branch `branch` is not within my remit, imma just ignore it."),
         ]
 
@@ -3453,7 +3501,6 @@ class TestUnknownPR:
 
             [c1] = repo.make_commits(m, Commit('first', tree={'m': 'c1'}))
             prx = repo.make_pr(title='title', body='body', target='branch', head=c1)
-            repo.post_status(prx.head, 'success')
 
             prx.post_review('APPROVE', 'hansen r+', config['role_reviewer']['token'])
         env.run_crons(

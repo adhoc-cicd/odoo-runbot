@@ -672,10 +672,16 @@ def template(tmpl, **params):
 def check(response):
     assert response.ok, response.text or response.reason
     return response
+
 # users is just so I can avoid autouse on toplevel users fixture b/c it (seems
 # to) break the existing local tests
 @pytest.fixture
-def make_repo(request, config, tunnel, users):
+def make_repo(
+        request: pytest.FixtureRequest,
+        config: dict,
+        tunnel: str,
+        users: dict,
+) -> Iterator[RepoMaker]:
     """Fixtures which creates a repository on the github side, plugs webhooks
     in, and registers the repository for deletion on cleanup (unless
     ``--no-delete`` is set)
@@ -696,7 +702,7 @@ def make_repo(request, config, tunnel, users):
         assert r.json()['login'] == owner
 
     repos = []
-    def repomaker(name, *, hooks=True):
+    def repomaker(name: str, *, hooks: bool = True) -> Repo:
         # create repo
         r = check(github.post(endpoint, json={
             'name': f'ignore_{name}_{secrets.token_urlsafe(6)}',
@@ -748,6 +754,10 @@ def make_repo(request, config, tunnel, users):
             repo.delete()
 
 
+class RepoMaker(typing.Protocol):
+    def __call__(self, name: str, *, hooks: bool = True) -> Repo: ...
+
+
 def _rate_limited(req):
     while True:
         q = req()
@@ -778,6 +788,10 @@ class Issue:
         assert state in ('open', 'closed'), f"Invalid {state}, expected 'open' or 'closed'"
         return state
 
+
+@pytest.fixture(scope='session')
+def RepoType() -> type[Repo]:
+    return Repo
 
 class Repo:
     def __init__(self, session, fullname, repos):
@@ -1096,6 +1110,20 @@ class Repo:
         assert 200 <= r.status_code < 300, r.text
         return Issue(self, token, r.json()['number'])
 
+    @contextlib.contextmanager
+    def disable_hooks(self) -> typing.Iterator[None]:
+        assert self.hook
+        sess = self._get_session(None)
+        r = sess.get(f'https://api.github.com/repos/{self.name}/hooks')
+        assert r.ok, r.text
+        hook_urls = [hook['url'] for hook in r.json() if hook['active']]
+        for hook in hook_urls:
+            r = sess.patch(hook, json={'active': False})
+            assert r.ok, r.text
+        yield
+        for hook in reversed(hook_urls):
+            r = sess.patch(hook, json={'active': True})
+            assert r.ok, r.text
 
     def __enter__(self):
         self.hook = True

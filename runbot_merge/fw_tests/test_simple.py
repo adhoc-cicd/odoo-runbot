@@ -1,15 +1,102 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import collections
+import contextlib
 import re
 import time
+import typing
+from collections.abc import Iterator
 from datetime import datetime, timedelta
+from unittest import mock
+from urllib.parse import quote
 
 import pytest
+import requests
 
-from utils import seen, Commit, make_basic, REF_PATTERN, MESSAGE_TEMPLATE, validate_all, part_of, to_pr, matches
+from utils import seen, Commit, make_basic as make_basic_utils, REF_PATTERN, MESSAGE_TEMPLATE, validate_all, part_of, to_pr, matches, Repo
 
 FMT = '%Y-%m-%d %H:%M:%S'
 FAKE_PREV_WEEK = (datetime.now() + timedelta(days=1)).strftime(FMT)
+
+@pytest.fixture(params=["statuses", "runbot"])
+def make_basic(
+    request,
+    port,
+    env,
+    config,
+    RepoType,
+    make_repo,
+) -> Iterator[MakeBasic]:
+    match request.param:
+        case "statuses":
+            staging_statuses = True
+            cm = contextlib.nullcontext()
+        case "runbot":
+            staging_statuses = False
+            def _post_status(repo, ref, status, context='default', **kw):
+                if ref.startswith(('staging.', 'heads/staging.')):
+                    branchname = ref.removeprefix('heads/').removeprefix('staging.')
+                    st = env['runbot_merge.stagings'].search([('target.name', '=', branchname)])
+                    oid = st.id
+                else:
+                    if re.fullmatch(r'[a-z0-9]{40}', ref, flags=re.IGNORECASE):
+                        cond = ('head', '=', ref)
+                    else:
+                        cond = ('label', '=like', '%:' + ref.removeprefix('heads/'))
+                    for i in range(5):
+                        pr = env['runbot_merge.pull_requests'].search([
+                            ('repository.name', '=', repo.name),
+                            cond
+                        ])
+                        if pr:
+                            oid = quote(pr.display_name.replace('#', '/'))
+                            break
+                        time.sleep(i)
+                    else:
+                        raise TimeoutError(f"could not find PR {cond }")
+
+                sha = repo.commit(ref).id
+                r = requests.post(
+                    f"http://localhost:{port}/runbot_merge/{oid}/statuses",
+                    data={'sha': sha, 'context': context, 'status': status, **kw},
+                )
+                assert r.ok, r.reason
+            # !!! this needs to be the concrete type not the protocol !!!
+            cm = mock.patch.object(RepoType, "post_status", _post_status)
+        case _:
+            raise ValueError(f"Unknown staging mode {request.param!r}")
+
+    project_name = "someproject"
+    env['runbot_merge.project'].create({
+        'name': project_name,
+        'github_token': config['github']['token'],
+        'github_prefix': 'hansen',
+        'github_name': config['github']['name'],
+        'github_email': "foo@example.org",
+        'fp_github_token': config['github']['token'],
+        'fp_github_name': 'herbert',
+        'branch_ids': [
+            (0, 0, {'name': 'a', 'sequence': 100}),
+            (0, 0, {'name': 'b', 'sequence': 80}),
+            (0, 0, {'name': 'c', 'sequence': 60}),
+        ],
+        'staging_rpc': False,
+        'staging_statuses': staging_statuses,
+    })
+
+    with cm:
+        yield lambda name="proj": make_basic_utils(
+            env,
+            config,
+            make_repo,
+            project_name=project_name,
+            reponame=name,
+            statuses='default',
+        )
+
+class MakeBasic(typing.Protocol):
+    def __call__(self, name: str = "proj") -> tuple[Repo, Repo]: ...
 
 # need:
 # * an odoo server
@@ -24,14 +111,14 @@ FAKE_PREV_WEEK = (datetime.now() + timedelta(days=1)).strftime(FMT)
 #   - a github user to create a repo with
 #   - a github owner to create a repo *for*
 #   - provide ability to create commits, branches, prs, ...
-def test_straightforward_flow(env, config, make_repo, users):
+def test_straightforward_flow(env, config, users, make_basic):
     # TODO: ~all relevant data in users when creating partners
     # get reviewer's name
     reviewer_name = env['res.partner'].search([
         ('github_login', '=', users['reviewer'])
     ]).name
 
-    prod, other = make_basic(env, config, make_repo, statuses='default')
+    prod, other = make_basic()
     other_user = config['role_other']
     other_user_repo = prod.fork(token=other_user['token'])
 
@@ -65,7 +152,7 @@ def test_straightforward_flow(env, config, make_repo, users):
     # should merge the staging then create the FP PR
     env.run_crons()
 
-    assert datetime.utcnow() - datetime.strptime(pr_id.merge_date, FMT) <= timedelta(minutes=1),\
+    assert datetime.now() - datetime.strptime(pr_id.merge_date, FMT) <= timedelta(minutes=1),\
         "check if merge date was set about now (within a minute as crons and " \
         "RPC calls yield various delays before we're back)"
 
@@ -239,11 +326,11 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     with pytest.raises(AssertionError, match="Not Found"):
         other.get_ref(pr2_ref)
 
-def test_empty(env, config, make_repo, users):
+def test_empty(env, config, users, make_basic):
     """ Cherrypick of an already cherrypicked (or separately implemented)
     commit -> conflicting pr.
     """
-    prod, _other = make_basic(env, config, make_repo, statuses="default")
+    prod, _other = make_basic()
     # merge change to b
     with prod:
         [p_0] = prod.make_commits(
@@ -396,10 +483,10 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     ],"if a PR is ready (unblocked), the reminder should not trigger as "\
         "we're likely waiting for the mergebot"
 
-def test_partially_empty(env, config, make_repo):
+def test_partially_empty(env, config, make_basic):
     """ Check what happens when only some commits of the PR are now empty
     """
-    prod, _other = make_basic(env, config, make_repo, statuses='default')
+    prod, _other = make_basic()
     # merge change to b
     with prod:
         [p_0] = prod.make_commits(
@@ -476,11 +563,11 @@ ACL = [
     Case('other', 'other', 'other', True),
 ]
 @pytest.mark.parametrize(Case._fields, ACL)
-def test_access_rights(env, config, make_repo, users, author, reviewer, delegate, success):
+def test_access_rights(env, config, users, author, reviewer, delegate, success, make_basic):
     """Validates the review rights *for the forward-port sequence*, the original
     PR is always reviewed by `user`.
     """
-    prod, _other = make_basic(env, config, make_repo, statuses='default')
+    prod, _other = make_basic()
     project = env['runbot_merge.project'].search([])
 
     # create a partner for `user`
@@ -555,12 +642,12 @@ def signoff(conf, message):
             return signoff
     raise AssertionError("Failed to find signoff by %s in %s" % (conf, message))
 
-def test_disapproval(env, config, make_repo, users):
+def test_disapproval(env, config, users, make_basic):
     """The author of a source PR should be able to unapprove the forward port in
     case they approved it then noticed an issue of something.
     """
     # region setup
-    prod, _ = make_basic(env, config, make_repo, statuses='default')
+    prod, _ = make_basic()
     env['res.partner'].create({
         'name': users['other'],
         'github_login': users['other'],
@@ -627,11 +714,11 @@ def test_disapproval(env, config, make_repo, users):
         (users['other'], "hansen r-"),
     ], "shouldn't have a warning on r- because it's the only approved PR of the chain"
 
-def test_delegate_fw(env, config, make_repo, users):
+def test_delegate_fw(env, config, users, make_basic):
     """If a user is delegated *on a forward port* they should be able to approve
     *the followup*.
     """
-    prod, _ = make_basic(env, config, make_repo, statuses='default')
+    prod, _ = make_basic()
     # create a partner for `other` so we can put an email on it
     env['res.partner'].create({
         'name': users['other'],
@@ -700,11 +787,11 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     assert pr2_id.reviewed_by
 
 
-def test_redundant_approval(env, config, make_repo, users):
+def test_redundant_approval(env, config, users, make_basic):
     """If a forward port sequence has been partially approved, fw-bot r+ should
     not perform redundant approval as that triggers warning messages.
     """
-    prod, _ = make_basic(env, config, make_repo, statuses='default')
+    prod, _ = make_basic()
     with prod:
         prod.make_commits(
             'a', Commit('p', tree={'x': '0'}),
@@ -743,12 +830,12 @@ def test_redundant_approval(env, config, make_repo, users):
     ]
 
 
-def test_batched(env, config, make_repo, users):
+def test_batched(env, config, users, make_basic):
     """ Tests for projects with multiple repos & sync'd branches. Batches
     should be FP'd to batches
     """
-    main1, _ = make_basic(env, config, make_repo, reponame='main1', statuses='default')
-    main2, _ = make_basic(env, config, make_repo, reponame='main2', statuses='default')
+    main1, _ = make_basic('main1')
+    main2, _ = make_basic('main2')
     main1.unsubscribe(config['role_reviewer']['token'])
     main2.unsubscribe(config['role_reviewer']['token'])
 
@@ -867,10 +954,10 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         validate_all([main1, main2], ['staging.b', 'staging.c'])
 
 class TestClosing:
-    def test_closing_before_fp(self, env, config, make_repo, users):
+    def test_closing_before_fp(self, env, config, users, make_basic):
         """ Closing a PR should preclude its forward port
         """
-        prod, _other = make_basic(env, config, make_repo, statuses='default')
+        prod, _other = make_basic()
         with prod:
             [p_1] = prod.make_commits(
                 'a',
@@ -910,11 +997,11 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 """)
         ]
 
-    def test_closing_after_fp(self, env, config, make_repo, users):
+    def test_closing_after_fp(self, env, config, users, make_basic):
         """ Closing a PR which has been forward-ported should not touch the
         followups
         """
-        prod, _other = make_basic(env, config, make_repo, statuses='default')
+        prod, _other = make_basic()
         with prod:
             [p_1] = prod.make_commits(
                 'a',
@@ -971,13 +1058,13 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         assert not pr1_id.parent_id
         assert not pr2_id.parent_id
 
-    def test_closing_after_fp_second(self, env, config, make_repo, users):
+    def test_closing_after_fp_second(self, env, config, users, make_basic):
         """If we close a forward-ported PR whose child has a child, then we don't
         need to send a notification on the child: while it is technically detached,
         said detachment has no effect as it does not need forward porting anymore.
         """
         # region setup
-        prod, _ = make_basic(env, config, make_repo, statuses='default')
+        prod, _ = make_basic()
         # region add one more branch to the project
         proj = env['runbot_merge.project'].search([])
         proj.write({'branch_ids': [(0, 0, {'name': 'd', 'sequence': 40})]})
@@ -1018,13 +1105,13 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
 """),
         ]
 
-    def test_close_disabled(self, env, make_repo, users, config):
+    def test_close_disabled(self, env, users, config, make_basic):
         """ If an fwport's target is disabled and its branch is closed, it
         should not be notified (multiple times), also its descendant should not
         be nodified if already merged, also there should not be recursive
         notifications (odoo/odoo#145969, odoo/odoo#145984)
         """
-        repo, _ = make_basic(env, config, make_repo, statuses='default')
+        repo, _ = make_basic()
         # prep: merge PR, create two forward ports
         with repo:
             [c1] = repo.make_commits('a', Commit('first', tree={'m': 'c1'}))
@@ -1096,11 +1183,11 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         assert pr3.comments[2:] == [(users['reviewer'], "hansen r+")]
 
 class TestBranchDeletion:
-    def test_delete_normal(self, env, config, make_repo):
+    def test_delete_normal(self, env, config, make_basic):
         """ Regular PRs should get their branch deleted as long as they're
         created in the fp repository
         """
-        prod, other = make_basic(env, config, make_repo, statuses='default')
+        prod, other = make_basic()
         with prod, other:
             [c] = other.make_commits(prod.commit('a').id, Commit('c', tree={'0': '0'}), ref='heads/abranch')
             pr = prod.make_pr(
@@ -1125,11 +1212,11 @@ class TestBranchDeletion:
         with pytest.raises(AssertionError, match="Not Found"):
             other.get_ref('heads/abranch')
 
-    def test_not_merged(self, env, config, make_repo):
+    def test_not_merged(self, env, config, make_basic):
         """ The branches of PRs which are still open or have been closed (rather
         than merged) should not get deleted
         """
-        prod, other = make_basic(env, config, make_repo, statuses='default')
+        prod, other = make_basic()
         a_ref = prod.commit('a').id
         with prod, other:
             [c1] = other.make_commits(a_ref, Commit('c1', tree={'1': '0'}), ref='heads/abranch')
@@ -1180,8 +1267,8 @@ def test_spengbab():
     assert sPeNgBaB("spongebob") == 'sPoNgEbOb'
 
 class TestRecognizeCommands:
-    def make_pr(self, env, config, make_repo):
-        r, _ = make_basic(env, config, make_repo, statuses='default')
+    def make_pr(self, env, make_basic):
+        r, _ = make_basic()
 
         with r:
             r.make_commits('c', Commit('p', tree={'x': '0'}), ref='heads/testbranch')
@@ -1190,11 +1277,11 @@ class TestRecognizeCommands:
         return r, pr, to_pr(env, pr)
 
     # FIXME: remove / merge into mergebot tests
-    def test_botname_casing(self, env, config, make_repo):
+    def test_botname_casing(self, env, config, make_basic):
         """ Test that the botname is case-insensitive as people might write
         bot names capitalised or titlecased or uppercased or whatever
         """
-        repo, pr, pr_id = self.make_pr(env, config, make_repo)
+        repo, pr, pr_id = self.make_pr(env, make_basic)
         assert pr_id.state == 'opened'
         [a] = env['runbot_merge.branch'].search([
             ('name', '=', 'a')
@@ -1217,10 +1304,10 @@ class TestRecognizeCommands:
 
     # FIXME: remove / merge into mergebot tests
     @pytest.mark.parametrize('indent', ['', '\N{SPACE}', '\N{SPACE}'*4, '\N{TAB}'])
-    def test_botname_indented(self, env, config, make_repo, indent):
+    def test_botname_indented(self, env, config, make_basic, indent):
         """ matching botname should ignore leading whitespaces
         """
-        repo, pr, pr_id = self.make_pr(env, config, make_repo)
+        repo, pr, pr_id = self.make_pr(env, make_basic)
         assert pr_id.state == 'opened'
         [a] = env['runbot_merge.branch'].search([
             ('name', '=', 'a')
