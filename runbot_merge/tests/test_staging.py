@@ -107,7 +107,7 @@ def test_update_unready(env, config, repo, users):
     assert staging, "pr should be staged"
 
     with prevent_unstaging(pr_id.staging_id):
-        pr_id.overrides = '{"default": {"state": "failure"}}'
+        pr_id.overrides = '{"default": {"state": "failure", "description": "haha no"}}'
     assert pr_id.state == "approved"
     assert pr_id.staging_id, "pr should not have been unstaged because we cheated"
 

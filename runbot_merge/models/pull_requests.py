@@ -28,7 +28,7 @@ from markupsafe import Markup
 
 from odoo import api, fields, models, tools, Command
 from odoo.addons.base.controllers.rpc import OdooMarshaller
-from odoo.exceptions import AccessError, UserError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.osv import expression
 from odoo.tools import html_escape, Reverse, mute_logger, groupby
 
@@ -558,6 +558,17 @@ class PullRequests(models.Model):
         'check(source_id is null or num_nonnulls(parent_id, detach_reason) = 1)',
         "fw PRs must either be attached or have a reason for being detached",
     )]
+
+    @api.constrains('overrides')
+    def _overrides_validity(self):
+        for r in self:
+            for context, override in json.loads(r.overrides).items():
+                if not context:
+                    raise ValidationError("Override keys are gh status contexts and can not be empty")
+
+                for k in ('state', 'description'):
+                    if not override.get(k):
+                        raise ValidationError(f"Override entry {k!r} is required")
 
     @api.depends('label')
     def _compute_refname(self):
