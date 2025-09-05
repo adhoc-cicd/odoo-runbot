@@ -410,9 +410,14 @@ class Batch(models.Model):
         # if the PR has a parent and is CI-validated, enqueue the next PR
         scheduled = self.browse(())
         for batch in self:
-            force_fw = force_fw or batch.source.fw_policy == 'skipmerge'
+            fw_policy = batch.source.fw_policy
+            force_fw = force_fw or fw_policy == 'skipmerge'
             prs = ', '.join(batch.prs.mapped('display_name'))
+
             _logger.info('Checking if forward-port %s (%s)', batch, prs)
+            if fw_policy == 'no':
+                _logger.info('-> disabled on %s (%s)', batch, prs)
+                continue
             # in case of conflict or update individual PRs will "lose" their
             # parent, which should prevent forward porting
             #
@@ -424,7 +429,7 @@ class Batch(models.Model):
             if not (batch.parent_id and (force_fw or all(p.parent_id for p in batch.prs))):
                 _logger.info('-> no parent %s (%s)', batch, prs)
                 continue
-            if not force_fw and batch.source.fw_policy not in ('skipci', 'skipmerge') \
+            if not force_fw and fw_policy not in ('skipci', 'skipmerge') \
                     and (invalid := batch.prs.filtered(lambda p: p.status != 'success')):
                 _logger.info(
                     '-> wrong state %s (%s)',

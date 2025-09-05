@@ -106,6 +106,45 @@ def test_ignore(env, config, make_repo, users):
     assert env['runbot_merge.pull_requests'].search([('source_id', '=', pr_id.id)]),\
         "should finally have created a forward port"
 
+def test_ignore_fw(env, config, make_repo, users):
+    """Allow using fw=no to stop forward porting
+    """
+    prod, _ = make_basic(env, config, make_repo, statuses="default")
+    with prod:
+        [c] = prod.make_commits('a', Commit('c', tree={'0': '0'}), ref='heads/mybranch')
+        pr = prod.make_pr(target='a', head='mybranch')
+        prod.post_status(c, 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    pr_id = to_pr(env, pr)
+    assert pr_id.state == 'merged'
+
+    [pr_b_id] = env['runbot_merge.pull_requests'].search([('parent_id', '=', pr_id.id)], order='number')
+    pr_b = prod.get_pr(pr_b_id.number)
+    with prod:
+        pr_b.post_comment('hansen fw=no r+', config['role_reviewer']['token'])
+
+    assert pr_b_id.batch_id.genealogy_ids.mapped('fw_policy') == ['no', 'no']
+
+    with prod:
+        prod.post_status(pr_b_id.head, 'success')
+    env.run_crons()
+
+    assert pr_b_id.batch_id.genealogy_ids.mapped('fw_policy') == ['no', 'no']
+    assert pr_b_id.state == 'ready'
+
+    with prod:
+        prod.post_status('staging.b', 'success')
+    env.run_crons()
+
+    assert pr_b_id.state == 'merged'
+
+    assert not env['runbot_merge.pull_requests'].search([('target.name', '=', 'c')])
 
 def test_unignore(env, config, make_repo, users, page):
     env['res.partner'].create({'name': users['other'], 'github_login': users['other'], 'email': 'other@example.org'})
