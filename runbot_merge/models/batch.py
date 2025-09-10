@@ -406,6 +406,10 @@ class Batch(models.Model):
         new_batch = new_batch.batch_id
         new_batch.parent_id = self
         new_batch.fw_policy = self.fw_policy
+        if not self.parent_id and proj.fw_nice and self.priority == 'default' :
+            new_batch.priority = 'nice'
+        else:
+            new_batch.priority = self.priority
         # try to schedule followup
         new_batch._schedule_fp_followup()
         return new_batch

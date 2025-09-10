@@ -953,6 +953,31 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     with main1, main2:
         validate_all([main1, main2], ['staging.b', 'staging.c'])
 
+def test_fw_nice(env, config, users, make_basic):
+    prod, _ = make_basic()
+    env['runbot_merge.project'].search([]).fw_nice = True
+    with prod:
+        prod.make_commits("a", Commit("p", tree={"x": "0"}), ref="heads/earl")
+        pr0 = prod.make_pr(target="a", head="earl")
+        prod.post_status("earl", "success")
+        pr0.post_comment("hansen r+", config["role_reviewer"]["token"])
+    env.run_crons()
+
+    with prod:
+        prod.post_status("staging.a", "success")
+    env.run_crons()
+    _, pr1_id = env["runbot_merge.pull_requests"].search([], order="number asc")
+    assert pr1_id.batch_id.priority == 'nice'
+    pr1_id.batch_id.priority = 'default'
+
+    # descendants of the fw just inherit the priority it has, even if it's just
+    # reset to default
+    with prod:
+        prod.post_status(pr1_id.head, "success")
+    env.run_crons()
+    _, _, pr2_id = env["runbot_merge.pull_requests"].search([], order="number asc")
+    assert pr2_id.batch_id.priority == 'default'
+
 class TestClosing:
     def test_closing_before_fp(self, env, config, users, make_basic):
         """ Closing a PR should preclude its forward port

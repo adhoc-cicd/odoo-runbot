@@ -71,6 +71,8 @@ class Project(models.Model):
     use_mergiraf = fields.Boolean(help="Use mergiraf as merge driver")
     warn_mergiraf = fields.Boolean(compute='_compute_warn_mergiraf')
 
+    fw_nice = fields.Boolean(help="Lower priority of forward-ports")
+
     @api.depends('use_mergiraf')
     def _compute_warn_mergiraf(self):
         for project in self:
