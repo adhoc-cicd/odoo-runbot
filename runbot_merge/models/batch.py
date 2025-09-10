@@ -86,6 +86,7 @@ class Batch(models.Model):
         help="Cancels current staging on target branch when becoming ready"
     )
     priority = fields.Selection([
+        ('nice', "Nice"),
         ('default', "Default"),
         ('priority', "Priority"),
         ('alone', "Alone"),
@@ -94,6 +95,7 @@ class Batch(models.Model):
     )
 
     blocked = fields.Char(store=True, compute="_compute_blocked", tracking=True)
+    unblocked_at = fields.Datetime(store=True, compute="_compute_blocked", tracking=True)
 
     # unlike on PRs, this does not get detached... ? (because batches can be
     # partially detached so that's a PR-level concern)
@@ -222,6 +224,7 @@ class Batch(models.Model):
                 ]))
             else:
                 if batch.blocked:
+                    batch.unblocked_at = fields.Datetime.now()
                     self.env.ref("runbot_merge.staging_cron")._trigger()
                     if batch.cancel_staging:
                         if splits := batch.target.split_ids:
@@ -231,6 +234,8 @@ class Batch(models.Model):
                             ', '.join(batch.prs.mapped('display_name')),
                         )
                 batch.blocked = False
+                continue
+            batch.unblocked_at = False
 
 
     def _port_forward(self):

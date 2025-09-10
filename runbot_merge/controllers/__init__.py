@@ -312,6 +312,7 @@ def handle_pr(env, event):
     sender = env['res.partner'].search([('github_login', '=', event['sender']['login'])], limit=1)
     if not sender:
         sender = env['res.partner'].create({'name': event['sender']['login'], 'github_login': event['sender']['login']})
+    env['runbot_merge.batch']._track_set_author(sender, fallback=True)
     env['runbot_merge.pull_requests']._track_set_author(sender, fallback=True)
 
     if event['action'] == 'opened':

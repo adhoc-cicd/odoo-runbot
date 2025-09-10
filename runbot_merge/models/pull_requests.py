@@ -480,7 +480,7 @@ class PullRequests(models.Model):
 
     reviewed_by = fields.Many2one('res.partner', index=True, tracking=True)
     delegates = fields.Many2many('res.partner', help="Delegate reviewers, not intrinsically reviewers but can review this PR")
-    priority = fields.Selection(related="batch_id.priority", inverse=readonly, readonly=True)
+    priority = fields.Selection(related="batch_id.priority", tracking=True)
 
     overrides = fields.Char(required=True, default='{}', tracking=True)
     statuses = fields.Text(help="Copy of the statuses from the HEAD commit, as a Python literal", default="{}")

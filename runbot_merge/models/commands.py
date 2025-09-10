@@ -157,6 +157,7 @@ class Delegate:
 
 
 class Priority(enum.Enum):
+    NICE = enum.auto()
     DEFAULT = enum.auto()
     PRIORITY = enum.auto()
     ALONE = enum.auto()
@@ -166,6 +167,7 @@ class Priority(enum.Enum):
 
     @classmethod
     def help(cls, _: bool) -> Iterator[Tuple[str, str]]:
+        yield str(cls.NICE), "only stages the PR if there's room in the batch after `default` PRs"
         yield str(cls.DEFAULT), "stages the PR normally"
         yield str(cls.PRIORITY), "tries to stage this PR first, then adds `default` PRs if the staging has room"
         yield str(cls.ALONE), "stages this PR only with other PRs of the same priority"
@@ -351,6 +353,9 @@ class Parser:
                 return Delegate(delegates)
             case d:
                 raise CommandError(f"unknown delegation {d!r}")
+
+    def parse_nice(self) -> Priority:
+        return Priority.NICE
 
     def parse_default(self) -> Priority:
         return Priority.DEFAULT

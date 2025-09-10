@@ -2619,7 +2619,7 @@ Please check and re-approve.
         assert pr_id.merge_date
 
 class TestBatching(object):
-    def _pr(self, repo, prefix, trees, *, target='master', user, reviewer, statuses=(('default', 'success'),)):
+    def _pr(self, repo, prefix, trees, *, target='master', user, reviewer, statuses=(('default', 'success'),), cmd=''):
         """ Helper creating a PR from a series of commits on a base
         """
         *_, c = repo.make_commits(
@@ -2636,8 +2636,8 @@ class TestBatching(object):
         for context, result in statuses:
             repo.post_status(c, result, context)
         if reviewer:
-            command = ' rebase-merge' if len(trees) > 1 else ''
-            pr.post_comment(f'hansen r+{command}', reviewer)
+            command = f'rebase-merge' if len(trees) > 1 else ''
+            pr.post_comment(f'hansen r+ {cmd} {command}'.rstrip(), reviewer)
         return pr
 
     def test_staging_batch(self, env, repo, users, config):
@@ -2771,6 +2771,90 @@ class TestBatching(object):
             pr21.batch_id,
         ]
         assert not pr22.staging_id
+
+    def test_prioritisation(self, env, repo, config, project):
+        """Between priority=default batches, we should select the oldest
+        modified, then the oldest created.
+        """
+        project.batch_limit = 1
+
+        with repo:
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref="heads/master")
+
+            pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+            pr2 = self._pr(repo, 'PR2', [{'c': 'CCC'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+        pr1_id = to_pr(env, pr1)
+        pr2_id = to_pr(env, pr2)
+
+        env.run_crons()
+
+        assert pr1_id.staging_id
+        assert not pr2_id.staging_id
+
+        project.branch_ids.active_staging_id\
+            .cancel("See if ordering change works")
+
+        # cheat by updating pr1's `unblocked_at` to make it later than pr2's
+        batch1 = pr1_id.batch_id
+        batch1.unblocked_at = datetime.datetime.now().isoformat(" ", "seconds")
+        w1 = batch1.unblocked_at
+        w2 = pr2_id.batch_id.unblocked_at
+        assert w1 > w2
+
+        env.run_crons()
+
+        assert pr2_id.staging_id, "the PR with the earliest unblocking should be prioritised"
+        assert not pr1_id.staging_id
+
+    def test_nice(self, env, repo, config):
+        """Default PRs should be selected over nice even if nice PRs are older.
+        """
+        env['runbot_merge.project'].search([]).batch_limit = 1
+
+        with repo:
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref="heads/master")
+
+            pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'], cmd='nice')
+            pr2 = self._pr(repo, 'PR2', [{'c': 'CCC'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+        pr1_id = to_pr(env, pr1)
+        pr2_id = to_pr(env, pr2)
+
+        env.run_crons()
+
+        assert pr2_id.staging_id
+        assert not pr1_id.staging_id
+
+    def test_batching_default(self, env, repo, config):
+        """Nice prs should be selected after normal & batched together
+        """
+        proj = env['runbot_merge.project'].search([])
+        proj.batch_limit = 3
+
+        with repo:
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref="heads/master")
+
+            pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+            pr2 = self._pr(repo, 'PR2', [{'c': 'CCC'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+        env.run_crons()
+
+        assert proj.branch_ids.active_staging_id.batch_ids \
+           == to_pr(env, pr1).batch_id + to_pr(env, pr2).batch_id
+
+    def test_batching_nice(self, env, repo, config):
+        """Nice prs should be selected after normal & batched together
+        """
+        proj = env['runbot_merge.project'].search([])
+        proj.batch_limit = 3
+
+        with repo:
+            repo.make_commits(None, Commit('initial', tree={'a': 'some content'}), ref="heads/master")
+
+            pr1 = self._pr(repo, 'PR1', [{'a': 'AAA'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'], cmd='nice')
+            pr2 = self._pr(repo, 'PR2', [{'c': 'CCC'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+        env.run_crons()
+
+        assert proj.branch_ids.active_staging_id.batch_ids \
+           == to_pr(env, pr2).batch_id + to_pr(env, pr1).batch_id
 
     @pytest.mark.usefixtures("reviewer_admin")
     def test_batching_urgent(self, env, repo, config):
@@ -3588,6 +3672,7 @@ Currently available commands:
 |`squash`|squashes the PR as a single commit on the target branch, using the PR description as message|
 |`delegate+`|grants approval rights to the PR author|
 |`delegate=<...>`|grants approval rights on this PR to the specified github users|
+|`nice`|only stages the PR if there's room in the batch after `default` PRs|
 |`default`|stages the PR normally|
 |`priority`|tries to stage this PR first, then adds `default` PRs if the staging has room|
 |`alone`|stages this PR only with other PRs of the same priority|
@@ -3619,6 +3704,7 @@ Currently available commands:
 |`squash`|squashes the PR as a single commit on the target branch, using the PR description as message|
 |`delegate+`|grants approval rights to the PR author|
 |`delegate=<...>`|grants approval rights on this PR to the specified github users|
+|`nice`|only stages the PR if there's room in the batch after `default` PRs|
 |`default`|stages the PR normally|
 |`priority`|tries to stage this PR first, then adds `default` PRs if the staging has room|
 |`alone`|stages this PR only with other PRs of the same priority|

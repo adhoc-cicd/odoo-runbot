@@ -271,6 +271,7 @@ Currently available commands:
 |`squash`|squashes the PR as a single commit on the target branch, using the PR description as message|
 |`delegate+`|grants approval rights to the PR author|
 |`delegate=<...>`|grants approval rights on this PR to the specified github users|
+|`nice`|only stages the PR if there's room in the batch after `default` PRs|
 |`default`|stages the PR normally|
 |`priority`|tries to stage this PR first, then adds `default` PRs if the staging has room|
 |`alone`|stages this PR only with other PRs of the same priority|

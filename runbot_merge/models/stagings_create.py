@@ -256,7 +256,7 @@ def ready_batches(for_branch: Branch) -> Tuple[bool, Batch]:
             ('blocked', '=', False),
             ('priority', '=', 'alone') if alone else (1, '=', 1),
             ('id', 'not in', split_ids),
-        ], order="priority DESC, write_date ASC, id ASC"),
+        ], order="priority DESC, unblocked_at ASC, id ASC"),
     )
 
 
