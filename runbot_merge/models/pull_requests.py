@@ -1375,7 +1375,7 @@ For your own safety I've ignored *everything in your entire comment*.
     def _notify_merged(self, gh, payload):
         deployment = gh('POST', 'deployments', json={
             'ref': self.head, 'environment': 'merge',
-            'description': "Merge %s into %s" % (self.display_name, self.target.name),
+            'description': f"Merge {self.display_name} into {self.target.name}",
             'task': 'merge',
             'auto_merge': False,
             'required_contexts': [],
@@ -1386,9 +1386,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 self.repository.name,
                 payload['sha'],
             ),
-            'description': "Merged %s in %s at %s" % (
-                self.display_name, self.target.name, payload['sha']
-            )
+            'description': f"Merged {self.display_name} in {self.target.name} at {payload['sha']}"
         })
 
     def _statuses_equivalent(self, a, b):
@@ -1728,9 +1726,9 @@ For your own safety I've ignored *everything in your entire comment*.
         # send feedback for multi-commit PRs without a merge_method (which
         # we've not warned yet)
         methods = ''.join(
-            '* `%s` to %s\n' % pair
-            for pair in type(self).merge_method.selection
-            if pair[0] != 'squash'
+            f'* `{value}` to {label}\n'
+            for value, label in type(self).merge_method.selection
+            if value != 'squash'
         )
         for r in self.search([
             ('state', 'in', ("approved", "ready")),
@@ -1799,7 +1797,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 # else remove this batch from the split
                 self.batch_id.split_id = False
 
-        self.staging_id.cancel('%s ' + reason, self.display_name, *args)
+        self.staging_id.cancel(f'%s {reason}', self.display_name, *args)
 
     def _try_closing(self, by):
         # ignore if the PR is already being updated in a separate transaction
@@ -1842,7 +1840,7 @@ For your own safety I've ignored *everything in your entire comment*.
             lines = ''
             if len(hh) > 1:
                 lines = '\n' + ''.join(
-                    '* %s%s\n' % (sha, ' <- on this commit' if sha == h else '')
+                    f'* {sha}{" <- on this commit" if sha == h else ""}\n'
                     for sha in hh
                 )
             template = 'runbot_merge.forwardport.failure'
@@ -2626,12 +2624,8 @@ class Stagings(models.Model):
     @api.depends('target.name', 'state', 'reason')
     def _compute_display_name(self):
         for staging in self:
-            staging.display_name = "%d (%s, %s%s)" % (
-                staging.id,
-                staging.target.name,
-                staging.state,
-                (', ' + staging.reason) if staging.reason else '',
-            )
+            reason = (', ' + staging.reason) if staging.reason else ''
+            staging.display_name = f"{staging.id} ({staging.target.name}, {staging.state}{reason})"
 
     @api.depends('staging_batch_ids.runbot_merge_batch_id')
     def _compute_batch_ids(self):
@@ -2940,9 +2934,9 @@ class Stagings(models.Model):
             if status.get('target_url'):
                 viewmore = ' (view more at %(target_url)s)' % status
             if pr:
-                self.fail("%s%s" % (reason, viewmore), pr)
+                self.fail(f"{reason}{viewmore}", pr)
             else:
-                self.fail('%s on %s%s' % (reason, head.commit_id.sha, viewmore))
+                self.fail(f'{reason} on {head.commit_id.sha}{viewmore}')
             return False
 
         # the staging failed but we don't have a specific culprit, fail

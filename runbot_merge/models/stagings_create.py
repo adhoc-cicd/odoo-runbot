@@ -20,7 +20,7 @@ from markupsafe import Markup
 from werkzeug.datastructures import Headers
 
 from odoo import api, models, fields, Command
-from odoo.tools import OrderedSet, groupby
+from odoo.tools import OrderedSet, groupby, Reverse
 from .pull_requests import Branch, Stagings, PullRequests, Repository
 from .batch import Batch
 from .. import exceptions, utils, github, git
@@ -48,6 +48,19 @@ class StagingSlice:
 
 
 StagingState: TypeAlias = Dict[Repository, StagingSlice]
+
+def batch_key(batch: Batch) -> tuple:
+    """Utility function to sort batches in memory, should use the same key as
+    `ready_batches`.
+    """
+    # could be more efficient but has the advantage of always being correct even
+    # if new priorities are added, and micro-opt of that is probably unnecessary
+    priority = next(
+        idx
+        for idx, (val, _) in enumerate(batch._fields['priority'].selection)
+        if val == batch.priority
+    )
+    return -priority, batch.unblocked_at, batch.id
 
 def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Stagings]:
     """ Tries to create a staging if the current branch does not already
@@ -77,7 +90,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
         elif branch.project_id.staging_priority == 'default':
             if split := branch.split_ids[:1].with_context(staging_split=True):
                 parent_id = split.source_id.id
-                batches = split.batch_ids
+                batches = split.batch_ids.sorted(batch_key)
                 split.unlink()
                 log("staging split PRs %s (prioritising splits)", batches)
             else:
@@ -90,7 +103,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
             else:
                 split = branch.split_ids[:1].with_context(staging_split=True)
                 parent_id = split.source_id.id
-                batches = split.batch_ids
+                batches = split.batch_ids.sorted(batch_key)
                 split.unlink()
                 log("staging split PRs %s (prioritising ready)", batches)
         else:
@@ -99,7 +112,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
             _logger.info("largest split = %d, ready = %d", len(maxsplit.batch_ids), len(batches))
             # bias towards splits if len(ready) = len(batch_ids)
             if len(maxsplit.batch_ids) >= len(batches):
-                batches = maxsplit.batch_ids
+                batches = maxsplit.batch_ids.sorted(batch_key)
                 maxsplit.unlink()
                 log("staging split PRs %s (prioritising largest)", batches)
             else:
