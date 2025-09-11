@@ -15,6 +15,7 @@ _logger = logging.getLogger(__name__)
 class Project(models.Model):
     _name = _description = 'runbot_merge.project'
 
+    active = fields.Boolean(default=True)
     name = fields.Char(required=True, index=True)
     repo_ids = fields.One2many(
         'runbot_merge.repository', 'project_id',
@@ -153,6 +154,7 @@ class Project(models.Model):
             ('active_staging_id', '=', False),
             ('active', '=', True),
             ('staging_enabled', '=', True),
+            ('project_id.active', '=', True),
             ('project_id.staging_enabled', '=', True),
         ]):
             try:

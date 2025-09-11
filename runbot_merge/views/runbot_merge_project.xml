@@ -43,6 +43,7 @@
                             <field name="staging_rpc" string="Validate via direct RPC"/>
                         </group>
                         <group>
+                            <field name="active" widget="boolean_toggle"/>
                             <field name="staging_enabled" widget="boolean_toggle"/>
                             <field name="staging_priority"/>
                             <field name="uniquifier"/>
