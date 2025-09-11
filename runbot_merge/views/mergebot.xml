@@ -321,6 +321,7 @@
                     <button type="object" name="action_cancel" string="Cancel" class="oe_highlight"
                             invisible="not active"
                     />
+                    <button type="object" name="retry" string="Retry" invisible="state in ('pending', 'success')"/>
                 </header>
                 <sheet>
                     <group>

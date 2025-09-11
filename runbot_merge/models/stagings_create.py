@@ -49,7 +49,7 @@ class StagingSlice:
 
 StagingState: TypeAlias = Dict[Repository, StagingSlice]
 
-def try_staging(branch: Branch) -> Optional[Stagings]:
+def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Stagings]:
     """ Tries to create a staging if the current branch does not already
     have one. Returns None if the branch already has a staging or there
     is nothing to stage, the newly created staging otherwise.
@@ -66,41 +66,44 @@ def try_staging(branch: Branch) -> Optional[Stagings]:
     def log(label: str, batches: Batch) -> None:
         _logger.info(label, ', '.join(batches.mapped('prs.display_name')))
 
-    alone, batches = ready_batches(for_branch=branch)
-
     parent_id = False
-    if alone:
-        log("staging high-priority PRs %s", batches)
-    elif branch.project_id.staging_priority == 'default':
-        if split := branch.split_ids[:1].with_context(staging_split=True):
-            parent_id = split.source_id.id
-            batches = split.batch_ids
-            split.unlink()
-            log("staging split PRs %s (prioritising splits)", batches)
-        else:
-            # priority, normal; priority = sorted ahead of normal, so always picked
-            # first as long as there's room
-            log("staging ready PRs %s (prioritising splits)", batches)
-    elif branch.project_id.staging_priority == 'ready':
-        if batches:
-            log("staging ready PRs %s (prioritising ready)", batches)
-        else:
-            split = branch.split_ids[:1].with_context(staging_split=True)
-            parent_id = split.source_id.id
-            batches = split.batch_ids
-            split.unlink()
-            log("staging split PRs %s (prioritising ready)", batches)
+    if batches:
+        log("staging retried PRs %s", batches)
     else:
-        assert branch.project_id.staging_priority == 'largest'
-        maxsplit = max(branch.split_ids, key=lambda s: len(s.batch_ids), default=branch.env['runbot_merge.split'])
-        _logger.info("largest split = %d, ready = %d", len(maxsplit.batch_ids), len(batches))
-        # bias towards splits if len(ready) = len(batch_ids)
-        if len(maxsplit.batch_ids) >= len(batches):
-            batches = maxsplit.batch_ids
-            maxsplit.unlink()
-            log("staging split PRs %s (prioritising largest)", batches)
+        alone, batches = ready_batches(for_branch=branch)
+
+        if alone:
+            log("staging high-priority PRs %s", batches)
+        elif branch.project_id.staging_priority == 'default':
+            if split := branch.split_ids[:1].with_context(staging_split=True):
+                parent_id = split.source_id.id
+                batches = split.batch_ids
+                split.unlink()
+                log("staging split PRs %s (prioritising splits)", batches)
+            else:
+                # priority, normal; priority = sorted ahead of normal, so always picked
+                # first as long as there's room
+                log("staging ready PRs %s (prioritising splits)", batches)
+        elif branch.project_id.staging_priority == 'ready':
+            if batches:
+                log("staging ready PRs %s (prioritising ready)", batches)
+            else:
+                split = branch.split_ids[:1].with_context(staging_split=True)
+                parent_id = split.source_id.id
+                batches = split.batch_ids
+                split.unlink()
+                log("staging split PRs %s (prioritising ready)", batches)
         else:
-            log("staging ready PRs %s (prioritising largest)", batches)
+            assert branch.project_id.staging_priority == 'largest'
+            maxsplit = max(branch.split_ids, key=lambda s: len(s.batch_ids), default=branch.env['runbot_merge.split'])
+            _logger.info("largest split = %d, ready = %d", len(maxsplit.batch_ids), len(batches))
+            # bias towards splits if len(ready) = len(batch_ids)
+            if len(maxsplit.batch_ids) >= len(batches):
+                batches = maxsplit.batch_ids
+                maxsplit.unlink()
+                log("staging split PRs %s (prioritising largest)", batches)
+            else:
+                log("staging ready PRs %s (prioritising largest)", batches)
 
     if not batches:
         return None

@@ -2578,6 +2578,7 @@ class Stagings(models.Model):
     _description = "A set of batches being tested for integration"
     _inherit = ['mail.thread']
 
+    id: int
     target = fields.Many2one('runbot_merge.branch', required=True, index=True)
     parent_id = fields.Many2one('runbot_merge.stagings')
     child_ids = fields.One2many('runbot_merge.stagings', 'parent_id')
@@ -2735,6 +2736,33 @@ class Stagings(models.Model):
         WHERE id = any(%(ids)s)
         """, {'sha': c.sha, 'statuses': c.statuses, 'ids': self.ids})
         self.modified(['statuses_cache'])
+
+    def retry(self):
+        if self.state in ('success', 'pending'):
+            raise UserError("Can only retry failed or cancelled stagings")
+
+        snapshot = self.batch_ids.read(['name', 'prs'])
+        if snapshot != self.snapshot:
+            raise UserError("The staging's batches have changed since, cannot retry")
+
+        if any(b.blocked for b in self.batch_ids):
+            raise UserError("Cannot retry a staging with blocked batches")
+
+        self.target.active_staging_id.cancel("Retrying staging %d", self.id)
+        self.target.split_ids.unlink()
+
+        st = try_staging(self.target, self.batch_ids)
+        if not st:
+            raise UserError("Failed to re-create the staging")
+
+        return {
+            'type': 'ir.actions.act_window',
+            'target': 'new',
+            'name': f"Retry of staging {self.id} ({self.target.name})",
+            'view_mode': 'form',
+            'res_model': st._name,
+            'res_id': st.id,
+        }
 
     def post_status(self, sha, context, status, *, target_url=None, description=None):
         if not self.env.user.has_group('runbot_merge.status'):
@@ -3172,4 +3200,4 @@ class FetchJob(models.Model):
                 self.env.cr.commit()
 
 
-from .stagings_create import is_mentioned, Message
+from .stagings_create import is_mentioned, Message, try_staging

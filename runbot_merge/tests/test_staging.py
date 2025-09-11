@@ -1,3 +1,7 @@
+import functools
+
+import pytest
+
 from utils import Commit, to_pr, prevent_unstaging
 
 
@@ -118,3 +122,78 @@ def test_update_unready(env, config, repo, users):
     assert not pr_id.staging_id, "pr should be unstaged"
     assert staging.state == "cancelled"
     assert staging.reason == f"{pr_id.display_name} updated by {users['user']}"
+
+def test_retry_staging(env, config, repo, users, project):
+    project.batch_limit = 2
+    prs = []
+    with repo:
+        [master] = repo.make_commits(None, Commit("master", tree={'a': '1'}), ref="heads/master")
+
+        for i in range(4):
+            [c] = repo.make_commits(master, Commit(f'c{i}', tree={f'{i}': '1'}), ref=f"heads/branch{i}")
+            pr = repo.make_pr(target='master', head=f'branch{i}')
+            repo.post_status(c, 'success')
+            pr.post_comment('hansen r+', config['role_reviewer']['token'])
+            prs.append(pr)
+    env.run_crons()
+
+    Stagings = env['runbot_merge.stagings']
+    staging = Stagings.search([])
+    assert staging
+    pr_ids = functools.reduce(lambda acc, pr: acc | to_pr(env, pr), prs, env['runbot_merge.pull_requests'])
+    assert staging.pr_ids == pr_ids[:2]
+
+    pr_ids[2].batch_id.priority = 'priority'
+    with repo:
+        repo.post_status('staging.master', 'error')
+    env.run_crons()
+
+    split = Stagings.search([])
+    assert split != staging
+    assert split.pr_ids == pr_ids[0]
+
+    staging.retry()
+    assert split.state == 'cancelled',\
+        "existing staging should be cancelled"
+    assert Stagings.search([]).pr_ids == staging.pr_ids,\
+        "the PRs of the retried staging should be the same as the original"
+    assert env['runbot_merge.split'].search_count([]) == 0,\
+        "splits should have been flushed"
+
+def test_retry_staging_invalid(env, config, repo, users, project):
+    """If the PRs of the original staging have changed state, the staging
+    can not be retried.
+    """
+    project.batch_limit = 2
+    prs = []
+    with repo:
+        [master] = repo.make_commits(None, Commit("master", tree={'a': '1'}), ref="heads/master")
+
+        for i in range(4):
+            [c] = repo.make_commits(master, Commit(f'c{i}', tree={f'{i}': '1'}), ref=f"heads/branch{i}")
+            pr = repo.make_pr(target='master', head=f'branch{i}')
+            repo.post_status(c, 'success')
+            pr.post_comment('hansen r+', config['role_reviewer']['token'])
+            prs.append(pr)
+    env.run_crons()
+
+    Stagings = env['runbot_merge.stagings']
+    staging = Stagings.search([])
+    assert staging
+    pr_ids = functools.reduce(lambda acc, pr: acc | to_pr(env, pr), prs, env['runbot_merge.pull_requests'])
+    assert staging.pr_ids == pr_ids[:2]
+
+    pr_ids[2].batch_id.priority = 'priority'
+    with repo:
+        repo.post_status('staging.master', 'error')
+    env.run_crons()
+
+    split = Stagings.search([])
+    assert split != staging
+    assert split.pr_ids == pr_ids[0]
+    with repo:
+        prs[1].post_comment('hansen r-', config['role_reviewer']['token'])
+
+    with pytest.raises(Exception) as e:
+        staging.retry()
+    assert 'blocked batches' in str(e)
