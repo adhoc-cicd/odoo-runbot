@@ -2616,6 +2616,8 @@ class Stagings(models.Model):
     issues_to_close = fields.Json(default=lambda _: [], help="list of tasks to close if this staging succeeds")
     snapshot = fields.Json(required=True)
 
+    losses = fields.Json()
+
     @api.depends('staged_at', 'staging_end')
     def _compute_duration(self):
         for s in self:
@@ -2892,10 +2894,12 @@ class Stagings(models.Model):
                 'target': self.target.id,
                 'source_id': (self.parent_id or self).id,
                 'batch_ids': [Command.link(batch.id) for batch in h],
+                'original_batches': h.ids,
             }, {
                 'target': self.target.id,
                 'source_id': (self.parent_id or self).id,
                 'batch_ids': [Command.link(batch.id) for batch in t],
+                'original_batches': t.ids,
             }])
             _logger.info("Split %s to %s (%s) and %s (%s)",
                          self, h, sh, t, st)
@@ -3135,6 +3139,7 @@ class Split(models.Model):
     target = fields.Many2one('runbot_merge.branch', required=True)
     source_id = fields.Many2one('runbot_merge.stagings', required=True)
     batch_ids = fields.One2many('runbot_merge.batch', 'split_id', context={'active_test': False})
+    original_batches = fields.Json()
 
     def unlink(self):
         if not self.env.context.get('staging_split'):

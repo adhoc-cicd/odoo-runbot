@@ -235,6 +235,16 @@
                                 <t t-call="runbot_merge.link-pr"/>
                             </t>
                         </li>
+                        <t t-set="losses" t-value="staging.env['runbot_merge.batch'].browse(staging.losses)"/>
+                        <li t-foreach="losses" t-as="loss" class="batch"
+                            style="text-decoration: line-through;"
+                            title="removed before or during staging"
+                        >
+                            <t t-out="loss.name"/>
+                            <t t-foreach="loss.prs" t-as="pr">
+                                <t t-call="runbot_merge.link-pr"/>
+                            </t>
+                        </li>
                     </ul>
                     <t t-call="runbot_merge.staging-statuses">
                         Staged <span t-field="staging.staged_at" t-options="{'widget': 'relative'}"/>

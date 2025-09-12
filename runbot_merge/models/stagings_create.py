@@ -80,6 +80,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
         _logger.info(label, ', '.join(batches.mapped('prs.display_name')))
 
     parent_id = False
+    originals = set()
     if batches:
         log("staging retried PRs %s", batches)
     else:
@@ -91,6 +92,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
             if split := branch.split_ids[:1].with_context(staging_split=True):
                 parent_id = split.source_id.id
                 batches = split.batch_ids.sorted(batch_key)
+                originals = set(split.original_batches)
                 split.unlink()
                 log("staging split PRs %s (prioritising splits)", batches)
             else:
@@ -104,6 +106,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
                 split = branch.split_ids[:1].with_context(staging_split=True)
                 parent_id = split.source_id.id
                 batches = split.batch_ids.sorted(batch_key)
+                originals = set(split.original_batches)
                 split.unlink()
                 log("staging split PRs %s (prioritising ready)", batches)
         else:
@@ -113,6 +116,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
             # bias towards splits if len(ready) = len(batch_ids)
             if len(maxsplit.batch_ids) >= len(batches):
                 batches = maxsplit.batch_ids.sorted(batch_key)
+                originals = set(maxsplit.original_batches)
                 maxsplit.unlink()
                 log("staging split PRs %s (prioritising largest)", batches)
             else:
@@ -211,6 +215,7 @@ For-Commit-Id: {it.head}
         'commits': commits,
         'issues_to_close': issues,
         'parent_id': parent_id,
+        'losses': list(originals - set(staged.ids)) or None,
     })
     for repo, it in staging_state.items():
         _logger.info(
