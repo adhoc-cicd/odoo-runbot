@@ -24,7 +24,7 @@
   @return hsl(hue($value), saturation($value), 100% - lightness($value));
 }
 @mixin darkrules {
-    $ibc: invlight($body-color);
+    $ibc: #a8afb6;
     --body-color: #{$ibc};
     --body-color-rgb: #{to-rgb($ibc)};
     $ibg: $gray-900;
