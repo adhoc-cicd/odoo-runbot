@@ -122,3 +122,17 @@ a, .nav-link {
     background-color: oklch(from var(--dark) l c h / 0.1);
   }
 }
+
+// revert website editor gunk
+.navbar-light,
+.o_cc .dropdown-menu .dropdown-item,
+.o_cc .dropdown-menu .dropdown-item:hover,
+.navbar-light .dropdown-menu .dropdown-item,
+.navbar-light .dropdown-menu .dropdown-item:hover,
+.navbar-light .navbar-nav .nav-link,
+.navbar-light .navbar-nav .nav-link:hover,
+.navbar-light a:not(.btn),
+.navbar-light a:not(.btn):hover,
+{
+  color: inherit !important;
+}
