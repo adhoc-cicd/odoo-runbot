@@ -805,7 +805,7 @@ action = batches
     </template>
 
     <template id="print-batch">
-        <div t-if="not b.source_id">
+        <div t-if="not b.parent_id">
             <t t-out="b.name"/>
             created by <t t-out="', '.join('{0.display_name}'.format(a) for a in b.prs.author)"/>
             <t t-if="b.merge_date">
