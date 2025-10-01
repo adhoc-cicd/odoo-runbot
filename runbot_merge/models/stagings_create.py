@@ -329,9 +329,8 @@ def stage_batches(branch: Branch, batches: Batch, staging_state: StagingState) -
             break
         try:
             staged |= stage_batch(env, batch, staging_state)
-        except exceptions.Skip:
-            # skip silently because the PR will be retried on every staging
-            # which is going to be ultra spammy
+        except exceptions.Skip as e:
+            _logger.info("Skipping %s: %s", batch, e.args[0])
             pass
         except exceptions.MergeError as e:
             pr = e.args[0]
@@ -455,7 +454,9 @@ def stage(pr: PullRequests, info: StagingSlice, related_prs: PullRequests) -> Tu
     commits = prdict['commits']
     method: Method = pr.merge_method or ('rebase-ff' if commits == 1 else None)
     if prdict['mergeable'] is None:
-        raise exceptions.Skip()
+        raise exceptions.Skip(
+            f"{pr.display_name} mergeable_state={prdict['mergeable_state']!r}"
+        )
     if commits > 50 and method.startswith('rebase'):
         raise exceptions.Unmergeable(pr, "Rebasing 50 commits is too much.")
     if commits > 250:
