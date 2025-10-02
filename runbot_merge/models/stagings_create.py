@@ -453,10 +453,10 @@ def stage(pr: PullRequests, info: StagingSlice, related_prs: PullRequests) -> Tu
     _, prdict = info.gh.pr(pr.number)
     commits = prdict['commits']
     method: Method = pr.merge_method or ('rebase-ff' if commits == 1 else None)
-    if prdict['mergeable'] is None:
-        raise exceptions.Skip(
-            f"{pr.display_name} mergeable_state={prdict['mergeable_state']!r}"
-        )
+    # if prdict['mergeable'] is None:
+    #     raise exceptions.Skip(
+    #         f"{pr.display_name} mergeable_state={prdict['mergeable_state']!r}"
+    #     )
     if commits > 50 and method.startswith('rebase'):
         raise exceptions.Unmergeable(pr, "Rebasing 50 commits is too much.")
     if commits > 250:
