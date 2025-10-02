@@ -124,12 +124,12 @@ class GH(object):
             if _is_json(response):
                 body2 = pprint.pformat(response.json(), depth=4)
             elif response.encoding is not None:
-                body2 = response.text
+                body2 = utils.shorten(response.text, 400)
             else: # fallback: universal decoding & replace nonprintables
-                body2 = ''.join(
+                body2 = utils.shorten(''.join(
                     '\N{REPLACEMENT CHARACTER}' if unicodedata.category(c) == 'Cc' else c
                     for c in response.content.decode('iso-8859-1')
-                )
+                ), 400)
 
         logger.log(level, GH_LOG_PATTERN.format(
             # requests data
@@ -139,7 +139,7 @@ class GH(object):
             headers='\n'.join(
                 '\t%s: %s' % (h, v) for h, v in response.headers.items()
             ),
-            body2=utils.shorten(body2.strip(), 400)
+            body2=body2,
         ), extra=extra)
 
     def __call__(self, method, path, params=None, json=None, check=True):
