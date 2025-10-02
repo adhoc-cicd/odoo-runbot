@@ -168,7 +168,7 @@
                         <div t-if="ready" class="pr-listing pr-awaiting bg-warning">
                             <h5>Awaiting</h5>
                             <ul class="list-inline">
-                                <li t-foreach="ready" t-as="pr">
+                                <li t-foreach="ready.prioritized()" t-as="pr">
                                     <t t-call="runbot_merge.link-pr"/>
                                 </li>
                             </ul>

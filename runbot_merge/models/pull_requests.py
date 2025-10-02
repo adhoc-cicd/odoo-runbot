@@ -2218,6 +2218,13 @@ For your own safety I've ignored *everything in your entire comment*.
         except Exception:
             _logger.exception("Failed to create mail")
 
+    def prioritized(self):
+        return self.sorted(lambda p: (
+            *batch_key(p.batch_id),
+            p.repository.sequence,
+            p.repository.id,
+        ))
+
 
 def required_statuses(staging):
     # map of commit_oid: statuses
@@ -3222,4 +3229,4 @@ class FetchJob(models.Model):
                 self.env.cr.commit()
 
 
-from .stagings_create import is_mentioned, Message, try_staging
+from .stagings_create import is_mentioned, Message, try_staging, batch_key

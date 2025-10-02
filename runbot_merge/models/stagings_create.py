@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Mapping
+from datetime import datetime
 from difflib import Differ
 from operator import itemgetter
 from subprocess import CalledProcessError
@@ -60,7 +61,7 @@ def batch_key(batch: Batch) -> tuple:
         for idx, (val, _) in enumerate(batch._fields['priority'].selection)
         if val == batch.priority
     )
-    return -priority, batch.unblocked_at, batch.id
+    return -priority, batch.unblocked_at or datetime.max, batch.id
 
 def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Stagings]:
     """ Tries to create a staging if the current branch does not already
