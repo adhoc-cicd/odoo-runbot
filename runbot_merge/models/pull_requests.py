@@ -328,6 +328,11 @@ class Branch(models.Model):
         help="Currently running staging for the branch."
     )
     staging_ids = fields.One2many('runbot_merge.stagings', 'target')
+    latest_stagings = fields.One2many(
+        'runbot_merge.stagings',
+        compute='_compute_latest_stagings',
+            context={'active_test': False},
+    )
     split_ids = fields.One2many('runbot_merge.split', 'target')
 
     prs = fields.One2many('runbot_merge.pull_requests', 'target', domain=[('open', '=', True)])
@@ -376,6 +381,24 @@ class Branch(models.Model):
     def _compute_active_staging(self):
         for b in self:
             b.active_staging_id = b.with_context(active_test=True).staging_ids
+
+    @api.depends('staging_ids.staged_at')
+    def _compute_latest_stagings(self):
+        self.env.cr.execute("""
+        SELECT target, array_agg(id ORDER BY staged_at DESC)
+        FROM (
+            SELECT
+                id, target, staged_at,
+                row_number() OVER (PARTITION BY target ORDER BY staged_at DESC) as rn
+            FROM runbot_merge_stagings
+        ) as t
+        WHERE rn <= 12
+        GROUP BY target
+        """)
+        branch_to_stagings = dict(self.env.cr.fetchall())
+        Stagings = self.env['runbot_merge.stagings'].with_context(active_test=False)
+        for branch in self:
+            branch.latest_stagings = Stagings.browse(branch_to_stagings.get(branch.id, ()))
 
 
 class SplitOffWizard(models.TransientModel):

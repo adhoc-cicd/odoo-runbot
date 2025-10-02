@@ -35,6 +35,10 @@
         'web.assets_backend': [
             'runbot_merge/static/scss/runbot_merge_backend.scss',
         ],
+        'runbot_merge.assets': [
+            'runbot_merge/static/src/**/*.scss',
+            'runbot_merge/static/src/**/*.js',
+        ],
     },
     'post_load': 'enable_sentry',
     'pre_init_hook': '_check_citext',
