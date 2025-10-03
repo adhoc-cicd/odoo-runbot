@@ -330,7 +330,8 @@ def stage_batches(branch: Branch, batches: Batch, staging_state: StagingState) -
         try:
             staged |= stage_batch(env, batch, staging_state)
         except exceptions.Skip as e:
-            _logger.info("Skipping %s: %s", batch, e.args[0])
+            if e.args:
+                _logger.info("Skipping %s: %s", batch, e.args[0])
             pass
         except exceptions.MergeError as e:
             pr = e.args[0]
