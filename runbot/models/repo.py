@@ -523,9 +523,10 @@ class Repo(models.Model):
         cmd = ['git', '-C', self.path] + config_args + cmd
         return cmd
 
-    def _git(self, cmd, errors='strict'):
+    def _git(self, cmd, errors='strict', quiet=False):
         cmd = self._get_git_command(cmd, errors)
-        _logger.info("git command: %s", shlex.join(cmd))
+        if not quiet:
+            _logger.info("git command: %s", shlex.join(cmd))
         return subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode(errors=errors)
 
     def _fetch(self, sha):
@@ -546,7 +547,7 @@ class Repo(models.Model):
         """ Verify that a commit hash exists in the repo """
         self.ensure_one()
         try:
-            self._git(['cat-file', '-e', commit_hash])
+            self._git(['cat-file', '-e', commit_hash], quiet=True)
         except subprocess.CalledProcessError:
             return False
         return True
