@@ -983,7 +983,7 @@ class ConfigStep(models.Model):
         if target_builds:
             build._log('', 'Testing upgrade targeting %s' % ', '.join(target_builds.mapped('params_id.version_id.name')))
         if not target_builds:
-            build._log('_run_configure_upgrade', 'No reference build found with correct target in availables references, skipping. %s' % builds_references.mapped('params_id.version_id.name'), level='WARNING')
+            build._log('_run_configure_upgrade', 'No reference build found with correct target in availables references, skipping. %s' % builds_references.mapped('params_id.version_id.name'))
             end = True
         elif len(target_builds) > 1 and not self.upgrade_flat:
             for target_build in target_builds:
