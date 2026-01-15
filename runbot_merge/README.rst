@@ -81,7 +81,7 @@ A working sample file currently is:
     Assuming the sample works out of the box, you can just create a symlink to
     that sample file from the root::
 
-        ln -s runbot/odoo/addons/pylint.ini.sample pylint.ini
+        ln -s runbot/odoo/addons/pytest.ini.sample pytest.ini
 
     Although you may not want to do that if you need local changes e.g. remove
     the ``addopt`` because you want to change defaults or not use xdist
