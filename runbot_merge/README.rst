@@ -89,6 +89,23 @@ A working sample file currently is:
 
 .. [#pytest.ini] does it still?
 
+Dependencies
+''''''''''''
+
+Aside from Odoo's own dependencies (``odoo/requirements.txt`` plus a few more
+secrets hidden for fun) runbot_merge has a few requirements:
+
+- ``markdown``
+- ``mergiraf`` is an optional dependency but some tests check for it
+- ``sentry_sdk`` should be removed one day
+- ``pytest`` for running the test suite
+  With a few strongly recommended plugins, especially if using the sample file:
+  - ``pytest-timeout``
+  - ``pytest-xdist``
+  - ``pytest-sugar`` (not needed at all but provides nice options)
+- ``mitmproxy`` to test locally, probably easier to install globally
+- ``cssselect`` is used by the test suite
+
 Local testing
 -------------
 
@@ -114,6 +131,13 @@ Thus running the test suite locally requires:
   Dummy central has made local testing an infinitely better predictor of github
   behaviour, with new tests mostly working out of the box against github once
   they work against DC.
+
+.. warning::
+
+    Requests has its own CA bundle, so after setting up mitmproxy's CA you have
+    to make it use the system CA bundle via ``REQUESTS_CA_BUNDLE``. Assuming you're
+    using a ``.env`` file to configure your ``PYTHONPATH`` this is a fine location to
+    do that.
 
 Configuration
 '''''''''''''
