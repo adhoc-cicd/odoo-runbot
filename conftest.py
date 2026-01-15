@@ -637,7 +637,7 @@ def reviewer_admin(env, partners):
     })
 
 VARCHAR = "[0-9a-z_]|%[0-9a-f]{2}"
-VARNAME = f"(?:(?:{VARCHAR})(?:\.|{VARCHAR})*)"
+VARNAME = fr"(?:(?:{VARCHAR})(?:\.|{VARCHAR})*)"
 VARLIST = fr"{VARNAME}(?:\,{VARNAME})*"
 TEMPLATE = re.compile(fr'''
 \{{
