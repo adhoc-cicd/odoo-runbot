@@ -9,6 +9,7 @@ addopts = --dist worksteal
 filterwarnings =
     error::
     ignore::DeprecationWarning
+    ignore:pkg_resources:UserWarning
 ;; 15mn per test including setup as it can get stuck
 timeout=900
 ;; not sure it's necessary but doesn't seem harmful
