@@ -1688,7 +1688,7 @@ For your own safety I've ignored *everything in your entire comment*.
                     p.unstage("reopened by %s", writer.github_login or writer.name)
                 else:
                     p.unstage("updated by %s", writer.github_login or writer.name)
-            if self.project.staging_statuses or self.project.staging_rpc:
+            if self.project.staging_statuses:
                 c = self.env['runbot_merge.commit'].search([('sha', '=', newhead)])
                 self._validate(c.statuses)
             else:
@@ -2789,29 +2789,6 @@ class Stagings(models.Model):
             'res_model': st._name,
             'res_id': st.id,
         }
-
-    def post_status(self, sha, context, status, *, target_url=None, description=None):
-        if not self.env.user.has_group('runbot_merge.status'):
-            raise AccessError("You are not allowed to post a status.")
-
-        now = datetime.datetime.now().isoformat(timespec='seconds')
-        for s in self:
-            if not s.target.project_id.staging_rpc:
-                continue
-
-            if not any(h.sha == sha for h in s.head_ids):
-                raise ValueError(f"Staging {s.id} does not have the commit {sha}")
-
-            st = json.loads(s.statuses_cache)
-            st.setdefault(sha, {})[context] = {
-                'state': status,
-                'target_url': target_url,
-                'description': description,
-                'updated_at': now,
-            }
-            s.statuses_cache = json.dumps(st)
-
-        return True
 
     applicable_statuses = fields.Many2many(
         'runbot_merge.repository.status',

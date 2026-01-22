@@ -20,17 +20,15 @@ import odoo
 from utils import _simple_init, seen, matches, get_partner, Commit, pr_page, to_pr, part_of, ensure_one, read_tracking_value
 
 
-@pytest.fixture(autouse=True, params=["statuses", "rpc", "runbot"])
+@pytest.fixture(autouse=True, params=["statuses", "runbot"])
 def status_mode(request, env, project, repo, port, RepoType) -> Iterator[Literal["statuses", "rpc", "runbot"]]:
     """Hook in support for validation alternatives:
 
     - github statuses (default)
-    - rpc
     - runbot hook
 
-    The runbot hook is the only one which also affects the way PRs are validate
-    (rpc validates PRs via github statuses), as a result it can not persist
-    statuses on PRs when a HEAD changes.
+    The runbot hook is the only one which also affects the way PRs are validated,
+    as a result it can not persist statuses on PRs when a HEAD changes.
     """
     # apparently side_effect + wraps on unbound method don't work correctly,
     # the wrapped method does get called when returning DEFAULT but *the
@@ -38,25 +36,11 @@ def status_mode(request, env, project, repo, port, RepoType) -> Iterator[Literal
     post_status = RepoType.post_status
     match request.param:
         case "statuses":
-            project.write({"staging_rpc": False, "staging_statuses": True})
+            project.write({"staging_statuses": True})
             cm = contextlib.nullcontext()
 
-        case "rpc":
-            project.write({"staging_rpc": True, "staging_statuses": False})
-            env['res.users'].browse([env._uid]).write({
-                "groups_id": [(4, env.ref("runbot_merge.status").id, {})]
-            })
-            def _post_status(repo, ref, status, context='default', **kw):
-                if ref.startswith(('staging.', 'heads/staging.')):
-                    c = repo.commit(ref)
-                    branchname = ref.removeprefix('staging.').removeprefix('heads/staging.')
-                    env['runbot_merge.stagings'].search([('target.name', '=', branchname)])\
-                        .post_status(c.id, context, status, **kw)
-                else:
-                    post_status(repo, ref, status, context, **kw)
-            cm = mock.patch.object(RepoType, "post_status", _post_status)
         case "runbot":
-            project.write({"staging_rpc": False, "staging_statuses": False})
+            project.write({"staging_statuses": False})
             def _post_status(repo, ref, status, context='default', **kw):
                 if ref.startswith(('staging.', 'heads/staging.')):
                     branchname = ref.removeprefix('heads/').removeprefix('staging.')

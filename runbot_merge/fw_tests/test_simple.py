@@ -81,7 +81,6 @@ def make_basic(
             (0, 0, {'name': 'b', 'sequence': 80}),
             (0, 0, {'name': 'c', 'sequence': 60}),
         ],
-        'staging_rpc': False,
         'staging_statuses': staging_statuses,
     })
 
