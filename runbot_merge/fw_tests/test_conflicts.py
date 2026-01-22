@@ -181,9 +181,7 @@ def test_massive_conflict(env, config, make_repo):
     # - title: random.randbytes(20).hex() -> 40
     # -> 701 (!) files
 
-    files = []
-    while len(files) < 1500:
-        files.append(random.randbytes(10).hex())
+    files = [random.randbytes(10).hex() for _ in range(1500)]
 
     # region setup
     project = env['runbot_merge.project'].create({

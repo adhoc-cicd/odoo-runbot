@@ -1856,9 +1856,9 @@ For your own safety I've ignored *everything in your entire comment*.
         if h:
             sout = serr = ''
             if out.strip():
-                sout = f"\nstdout:\n```\n{out}\n```\n"
+                sout = f"\nstdout:\n```\n{utils.shorten(out, 8096, '\n[...]')}\n```\n"
             if err.strip():
-                serr = f"\nstderr:\n```\n{err}\n```\n"
+                serr = f"\nstderr:\n```\n{utils.shorten(err, 8069, '\n[...]')}\n```\n"
 
             lines = ''
             if len(hh) > 1:
