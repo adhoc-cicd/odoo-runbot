@@ -92,7 +92,6 @@ def git(directory: str) -> 'Repo':
     return Repo(directory, check=True)
 
 
-Self = TypeVar("Self", bound="Repo")
 StdOutValue = Union[bool, int, None, io.IOBase]
 class Repo:
     def __init__(self, directory: str, **config: object) -> None:
@@ -102,7 +101,7 @@ class Repo:
         self._params = ()
         self.runner = subprocess.run
 
-    def __getattr__(self, name: str) -> 'GitCommand':
+    def __getattr__(self, name: str) -> GitCommand:
         return GitCommand(self, name.replace('_', '-'))
 
     def _run(self, *args, **kwargs) -> subprocess.CompletedProcess:
@@ -121,7 +120,7 @@ class Repo:
                 _logger.error("git call error: %s", stream)
             raise
 
-    def stdout(self, flag: StdOutValue = True) -> Self:
+    def stdout(self, flag: StdOutValue = True) -> Repo:
         match flag:
             case True:
                 return self.with_config(stdout=subprocess.PIPE)
@@ -130,21 +129,21 @@ class Repo:
             case f:
                 return self.with_config(stdout=f)
 
-    def check(self, flag: bool) -> Self:
+    def check(self, flag: bool) -> Repo:
         return self.with_config(check=flag)
 
-    def with_config(self, **kw) -> Self:
+    def with_config(self, **kw) -> Repo:
         opts = {**self._config, **kw}
         r = Repo(self._directory, **opts)
         r._params = self._params
         return r
 
-    def with_params(self, *args) -> Self:
+    def with_params(self, *args) -> Repo:
         r = self.with_config()
         r._params = args
         return r
 
-    def clone(self, to: str, branch: Optional[str] = None) -> Self:
+    def clone(self, to: str, branch: Optional[str] = None) -> Repo:
         self._run(
             'clone',
             *([] if branch is None else ['-b', branch]),
@@ -362,7 +361,7 @@ class Repo:
 
         TODO: maybe extract the diff information compared to before they were removed? idk
         """
-        def rewriter(r: Self, f: str) -> str:
+        def rewriter(r: Repo, f: str) -> str:
             contents = r.cat_file("-p", f"{tree}:{f}").stdout
             return f"""\
 <<<\x3c<<< HEAD
