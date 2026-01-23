@@ -1983,7 +1983,7 @@ For your own safety I've ignored *everything in your entire comment*.
         logger.info("Fetched head of %s (%s)", root.display_name, root.head)
 
         try:
-            return None, root._cherry_pick(source, target_branch.name, target_head)
+            return None, root._cherry_pick(source, target_branch, target_head)
         except CherrypickError as e:
             h, out, err, commits = e.args
 
@@ -2064,7 +2064,7 @@ For your own safety I've ignored *everything in your entire comment*.
         commits = self.repository.github('fp_github_token').commits(self.number)
         logger.info(
             "%s: copy %s commits to %s (%s)%s",
-            self, len(commits), branch, head,
+            self, len(commits), branch.name, head,
             ''.join(
                 '\n- %s: %s' % (c['sha'], c['commit']['message'].splitlines()[0])
                 for c in commits
@@ -2077,6 +2077,8 @@ For your own safety I've ignored *everything in your entire comment*.
         )
         with contextlib.ExitStack() as atexit:
             project = self.repository.project_id
+
+            base = conf = conf.with_params('merge.renamelimit=0', 'merge.renames=copies')
             if project.use_mergiraf and shutil.which('mergiraf'):
                 attrs = atexit.enter_context(tempfile.NamedTemporaryFile(buffering=0))
                 attrs.write(b'* merge=mergiraf\n')
@@ -2089,19 +2091,24 @@ For your own safety I've ignored *everything in your entire comment*.
                     'merge.mergiraf.driver=mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L',
                     f'core.attributesfile={attrs.name}',
                 )
-            else:
-                conf = conf.with_params(
-                    'merge.renamelimit=0',
-                    'merge.renames=copies',
-                )
 
             for commit in commits:
                 commit_sha = commit['sha']
                 # merge-tree is a bit stupid and gets confused when the options
                 # follow the parameters
                 r = conf.merge_tree('--merge-base', commit['parents'][0]['sha'], head, commit_sha)
-                new_tree = r.stdout.decode().splitlines(keepends=False)[0]
-                if r.returncode:
+                if not r.stdout and conf is not base:
+                    _logger.warning(
+                        "mergiraf likely crashed cherrypicking %s into %s (at %s), reverting to normal merge",
+                        self.display_name,
+                        branch.name,
+                        commit_sha,
+                    )
+                    conf = base
+                    r = conf.merge_tree('--merge-base', commit['parents'][0]['sha'], head, commit_sha)
+
+                loglevel = logging.INFO
+                if r.returncode == 1:  # failure
                     # For merge-tree the stdout on conflict is of the form
                     #
                     # oid of toplevel tree
@@ -2112,33 +2119,30 @@ For your own safety I've ignored *everything in your entire comment*.
                     # to match cherrypick we only want the informational messages,
                     # so strip everything else
                     r.stdout = r.stdout.split(b'\n\n')[-1]
-                else:
+                elif r.returncode == 0:  # success
                     # By default cherry-pick fails if a non-empty commit becomes
                     # empty (--empty=stop), also it fails when cherrypicking already
                     # empty commits which I didn't think we prevented but clearly we
                     # do...?
+                    new_tree = r.stdout.decode().splitlines(keepends=False)[0]
                     parent_tree = conf.rev_parse(f'{head}^{{tree}}').stdout.decode().strip()
                     if parent_tree == new_tree:
                         r.returncode = 1
                         r.stdout = f"You are currently cherry-picking commit {commit_sha}.".encode()
                         r.stderr = b"The previous cherry-pick is now empty, possibly due to conflict resolution."
+                else:  # inflateInit, other crashes
+                    loglevel = logging.WARNING
 
-                logger.debug("Cherry-picked %s: %s\n%s\n%s", commit_sha, r.returncode, r.stdout.decode(), _clean_rename(r.stderr.decode()))
+                stdout = r.stdout.decode()
+                stderr = _clean_rename(r.stderr.decode())
+                logger.debug("Cherry-picked %s: %s\n%s\n%s", commit_sha, r.returncode, stdout, stderr)
                 if r.returncode: # pick failed, bail
-                    # try to log inflateInit: out of memory errors as warning, they
-                    # seem to return the status code 128 (nb: may not work anymore
-                    # with merge-tree, idk)
                     logger.log(
-                        logging.WARNING if r.returncode == 128 else logging.INFO,
+                        loglevel,
                         "forward-port of %s (%s) failed at %s",
                         self, self.display_name, commit_sha)
 
-                    raise CherrypickError(
-                        commit_sha,
-                        r.stdout.decode(),
-                        _clean_rename(r.stderr.decode()),
-                        commits
-                    )
+                    raise CherrypickError(commit_sha, stdout, stderr, commits)
                 # get the "git" commit object rather than the "github" commit resource
                 cc = conf.commit_tree(
                     tree=new_tree,

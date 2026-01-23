@@ -577,12 +577,15 @@ def server(
 
     CACHEDIR = tmp_path / 'cache'
     CACHEDIR.mkdir()
+    BINDIR = tmp_path / 'bin'
+    BINDIR.mkdir()
     subenv = {
         **os.environ,
         # stop putting garbage in the user dirs, and potentially creating conflicts
         # TODO: way to override this with macOS?
         'XDG_DATA_HOME': str(tmp_path / 'share'),
         'XDG_CACHE_HOME': str(CACHEDIR),
+        'PATH': str(BINDIR) + os.pathsep + os.environ['PATH'],
     }
     serverwide = 'base,web'
     if request.config.getoption('--export-traces', None):

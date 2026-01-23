@@ -538,7 +538,18 @@ def stage(pr: PullRequests, info: StagingSlice, related_prs: PullRequests) -> Tu
     pr_head_tree = pr_commits[-1]['commit']['tree']['sha']
 
     merge_base_tree = info.repo.get_tree(info.head)
-    new_head = fn(pr, info, pr_commits, related_prs=related_prs)
+    try:
+        new_head = fn(pr, info, pr_commits, related_prs=related_prs)
+    except git.MergeError as e:
+        if 'fatal: failure to merge' in str(e) and 'merge.mergiraf.name=mergiraf' in info.repo._params:
+            _logger.warning(
+                "mergiraf likely crashed staging %s, switching to default merge driver",
+                pr.display_name,
+            )
+            info_normal_merge = dataclasses.replace(info, repo=info.repo.with_params())
+            new_head = fn(pr, info_normal_merge, pr_commits, related_prs=related_prs)
+        else:
+            raise
     merge_head_tree = info.repo.get_tree(new_head)
 
     if pr_head_tree != pr_base_tree and merge_head_tree == merge_base_tree:

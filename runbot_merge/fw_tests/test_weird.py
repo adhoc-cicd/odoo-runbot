@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from utils import seen, Commit, to_pr, make_basic, prevent_unstaging, pr_page
+from utils import seen, Commit, to_pr, make_basic, prevent_unstaging, pr_page, matches
 
 
 def test_no_token(env, config, make_repo):
@@ -1476,3 +1476,123 @@ def test_merge_after_followup_closed(env, config, make_repo, users, delete_branc
 
     assert env['forwardport.batches'].search_count([]) == 0
     _pra_id, _prb_id, _prc_id = env['runbot_merge.pull_requests'].search([], order='number')
+
+
+def test_mergiraf_merge_crash(env, config, make_repo, users, tmp_path, server):
+    """If mergiraf crashes we should just merge normally (without mergiraf)
+    """
+    repo, _ = make_basic(env, config, make_repo, statuses='default')
+    project = env['runbot_merge.project'].search([])
+    mergiraf_path = tmp_path.joinpath("bin", "mergiraf")
+    mergiraf_path.write_text("""\
+#!/bin/sh
+
+kill -6 $$
+""")
+    mergiraf_path.chmod(0o500)
+    project.use_mergiraf = True
+    assert not project.warn_mergiraf
+    with repo:
+        m1, _ = repo.make_commits(
+            None,
+            Commit('initial', tree={'f.py': '''\
+def f():
+    a = 0
+    return a
+'''}),
+            Commit('second', tree={'f.py': '''\
+def f():
+    a = 1
+    return a
+'''}),
+            ref='heads/a',
+        )
+
+        [c2] = repo.make_commits(
+            m1,
+            Commit('other second', tree={'f.py': '''\
+def f():
+    b = 0
+    return b
+'''}),
+        )
+        pr = repo.make_pr(title='title', body='body', target='a', head=c2)
+        repo.post_status(pr.head, 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    # staging failure where this PR is the first candidate => pr is in error
+    assert to_pr(env, pr).state == 'error'
+    assert b'mergiraf likely crashed' in server[1]
+
+
+def test_mergiraf_fw_crash(env, config, make_repo, users, tmp_path, server):
+    """If mergiraf crashes we should just merge normally (without mergiraf)
+    """
+    repo, _ = make_basic(env, config, make_repo, statuses='default')
+    project = env['runbot_merge.project'].search([])
+    project.use_mergiraf = True
+    assert not project.warn_mergiraf
+    with repo:
+        m1, _ = repo.make_commits(
+            None,
+            Commit('initial', tree={'f.py': '''\
+def f():
+    a = 0
+    return a
+'''}),
+            Commit('second', tree={'f.py': '''\
+def f():
+    a = 1
+    return a
+'''}),
+            ref='heads/b',
+        )
+        repo.update_ref('heads/a', m1, force=True)
+
+        [c2] = repo.make_commits(
+            m1,
+            Commit('other second', tree={'f.py': '''\
+def f():
+    b = 0
+    return b
+'''}),
+        )
+        pr = repo.make_pr(title='title', body='body', target='a', head=c2)
+        repo.post_status(pr.head, 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    # now add a crashy mergiraf for forward-porting
+    mergiraf_path = tmp_path.joinpath("bin", "mergiraf")
+    mergiraf_path.write_text("""\
+#!/bin/sh
+
+kill -6 $$
+""")
+    mergiraf_path.chmod(0o500)
+    with repo:
+        repo.post_status('staging.a', 'success')
+    env.run_crons()
+    assert b'mergiraf likely crashed' in server[1]
+
+    pr_id = to_pr(env, pr)
+    assert pr_id.state == 'merged'
+    _, fw_id = env['runbot_merge.pull_requests'].search([], order='number')
+    assert fw_id.source_id == pr_id
+
+    assert repo.read_tree(repo.commit(fw_id.head)) == {
+        "f.py": matches("""\
+def f():
+<<<\x3c<<< $$
+    a = 1
+    return a
+||||||| $$
+    a = 0
+    return a
+=======
+    b = 0
+    return b
+>>>\x3e>>> $$
+""")
+    }
