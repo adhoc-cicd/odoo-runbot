@@ -1518,6 +1518,13 @@ For your own safety I've ignored *everything in your entire comment*.
 
         new = super().create(to_create)
         for pr in new:
+            # If an other PR was created off of the same branch and closed, delete the deleter
+            for remover in self.env['forwardport.branch_remover'].search([
+                ('pr_id.label', '=', pr.label),
+            ]):
+                if remover.pr_id.head == pr.head:
+                    remover.unlink()
+
             # FIXME: only if commit based?
             c = self.env['runbot_merge.commit'].search([('sha', '=', pr.head)])
             pr._validate(c.statuses)

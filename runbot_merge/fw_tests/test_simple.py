@@ -1237,8 +1237,7 @@ class TestBranchDeletion:
             other.get_ref('heads/abranch')
 
     def test_not_merged(self, env, config, make_basic):
-        """ The branches of PRs which are still open or have been closed (rather
-        than merged) should not get deleted
+        """ The branches of PRs which are still open should not get deleted, but closed ones should
         """
         prod, other = make_basic()
         a_ref = prod.commit('a').id
@@ -1281,6 +1280,50 @@ class TestBranchDeletion:
             other.get_ref('heads/bbranch')
         assert other.get_ref('heads/cbranch') == pr_heads[2]
         assert other.get_ref('heads/dbranch') == pr_heads[3]
+
+    def test_reused(self, env, config, make_basic):
+        """If a PR is closed then a new PR is created on the same branch, said branch should not be deleted
+        """
+        prod, other = make_basic()
+        with prod, other:
+            other.make_commits(prod.commit('a').id, Commit('c', tree={'0': '0'}), ref='heads/abranch')
+            pr1 = prod.make_pr(target='a', head=f'{other.owner}:abranch', title="a pr")
+        env.run_crons()
+
+        with prod:
+            pr1.close()
+        env.run_crons()
+
+        with prod:
+            pr2 = prod.make_pr(target='a', head=f'{other.owner}:abranch', title="a pr v2")
+        env.run_crons()
+        assert pr2.number != pr1.number, "we should have created a new PR"
+
+        env.run_crons('runbot_merge.remover', context={'forwardport_merged_before': FAKE_PREV_WEEK})
+
+        assert other.get_ref('heads/abranch') == to_pr(env, pr2).head
+
+    def test_updated(self, env, config, make_basic):
+        """If a PR is closed then its branch is updated, the branch should not be deleted
+        """
+        prod, other = make_basic()
+        with prod, other:
+            other.make_commits(prod.commit('a').id, Commit('c', tree={'0': '0'}), ref='heads/abranch')
+            pr1 = prod.make_pr(target='a', head=f'{other.owner}:abranch', title="a pr")
+        env.run_crons()
+
+        with prod:
+            pr1.close()
+        env.run_crons()
+
+        with other:
+            [c] = other.make_commits('abranch', Commit('d', tree={'0': '1'}), ref='heads/abranch', make=False)
+        env.run_crons()
+
+        env.run_crons('runbot_merge.remover', context={'forwardport_merged_before': FAKE_PREV_WEEK})
+
+        assert other.get_ref('heads/abranch') == c
+
 
 def sPeNgBaB(s):
     return ''.join(
