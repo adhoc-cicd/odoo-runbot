@@ -393,3 +393,61 @@ def test_apply_creation(env, project, repo, users, patch):
     assert HEAD.message == "[I18N] whop\n\nwhop whop"
     assert HEAD.author['name'] == "3 Discos Down"
     assert HEAD.author['email'] == "bar@example.org"
+
+def test_apply_empty(env, project, repo, users):
+    with repo:
+        [c] = repo.make_commits(None, Commit("x", tree={"a": "1"}), ref="heads/master", make=False)
+
+    p = env['runbot_merge.patch'].create({
+        'target': project.branch_ids.id,
+        'repository': project.repo_ids.id,
+        'patch': BASIC_UDIFF,
+    })
+
+    env.run_crons()
+
+    assert repo.read_tree(repo.commit('master')) == {'a': '1', }
+    assert not p.active
+    assert p.message_ids.mapped('body')[::-1] == [
+        '<p>Unstaged direct-application patch created</p>',
+        f"""\
+<p>Files to patch not found in {repo.name}:master (at {c}):</p>
+<ul>
+<li>b</li>
+</ul>\
+""",
+        '',
+    ]
+
+def test_apply_invalid_path(env, project, repo, users):
+    with repo:
+        [c] = repo.make_commits(None, Commit("x", tree={"a": "1\n"}), ref="heads/master", make=False)
+
+    p = env['runbot_merge.patch'].create({
+        'target': project.branch_ids.id,
+        'repository': project.repo_ids.id,
+        'patch': BASIC_UDIFF + """\
+diff --git a/a b/a
+index d00491fd7e5b..0cfbf08886fc 100644
+--- a/a
++++ b/a
+@@ -1,1 +1,1 @@
+-1
++2
+""",
+    })
+
+    env.run_crons()
+
+    assert repo.read_tree(repo.commit('master')) == {'a': '1\n', }
+    assert not p.active
+    assert p.message_ids.mapped('body')[::-1] == [
+        '<p>Unstaged direct-application patch created</p>',
+        f"""\
+<p>Files to patch not found in {repo.name}:master (at {c}):</p>
+<ul>
+<li>b</li>
+</ul>\
+""",
+        '',
+    ]

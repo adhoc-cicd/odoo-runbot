@@ -395,6 +395,23 @@ class Patch(models.Model):
         archiver = r.stdout(True).with_config(encoding=None)
         # if the parent is checked then we can't get rid of the kwarg and popen doesn't support it
         archiver._config.pop('check', None)
+
+        res = archiver.ls_tree('--name-only', parent, *read)
+        if res.returncode:
+            raise PatchFailure(res.stderr.decode())
+        if missing := read.difference(res.stdout.decode().splitlines(keepends=False)):
+            raise PatchFailure(Markup(
+                "<p>Files to patch not found in {}:{} (at {}):</p>\n<ul>\n{}</ul>"
+            ).format(
+                self.repository.name,
+                self.target.name,
+                parent,
+                Markup("").join(
+                    Markup("<li>{}</li>\n").format(p)
+                    for p in missing
+                )
+            ))
+
         archiver.runner = subprocess.Popen
         with contextlib.ExitStack() as stack,\
              tempfile.TemporaryDirectory() as tmpdir:
