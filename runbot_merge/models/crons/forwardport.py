@@ -250,7 +250,7 @@ class ForwardPortTasks(models.Model):
             if target != descendant.target:
                 self.env['runbot_merge.pull_requests.feedback'].create({
                     'repository': repository.id,
-                    'pull_request': source.id,
+                    'pull_request': source.number,
                     'token_field': 'fp_github_token',
                     'message': """\
 {pr.ping}unable to port this PR forwards due to inconsistency: goes from \
