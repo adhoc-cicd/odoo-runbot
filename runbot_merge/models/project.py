@@ -55,6 +55,14 @@ class Project(models.Model):
 
     batch_limit = fields.Integer(
         default=8, group_operator=None, help="Maximum number of PRs staged together")
+    lateness_limit = fields.Integer(
+        help="If set, how far back a PR can be and still be staged"
+             " (default=always staged), on large project when a PR is too old"
+             " it's increasingly likely that it will have logical (even if not"
+             " physical) conflicts with the target causing staging failures."
+             " WARNING: because in Odoo null ~ 0, the comparison is done via `<`"
+             " to support a strict \"PR must be up to date\" policy.",
+    )
 
     freeze_id = fields.Many2one('runbot_merge.project.freeze', compute='_compute_freeze')
     freeze_reminder = fields.Text()

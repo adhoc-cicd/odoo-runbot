@@ -45,6 +45,7 @@
                             <field name="ci_timeout"/>
                             <field name="batch_limit"/>
                             <field name="use_mergiraf"/>
+                            <field name="lateness_limit"/>
                         </group>
                     </group>
                     <group string="Forwardport Configuration">

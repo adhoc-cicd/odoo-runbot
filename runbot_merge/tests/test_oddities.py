@@ -489,3 +489,98 @@ error: failed to push some refs to 'https://github.com/{repo.name}'
         # not sure why the tracking values don't appear...
     ]
     assert project.branch_ids.staging_enabled is False
+
+def test_outdated_pr(env, project, repo, config, users):
+    """ If a PR is too old (in number of commits), skip staging it and send a
+    message.
+    """
+    project.lateness_limit = 1  # "require branches to be up to date before merging"
+
+    with repo:
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref="heads/master")
+
+        repo.make_commits(m, Commit('first', tree={'m1': 'c1'}), ref="heads/other1")
+        repo.make_commits(m, Commit('first', tree={'m2': 'c2'}), ref="heads/other2")
+        pr1 = repo.make_pr(target='master', head='other1')
+        repo.post_status(pr1.head, 'success')
+        pr1.post_comment('hansen r+', config['role_reviewer']['token'])
+
+        pr2 = repo.make_pr(target='master', head='other2')
+        repo.post_status(pr2.head, 'success')
+        pr2.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    pr1_id = to_pr(env, pr1)
+    pr2_id = to_pr(env, pr2)
+    assert pr1_id.staging_id
+    assert not pr2_id.staging_id
+
+    with repo:
+        repo.post_status('staging.master', 'success')
+    env.run_crons()
+
+    assert pr1_id.state == 'merged'
+    assert pr2_id.state == 'error'
+    assert pr2.comments == [
+        (users['reviewer'], "hansen r+"),
+        seen(env, pr2, users),
+        (users['user'], f"@{users['user']} @{users['reviewer']} this PR is too old to be staged, please rebase it."),
+    ]
+
+def test_not_outdated_pr(env, project, repo, config, users):
+    """ If a PR is too old (in number of commits), skip staging it and send a
+    message.
+    """
+    project.lateness_limit = 1  # "require branches to be up to date before merging"
+
+    with repo:
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref="heads/master")
+
+        repo.make_commits(m, Commit('first', tree={'m1': 'c1'}), ref="heads/other1")
+        repo.make_commits(m, Commit('first', tree={'m2': 'c2'}), ref="heads/other2")
+        pr1 = repo.make_pr(target='master', head='other1')
+        repo.post_status(pr1.head, 'success')
+        pr1.post_comment('hansen r+', config['role_reviewer']['token'])
+
+        pr2 = repo.make_pr(target='master', head='other2')
+        repo.post_status(pr2.head, 'success')
+        pr2.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    pr1_id = to_pr(env, pr1)
+    pr2_id = to_pr(env, pr2)
+    assert pr1_id.staging_id
+    assert not pr2_id.staging_id
+
+    with repo:
+        repo.post_status('staging.master', 'failure')
+    env.run_crons()
+
+    assert pr1_id.state == 'error'
+    assert pr2_id.staging_id
+
+def test_many_commits_is_not_late(env, project, repo, config, users):
+    project.lateness_limit = 2  # "require branches to be up to date before merging"
+
+    with repo:
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref="heads/master")
+
+        repo.make_commits(
+            m,
+            *(Commit(f'{i}', tree={'m1': f'c{i}'}) for i in range(100)),
+            ref="heads/other1",
+        )
+        pr1 = repo.make_pr(target='master', head='other1')
+        repo.post_status(pr1.head, 'success')
+        pr1.post_comment('hansen r+ merge', config['role_reviewer']['token'])
+
+        repo.make_commits(m, Commit('first', tree={'m2': 'c2'}), ref="heads/other2")
+        pr2 = repo.make_pr(target='master', head='other2')
+        repo.post_status(pr2.head, 'success')
+        pr2.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    pr1_id = to_pr(env, pr1)
+    pr2_id = to_pr(env, pr2)
+    assert pr1_id.staging_id
+    assert pr2_id.staging_id

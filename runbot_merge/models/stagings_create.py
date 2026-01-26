@@ -323,17 +323,56 @@ def staging_setup(
 
 def stage_batches(branch: Branch, batches: Batch, staging_state: StagingState) -> Stagings:
     batch_limit = branch.project_id.batch_limit
+    lateness = branch.project_id.lateness_limit
     env = branch.env
     staged = env['runbot_merge.batch']
     for batch in batches:
         if len(staged) >= batch_limit:
             break
+
+        if lateness:
+            skip = False
+            for pr in batch.prs:
+                st = staging_state[pr.repository]
+                r = st.repo.stdout().check(False).rev_list(
+                    '--count',
+                    '--first-parent',
+                    f"{pr.head}..{st.head}",
+                )
+                # something very wrong happened here
+                if r.returncode or not r.stdout:
+                    skip = True
+                    _logger.info("Skipping batch %s: git error\n%s", batch, r.stderr)
+                    pr.with_user(1).message_notify(
+                        body=f"Unable to count the commits between PR and {branch.name}:\n\n{r.stderr}",
+                        partner_ids=branch.env.ref('runbot_merge.group_admin').users.partner_id.ids,
+                    )
+                    break
+                elif int(r.stdout) >= lateness:
+                    skip = True
+                    _logger.info(
+                        "Skipping batch %s: %s is more than %d commits late (%d)",
+                        batch,
+                        pr.display_name,
+                        lateness,
+                        int(r.stdout),
+                    )
+                    if not staged:
+                        pr.error = True
+                        pr.env['runbot_merge.pull_requests.feedback'].create({
+                            'repository': pr.repository.id,
+                            'pull_request': pr.number,
+                            'message': f"{pr.ping}this PR is too old to be staged, please rebase it.",
+                        })
+                    break
+            if skip:
+                continue
+
         try:
             staged |= stage_batch(env, batch, staging_state)
         except exceptions.Skip as e:
             if e.args:
                 _logger.info("Skipping %s: %s", batch, e.args[0])
-            pass
         except exceptions.MergeError as e:
             pr = e.args[0]
             _logger.info("Failed to stage %s into %s", pr.display_name, branch.name)
