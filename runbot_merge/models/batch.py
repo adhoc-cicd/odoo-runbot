@@ -3,12 +3,14 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterator, Reversible
 
 import requests
+from markupsafe import Markup
 from psycopg2 import sql
 
 from odoo import models, fields, api
+from .pull_requests import ForwardPortError, PullRequests
 from .utils import enum
 from .. import git
 
@@ -327,8 +329,13 @@ class Batch(models.Model):
         for pr in prs:
             repo = git.get_local(pr.repository)
             conflicts[pr], head = pr._create_port_branch(repo, target, forward=True)
+            r = repo.check(False).push(git.fw_url(pr.repository), f"{head}:refs/heads/{new_branch}")
+            if r.returncode:
+                self._delete_fw_branches(conflicts.keys(), new_branch)
 
-            repo.push(git.fw_url(pr.repository), f"{head}:refs/heads/{new_branch}")
+                raise ForwardPortError(
+                    f"Unable to push forward-port branch for {pr.display_name}:\n{r.stderr.decode()}"
+                )
 
         gh = requests.Session()
         gh.headers['Authorization'] = 'token %s' % proj.fp_github_token
@@ -358,15 +365,9 @@ class Batch(models.Model):
             if not r.ok:
                 _logger.warning("Failed to create forward-port PR for %s, deleting branches", pr.display_name)
                 # delete all the branches this should automatically close the
-                # PRs if we've created any. Using the API here is probably
-                # simpler than going through the working copies
-                for repo in prs.mapped('repository'):
-                    d = gh.delete(f'https://api.github.com/repos/{repo.fp_remote_target}/git/refs/heads/{new_branch}')
-                    if d.ok:
-                        _logger.info("Deleting %s:%s=success", repo.fp_remote_target, new_branch)
-                    else:
-                        _logger.warning("Deleting %s:%s=%s", repo.fp_remote_target, new_branch, d.text)
-                raise RuntimeError(f"Forwardport failure: {pr.display_name} ({r.text})")
+                # PRs if we've created any.
+                self._delete_fw_branches(prs, new_branch)
+                raise ForwardPortError(f"Failed to create forward-port PR for {pr.display_name} ({r.text})")
 
             report_conflicts = has_conflicts and self.fw_policy != 'skipmerge'
             new_pr = PRs._from_gh(
@@ -413,6 +414,25 @@ class Batch(models.Model):
         # try to schedule followup
         new_batch._schedule_fp_followup()
         return new_batch
+
+    def _delete_fw_branches(self, previous_prs: Reversible[PullRequests], new_branch: str) -> None:
+        for pr in reversed(previous_prs):
+            r = git.get_local(pr.repository) \
+                .with_config(check=False) \
+                .push(git.fw_url(pr.repository), f":refs/heads/{new_branch}")
+            if r.returncode:
+                _logger.warning("Deleting %s:%s=%s", pr.repository.fp_remote_target, new_branch, r.stderr.decode())
+                self.with_context(mail_post_autofollow=True).message_post(
+                    body=Markup(
+                        "<p>Attempt to delete already pushed branches"
+                        " after port failure has also failed, this"
+                        " batch likely will not forward port without"
+                        " manual interventions.</p><pre>{}</pre>",
+                    ).format(r.stderr.decode()),
+                    partner_ids=self.env.ref("runbot_merge.group_admin").users.partner_id.ids,
+                )
+            else:
+                _logger.info("Deleting %s:%s=success", pr.repository.fp_remote_target, new_branch)
 
     def _schedule_fp_followup(self, *, force_fw=False):
         _logger = logging.getLogger(__name__).getChild('forwardport.next')
