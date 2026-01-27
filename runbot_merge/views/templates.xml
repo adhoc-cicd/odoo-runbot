@@ -224,7 +224,7 @@
                 </t>
                 <li t-attf-class="staging {{stateclass.strip()}} {{decorationclass.strip()}}" t-att-title="title.strip() or None">
                     <ul class="list-unstyled">
-                        <li t-foreach="staging.snapshot" t-as="batch" class="batch">
+                        <li t-foreach="staging.snapshot" t-as="batch" class="batch" t-att-data-batch-id="batch['id']">
                             <t t-out="batch['name']"/>
                             <t t-foreach="staging.env['runbot_merge.pull_requests'].browse(batch['prs'])" t-as="pr">
                                 <t t-call="runbot_merge.link-pr"/>

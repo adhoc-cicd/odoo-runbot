@@ -33,6 +33,29 @@ window.addEventListener("click", (e) => {
     }
 });
 
+window.addEventListener("mouseover", (e) => {
+    const batch = e.target.closest('li.batch');
+    if (!batch) return;
+    // Only trigger if coming from outside this batch
+    const related = e.relatedTarget;
+    if (!related || !batch.contains(related)) {
+        for (const b of document.querySelectorAll(`li.batch[data-batch-id="${batch.dataset.batchId}"]`)) {
+            b.style.outline = '1px dashed var(--body-color)';
+        }
+    }
+});
+window.addEventListener("mouseout", (e) => {
+    const batch = e.target.closest('li.batch');
+    if (!batch) return;
+    // Only trigger if leaving to outside this batch
+    const related = e.relatedTarget;
+    if (!related || !batch.contains(related)) {
+        for (const b of document.querySelectorAll(`li.batch[data-batch-id="${batch.dataset.batchId}"]`)) {
+            b.style.outline = '';
+        }
+    }
+});
+
 if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", (e) => {
         setColorScheme(window.localStorage.getItem('color-scheme'));
