@@ -324,9 +324,10 @@ class Patch(models.Model):
             except Exception as e:
                 if isinstance(e, PatchFailure):
                     subject = "Unable to apply patch"
+                    _logger.error("%s:\n%s", subject, e)
                 else:
                     subject = "Unknown error while trying to apply patch"
-                _logger.error("%s:\n%s", subject, str(e))
+                    _logger.exception("%s", subject)
                 patch.message_post(
                     subject=subject,
                     # hack in order to get a formatted message from line 320 but
@@ -379,7 +380,7 @@ class Patch(models.Model):
     def _apply_patch(self, r: git.Repo, parent: str) -> str:
         p = self._parse_patch()
         def reader(_r, f):
-            return pathlib.Path(tmpdir, f).read_text(encoding="utf-8")
+            return pathlib.Path(tmpdir, f).read_bytes()
 
         prefix = 0
         read = set()

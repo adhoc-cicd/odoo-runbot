@@ -323,21 +323,23 @@ class Repo:
             *itertools.chain.from_iterable(('-p', p) for p in parents),
         )
 
-    def update_tree(self, tree: str, files: Mapping[str, Callable[[Self, str], str]]) -> str:
-        # FIXME: either ignore or process binary files somehow (how does git show conflicts in binary files?)
-        repo = self.stdout().with_config(stderr=None, text=True, check=False, encoding="utf-8")
+    def update_tree(self, tree: str, files: Mapping[str, Callable[[Self, str], bytes | None]]) -> str:
+        repo = self.stdout().with_config(stderr=None, check=False, text=None, encoding=None)
         for f, c in files.items():
             new_contents = c(repo, f)
+            if new_contents is None:
+                continue
+
             oid = repo \
                 .with_config(input=new_contents) \
                 .hash_object("-w", "--stdin", "--path", f) \
-                .stdout.strip()
+                .stdout.decode().strip()
 
             # we need to rewrite every tree from the parent of `f`
             while f:
                 f, _, local = f.rpartition("/")
                 # tree to update, `{tree}:` works as an alias for tree
-                lstree = repo.ls_tree(f"{tree}:{f}").stdout.splitlines(keepends=False)
+                lstree = repo.ls_tree(f"{tree}:{f}").stdout.decode().splitlines(keepends=False)
                 new_tree = []
                 seen = False
                 for mode, typ, sha, name in map(methodcaller("split", None, 3), lstree):
@@ -348,7 +350,7 @@ class Repo:
                     new_tree.append(f"{mode} {typ} {sha}\t{name}\n")
                 if not seen:
                     new_tree.append(f"100644 blob {oid}\t{local}\n")
-                oid = repo.with_config(input="".join(new_tree), check=True).mktree().stdout.strip()
+                oid = repo.with_config(input="".join(new_tree).encode(), check=True).mktree().stdout.decode().strip()
             tree = oid
         return tree
 
@@ -361,15 +363,19 @@ class Repo:
 
         TODO: maybe extract the diff information compared to before they were removed? idk
         """
-        def rewriter(r: Repo, f: str) -> str:
+        def rewriter(r: Repo, f: str) -> bytes | None:
             contents = r.cat_file("-p", f"{tree}:{f}").stdout
+            try:
+                text = contents.decode()
+            except UnicodeDecodeError:
+                return None
             return f"""\
 <<<\x3c<<< HEAD
 ||||||| MERGE BASE
 =======
-{contents}
+{text}
 >>>\x3e>>> FORWARD PORTED
-"""
+""".encode()
         return self.update_tree(tree, dict.fromkeys(files, rewriter))
 
 

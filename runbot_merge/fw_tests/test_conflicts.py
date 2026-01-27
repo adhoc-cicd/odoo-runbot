@@ -328,6 +328,47 @@ xxx
     }
     assert pr1.state == 'opened', "state should be open still"
 
+def test_conflict_deleted_binary(env, config, make_repo):
+    """A modify/deleted conflict on a binary file should result in normal
+    git behaviour of having the deleted file "reappear", as there are no
+    conflict markers for binary files.
+    """
+    prod, _other = make_basic(env, config, make_repo, statuses="default")
+    # remove f from b
+    with prod:
+        prod.make_commits(
+            'b', Commit('33', tree={'g': 'c'}, reset=True),
+            ref='heads/b'
+        )
+
+    # generate a conflict: update f in a
+    with prod:
+        [p_0] = prod.make_commits(
+            'a', Commit('p_0', tree={'f': b'\xc0\xc1'}),
+            ref='heads/conflicting'
+        )
+        pr = prod.make_pr(target='a', head='conflicting')
+        prod.post_status(p_0, 'success')
+        pr.post_comment('hansen r+', config['role_reviewer']['token'])
+
+    env.run_crons()
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    # should have created a new PR
+    pr0, pr1 = env['runbot_merge.pull_requests'].search([], order='number')
+    # but it should not have a parent
+    assert not pr1.parent_id
+    assert pr1.source_id == pr0
+    assert prod.read_tree(prod.commit('b')) == {
+        'g': 'c',
+    }
+    assert pr1.state == 'opened'
+    assert prod.read_tree(prod.commit(pr1.head)) == {
+        'f': b'\xc0\xc1',
+        'g': 'c',
+    }
 
 def test_conflict_deleted_deep(env, config, make_repo):
     """ Same as the previous one but files are deeper than toplevel, and we only

@@ -919,7 +919,9 @@ class Repo:
                 case 'blob':
                     r = self._session.get(f'https://api.github.com/repos/{self.name}/git/blobs/{t["sha"]}')
                     assert 200 <= r.status_code < 300, r.text
-                    tree[t['path']] = base64.b64decode(r.json()['content']).decode()
+                    tree[t['path']] = base64.b64decode(r.json()['content'])
+                    with contextlib.suppress(UnicodeDecodeError):
+                        tree[t['path']] = tree[t['path']].decode()
                 case 'tree' if not recursive:
                     tree[t['path']] = t['sha']
 
@@ -975,11 +977,21 @@ class Repo:
             if commit.tree:
                 if commit.reset:
                     tree = None
+                tree_entries = []
+                for k, v in commit.tree.items():
+                    base_tree = {'path': k, 'mode': '100644', 'type': 'blob'}
+                    if isinstance(v, bytes):
+                        r = self._session.post(f"https://api.github.com/repos/{self.name}/git/blobs", json={
+                            "content": base64.b64encode(v).decode(),
+                            "encoding": "base64",
+                        })
+                        assert r.ok, r.text
+                        base_tree['sha'] = r.json()['sha']
+                    else:
+                        base_tree['content'] = v
+                    tree_entries.append(base_tree)
                 r = self._session.post(f'https://api.github.com/repos/{self.name}/git/trees', json={
-                    'tree': [
-                        {'path': k, 'mode': '100644', 'type': 'blob', 'content': v}
-                        for k, v in commit.tree.items()
-                    ],
+                    'tree': tree_entries,
                     'base_tree': tree
                 })
                 assert r.ok, r.text
