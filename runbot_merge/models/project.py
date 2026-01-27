@@ -254,6 +254,10 @@ class Project(models.Model):
         ]), order=reverse_order(Branches._order))
 
     def write(self, vals):
+        if ((vals.get('staging_enabled') is True and not all(self.mapped('staging_enabled')))
+         or (vals.get('active') is True and not all(self.mapped('active')))
+        ):
+            self.env.ref('runbot_merge.staging_cron')._trigger()
         # projects without an fw token can't have forward ports, thus don't need
         # intermediates or followups being checked for
         if fw_enabled := self.filtered('fp_github_token').with_context(active_test=False):
