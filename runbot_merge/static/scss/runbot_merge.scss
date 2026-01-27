@@ -34,26 +34,29 @@ html {
 
 // mergebot layouting
 .stagings {
-  display: flex;
-  align-items: stretch;
+  --pad1: 0.1em;
+  --pad2: 0.5em;
+  display: grid;
+  // min of a newspaper column + list item padding (desktop), or half the
+  // viewport width minus the page gutter (mobile)
+  grid-template-columns: #{"repeat(12, minmax( min(11pc + var(--pad1) + var(--pad2), 49vw - var(--gutter-x) * 0.5), 1fr))"};
+  grid-column-gap: 1px;
+  background-color: var(--border-color);
+  overflow: auto;
 
-  > li {
-    flex: 1;
-    // prevent content-based autosizing otherwise that's flex' starting point
-    width: 0;
-
-    padding: 0.1em 0.1em 0.1em 0.5em;
-
-    &:not(:last-child) {
-      border-right: 1px solid var(--border-color);
-    }
-  }
   .batch {
     // cut off branch names if they can't be line-wrapped and would break the
     // layout, works with flex to force all columns to be at the same size
     overflow: hidden;
     text-overflow: ellipsis;
+    padding: 0 var(--pad1) 0 var(--pad2);
 
+    &:first-child {
+      padding-top: var(--pad1);
+    }
+    &last-child {
+      padding-bottom: var(--pad1);
+    }
     &:not(:last-child) {
       border-bottom: 1px solid var(--border-color);
     }

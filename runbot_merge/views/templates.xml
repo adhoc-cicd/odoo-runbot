@@ -209,10 +209,6 @@
                     <t t-if="pending">bg-info</t>
                     <t t-if="not (success or failure or pending)">bg-gray-lighter</t>
                 </t>
-                <t t-set="decorationclass" >
-                    <t t-if="4 > staging_index >= 2">d-none d-md-block</t>
-                    <t t-if="staging_index >= 4">d-none d-lg-block</t>
-                </t>
                 <t t-set="title">
                     <t t-if="staging.state == 'success'"/>
                     <t t-else="">
@@ -222,7 +218,7 @@
                         /> at <t t-out="(staging.staging_end or staging.write_date).replace(microsecond=0)"/>Z
                     </t>
                 </t>
-                <li t-attf-class="staging {{stateclass.strip()}} {{decorationclass.strip()}}" t-att-title="title.strip() or None">
+                <li t-attf-class="staging {{stateclass.strip()}}" t-att-title="title.strip() or None">
                     <ul class="list-unstyled">
                         <li t-foreach="staging.snapshot" t-as="batch" class="batch" t-att-data-batch-id="batch['id']">
                             <t t-out="batch['name']"/>
