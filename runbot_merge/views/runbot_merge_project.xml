@@ -23,48 +23,51 @@
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Name"/></h1>
                     </div>
-                    <group>
-                        <group>
+                    <group col="8">
+                        <group colspan="2">
+                            <field name="active" widget="boolean_toggle"/>
+                        </group>
+                        <group colspan="2">
+                            <field name="staging_enabled" widget="boolean_toggle"/>
+                        </group>
+                        <group colspan="2">
                             <field name="github_prefix" string="bot name"/>
                         </group>
                     </group>
-                    <group>
-                        <group>
-                            <field name="github_token"/>
-                            <field name="github_name" readonly="0"
-                                   help="Identity when creating new commits, defaults to github name, falls back to login."/>
-                            <field name="github_email" readonly="0"
-                                   help="Identity when creating new commits, defaults to public email, falls back to primary email."/>
-                            <field name="staging_statuses" string="Validate via GH statuses"/>
-                        </group>
-                        <group>
-                            <field name="active" widget="boolean_toggle"/>
-                            <field name="staging_enabled" widget="boolean_toggle"/>
-                            <field name="staging_priority"/>
-                            <field name="uniquifier"/>
-                            <field name="ci_timeout"/>
-                            <field name="batch_limit"/>
-                            <field name="use_mergiraf"/>
-                            <field name="lateness_limit"/>
-                        </group>
-                    </group>
-                    <group string="Forwardport Configuration">
-                        <group>
-                            <field string="Token" name="fp_github_token"/>
-                        </group>
-                        <group>
-                            <field string="Bot Name" name="fp_github_name" readonly="0"/>
-                        </group>
-                    </group>
-
-                    <group class="oe_edit_only">
-                        <group colspan="4">
-                            <label for="freeze_reminder">
-                                Reminder to show after freeze
-                            </label>
-                            <field colspan="4" name="freeze_reminder" nolabel="1"/>
-                        </group>
-                    </group>
+                    <notebook>
+                        <page string="Configuration">
+                            <group>
+                                <group string="Mergebot">
+                                    <field string="token" name="github_token"/>
+                                    <field string="name" name="github_name" readonly="0"
+                                           help="Identity when creating new commits, defaults to github name, falls back to login."/>
+                                    <field name="github_email" readonly="0"
+                                           help="Identity when creating new commits, defaults to public email, falls back to primary email."/>
+                                </group>
+                                <group string="Forwardport">
+                                    <field string="token" name="fp_github_token"/>
+                                    <field string="name" name="fp_github_name" readonly="0"/>
+                                    <field string="Reminder to show after freeze" name="freeze_reminder"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Tunables" autofocus="autofocus">
+                            <group>
+                                <group>
+                                    <field name="staging_statuses" string="Validate via GH statuses" widget="boolean_toggle"/>
+                                    <field name="ci_timeout"/>
+                                    <field name="staging_priority"/>
+                                    <field name="batch_limit"/>
+                                </group>
+                                <group>
+                                    <field name="fw_nice" widget="boolean_toggle"/>
+                                    <field name="use_mergiraf" widget="boolean_toggle"/>
+                                    <field name="lateness_limit"/>
+                                    <field name="uniquifier" widget="boolean_toggle"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
 
                     <separator string="Repositories"/>
                     <field name="repo_ids">
