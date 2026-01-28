@@ -287,3 +287,30 @@ class PR(typing.Protocol):
 class Branch(typing.NamedTuple):
     repo: Repo
     branch: str
+
+def node(name, *children):
+    assert type(name) in (str, matches)
+    return name, frozenset(children)
+
+def log_to_node(log):
+    log = list(log)
+    nodes = {}
+    # check that all parents are present
+    ids = {c['sha'] for c in log}
+    parents = {p['sha'] for c in log for p in c['parents']}
+    missing = parents - ids
+    assert parents, "Didn't find %s in log" % missing
+
+    # github doesn't necessarily log topologically maybe?
+    todo = list(reversed(log))
+    while todo:
+        c = todo.pop(0)
+        if all(p['sha'] in nodes for p in c['parents']):
+            nodes[c['sha']] = (c['commit']['message'], frozenset(
+                nodes[p['sha']]
+                for p in c['parents']
+            ))
+        else:
+            todo.append(c)
+
+    return nodes[log[0]['sha']]
