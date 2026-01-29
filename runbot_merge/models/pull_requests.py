@@ -342,6 +342,13 @@ class Branch(models.Model):
 
     staging_enabled = fields.Boolean(default=True)
 
+    optimistic_staging_threshold = fields.Integer(
+        help="How many batches should be ready for the next staging to be created immediately",
+    )
+    presplit = fields.Boolean(
+        help="Pessimistically create splits alongside the staging",
+    )
+
     def _auto_init(self):
         res = super()._auto_init()
         tools.create_unique_index(

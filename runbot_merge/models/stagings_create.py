@@ -15,12 +15,12 @@ from datetime import datetime
 from difflib import Differ
 from operator import itemgetter
 from subprocess import CalledProcessError
-from typing import Dict, Union, Optional, Literal, Callable, Iterator, Tuple, List, TypeAlias
+from typing import Dict, Union, Optional, Literal, Callable, Iterator, Tuple, List, TypeAlias, Any
 
 from markupsafe import Markup
 from werkzeug.datastructures import Headers
 
-from odoo import api, models, fields, Command
+from odoo import api, models, fields, Command, addons
 from odoo.tools import OrderedSet, groupby, Reverse
 from .pull_requests import Branch, Stagings, PullRequests, Repository
 from .batch import Batch
@@ -127,21 +127,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
         return None
 
     original_heads, staging_state = staging_setup(branch, batches)
-
-    if branch.project_id.use_mergiraf and shutil.which('mergiraf'):
-        with tempfile.NamedTemporaryFile(buffering=0) as attrs:
-            attrs.write(b'* merge=mergiraf\n')
-            for conf in staging_state.values():
-                conf.repo = conf.repo.with_params(
-                    'merge.conflictStyle=diff3',
-                    'merge.mergiraf.name=mergiraf',
-                    'merge.mergiraf.driver=mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L',
-                    f'core.attributesfile={attrs.name}',
-                )
-            staged = stage_batches(branch, batches, staging_state)
-    else:
-        staged = stage_batches(branch, batches, staging_state)
-
+    staged = stage_batches(branch, batches, staging_state)
     if not staged:
         return None
 
@@ -251,8 +237,53 @@ For-Commit-Id: {it.head}
         f'{batch}[{batch.prs}]'
         for batch in staged
     ), st.target.name)
-    return st
 
+    if branch.presplit and len(staged) > 1:
+        _logger.info("Pre-splitting staging...")
+        midpoint = len(staged) // 2
+        for i, split in enumerate((staged[:midpoint], staged[midpoint:]), start=1):
+            # splits are staged on the same state as the original staging
+            staging_state_split = {
+                repo: dataclasses.replace(state, head=original_heads[repo])
+                for repo, state in staging_state.items()
+            }
+            # don't send error messages or anything
+            with contextlib.closing(branch.env.cr.savepoint()):
+                staged_split = stage_batches(branch, split, staging_state_split)
+            if not staged_split:
+                _logger.warning("Failed to stage presplit %d of %s")
+                break
+            if staged_split != split:
+                _logger.warning("Failed to fully stage presplit %d of %s", i, st)
+            for repo, it in staging_state_split.items():
+                r = it.repo.with_config(stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False) \
+                    .push('-f', git.source_url(repo), f'{it.head}:refs/heads/staging.{branch.name}.{i}')
+                if r.returncode:
+                    _logger.warning("Failed to push presplit %d of %s:\n%s", i, st, r.stderr)
+
+    # FIXME: optimistic / successor staging limitations
+    # - assumes (/ requires) that the heads of all prs in `batches` have been fetched
+    # - doesn't trigger on explicit restaging
+    # - doesn't trigger on `alone`
+    # - doesn't work with splits
+    if minready := branch.optimistic_staging_threshold:
+        # select the batches *following* the last-staged batch
+        idx = next((i for i, b in enumerate(batches, start=1) if b == staged[-1]), len(batches))
+        if len(leftovers := batches[idx:]) >= minready:
+            _logger.info("Staging successor...")
+            # don't send error messages or anything
+            with contextlib.closing(branch.env.cr.savepoint()):
+                staged = stage_batches(branch, leftovers, staging_state)
+            if not staged:
+                _logger.warning("Failed to stage successor of %s", st)
+            else:
+                for repo, it in staging_state.items():
+                    r = it.repo.with_config(stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False) \
+                        .push('-f', git.source_url(repo), f'{it.head}:refs/heads/staging.{branch.name}.3')
+                    if r.returncode:
+                        _logger.warning("Failed to push successor of %s:\n%s", st, r.stderr)
+
+    return st
 
 def ready_batches(for_branch: Branch) -> Tuple[bool, Batch]:
     env = for_branch.env
@@ -288,9 +319,8 @@ def staging_setup(
 ) -> Tuple[Dict[Repository, str], StagingState]:
     """Sets up the staging:
 
-    - stores baseline info
-    - creates tmp branch via gh API (to remove)
-    - generates working copy for each repository with the target branch
+    - stores baseline branch infos
+    - fetch the heads of all branches & PRs
     """
     by_repo: Mapping[Repository, List[PullRequests]] = \
         dict(groupby(batches.prs, lambda p: p.repository))
@@ -320,12 +350,26 @@ def staging_setup(
 
     return original_heads, staging_state
 
+def stage_batches(branch: Branch, batches: Batch | Any, staging_state: dict[Repository, StagingSlice]) -> Batch:
+    if branch.project_id.use_mergiraf and shutil.which('mergiraf'):
+        with tempfile.NamedTemporaryFile(buffering=0) as attrs:
+            attrs.write(b'* merge=mergiraf\n')
+            for conf in staging_state.values():
+                conf.repo = conf.repo.with_params(
+                    'merge.conflictStyle=diff3',
+                    'merge.mergiraf.name=mergiraf',
+                    'merge.mergiraf.driver=mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L',
+                    f'core.attributesfile={attrs.name}',
+                )
+            return _stage_batches(branch, batches, staging_state)
+    else:
+        return _stage_batches(branch, batches, staging_state)
 
-def stage_batches(branch: Branch, batches: Batch, staging_state: StagingState) -> Stagings:
+def _stage_batches(branch: Branch, batches: Batch, staging_state: StagingState) -> Batch:
     batch_limit = branch.project_id.batch_limit
     lateness = branch.project_id.lateness_limit
     env = branch.env
-    staged = env['runbot_merge.batch']
+    staged: Batch = env['runbot_merge.batch']
     for batch in batches:
         if len(staged) >= batch_limit:
             break
@@ -375,7 +419,7 @@ def stage_batches(branch: Branch, batches: Batch, staging_state: StagingState) -
                 _logger.info("Skipping %s: %s", batch, e.args[0])
         except exceptions.MergeError as e:
             pr = e.args[0]
-            _logger.info("Failed to stage %s into %s", pr.display_name, branch.name)
+            _logger.info("Failed to stage %s into %s: %s", pr.display_name, branch.name, e)
             pr._message_log(body=f"Failed to stage into {branch.name}: {e}")
             if not staged or isinstance(e, exceptions.Unmergeable):
                 if len(e.args) > 1 and e.args[1]:
@@ -422,7 +466,7 @@ def parse_refs_smart(read: Callable[[int], bytes]) -> Iterator[Tuple[str, str]]:
 UNCHECKABLE = ['merge_method', 'overrides', 'draft']
 
 
-def stage_batch(env: api.Environment, batch: Batch, staging: StagingState):
+def stage_batch(env: api.Environment, batch: Batch, staging: StagingState) -> Batch:
     """Stages the batch represented by the ``prs`` recordset, onto the
     current corresponding staging heads.
 

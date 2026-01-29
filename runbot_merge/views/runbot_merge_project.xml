@@ -90,6 +90,8 @@
                             <field name="name"/>
                             <field name="active" widget="boolean_toggle" options="{'autosave': false}"/>
                             <field name="staging_enabled" widget="boolean_toggle" options="{'autosave': false}"/>
+                            <field name="presplit" widget="boolean_toggle" options="{'autosave': false}"/>
+                            <field name="optimistic_staging_threshold"/>
                         </tree>
                     </field>
                 </sheet>

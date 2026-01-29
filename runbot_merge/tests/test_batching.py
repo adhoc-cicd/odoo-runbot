@@ -1,4 +1,5 @@
 import datetime
+import json
 
 import pytest
 
@@ -509,3 +510,75 @@ def test_staging_ci_failure_batch(env, repo, config):
         repo.post_status('staging.master', 'success')
     env.run_crons(None)
     assert pr2.state == 'merged'
+
+
+def test_presplit(env, project, repo, users, config):
+    """If presplitting is enabled for the branch, the mergebot should
+    immediately create two sub-stagings (1 and 2) with the relevant
+    PR stacks integrated.
+    """
+    project.branch_ids.presplit = True
+    with repo:
+        repo.make_commits(None, Commit("initial", tree={"a": "a"}), ref="heads/master")
+
+        _pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+        _pr(repo, 'PR2', [{'c': 'CCC'}, {'d': 'DDD'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+    env.run_crons()
+
+    with repo:
+        repo.post_status('staging.master', 'failure')
+        tree1 = repo.commit('staging.master.1').tree
+        tree2 = repo.commit('staging.master.2').tree
+    env.run_crons()
+
+    staging = env['runbot_merge.stagings'].search([])
+    assert staging.id == 2
+    assert repo.commit(staging.head_ids.sha).tree == tree1
+    with repo:
+        repo.post_status('staging.master', 'failure')
+    env.run_crons()
+
+    staging = env['runbot_merge.stagings'].search([])
+    assert staging.id == 3
+    assert repo.commit(staging.head_ids.sha).tree == tree2
+
+
+def test_prestage(env, project, repo, users, config):
+    """If prestaging is enabled, and the threshold is passed, the mergebot
+    should immediately create a sub-staging (3) for the still-available PRs
+    """
+    project.batch_limit = 1
+    project.branch_ids.optimistic_staging_threshold = 1
+    with repo:
+        repo.make_commits(None, Commit("initial", tree={"a": "a"}), ref="heads/master")
+
+        _pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+        _pr(repo, 'PR2', [{'c': 'CCC'}, {'d': 'DDD'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+    env.run_crons()
+
+    with repo:
+        repo.post_status('staging.master', 'success')
+        next_tree = repo.commit('staging.master.3').tree
+    env.run_crons()
+
+    staging = env['runbot_merge.stagings'].search([])
+    assert staging.id == 2
+    assert repo.commit(staging.head_ids.sha).tree == next_tree
+
+
+def test_not_prestage(env, project, repo, users, config):
+    project.batch_limit = 1
+    project.branch_ids.optimistic_staging_threshold = 2
+    with repo:
+        repo.make_commits(None, Commit("initial", tree={"a": "a"}), ref="heads/master")
+
+        _pr(repo, 'PR1', [{'a': 'AAA'}, {'b': 'BBB'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+        _pr(repo, 'PR2', [{'c': 'CCC'}, {'d': 'DDD'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+    env.run_crons()
+
+    with pytest.raises(AssertionError) as e:
+        repo.commit('staging.master.3')
+    # pytest assertion rewriting tacks the extra info to the user-provided
+    # assertion message, so we need to strip it
+    payload, _ = e.value.args[0].split('\n', 1)
+    assert json.loads(payload)['status'] == '404'
