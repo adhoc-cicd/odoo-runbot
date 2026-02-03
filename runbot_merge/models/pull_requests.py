@@ -584,6 +584,11 @@ class PullRequests(models.Model):
 
     detach_reason = fields.Char()
 
+    fw_reminder_ids = fields.One2many(
+        'runbot_merge.pull_requests.fw_reminder',
+        'source_id',
+    )
+
     _sql_constraints = [(
         'fw_constraint',
         'check(source_id is null or num_nonnulls(parent_id, detach_reason) = 1)',
@@ -1079,6 +1084,35 @@ For your own safety I've ignored *everything in your entire comment*.
                                 'pull_request': p.number,
                                 'message': m,
                             })
+                case commands.RemindMe(branch, message):
+                    project = self.repository.project_id
+                    if (branch_filter := self.repository.branch_filter) and branch_filter != '[]':
+                        domain = ast.literal_eval(branch_filter)
+                    else:
+                        domain = []
+                    target = self.env['runbot_merge.branch'].search([
+                        ('project_id', '=', project.id),
+                        ('name', '=', branch),
+                        *domain
+                    ])
+                    if not target:
+                        msg = f"unknown or invalid branch {branch!r}"
+                    elif target in (self.source_id or self).forwardport_ids.target:
+                        msg = f"pr is already ported to {branch!r}, I can't remind you for that"
+                    else:
+                        source = self.source_id or self
+                        if not author:
+                            author = self.env['res.partner'].create({
+                                'name': login,
+                                'github_login': login,
+                            })
+                        source.write({
+                            'fw_reminder_ids': [(0, 0, {
+                                'branch_id': target.id,
+                                'partner_id': author.id,
+                                'message': message,
+                            })]
+                        })
                 # NO!
                 case _:
                     msg = f"you can't {command}."
@@ -1208,11 +1242,11 @@ For your own safety I've ignored *everything in your entire comment*.
         if self.target == root.limit_id:
             return None
 
-        branches = root.target.project_id.with_context(active_test=False)._forward_port_ordered()
+        domain = []
         if (branch_filter := self.repository.branch_filter) and branch_filter != '[]':
-            branches = branches.filtered_domain(ast.literal_eval(branch_filter))
+            domain = ast.literal_eval(branch_filter)
+        branches = list(root.target.project_id.with_context(active_test=False)._forward_port_ordered(domain))
 
-        branches = list(branches)
         from_ = branches.index(self.target) + 1
         to_ = branches.index(root.limit_id) + 1 if root.limit_id else None
 
@@ -2463,6 +2497,17 @@ class FeedbackTemplate(models.Model):
         except Exception:
             _logger.exception("Failed to render template %s", self.get_external_id())
             raise
+
+
+class FwReminders(models.Model):
+    _name = 'runbot_merge.pull_requests.fw_reminder'
+    _description = "Forward-port reminders"
+    _order = 'id'
+
+    branch_id = fields.Many2one('runbot_merge.branch', required=True, index=True)
+    source_id = fields.Many2one('runbot_merge.pull_requests', required=True, index=True)
+    partner_id = fields.Many2one('res.partner', required=True)
+    message = fields.Char(required=True)
 
 
 class StagingCommits(models.Model):

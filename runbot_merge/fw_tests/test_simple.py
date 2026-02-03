@@ -8,6 +8,7 @@ import time
 import typing
 from collections.abc import Iterator
 from datetime import datetime, timedelta
+from operator import attrgetter
 from unittest import mock
 from urllib.parse import quote
 
@@ -1384,3 +1385,71 @@ class TestRecognizeCommands:
         with repo:
             pr.post_comment(f'{indent}@hansen up to a', config['role_reviewer']['token'])
         assert pr_id.limit_id == a
+
+def test_reminders(env, config, users, make_basic):
+    prod, _ = make_basic()
+    with prod:
+        prod.make_commits('a', Commit('c', tree={'x': '0'}), ref='heads/hugechange')
+        pra = prod.make_pr(target='a', head='hugechange')
+        prod.post_status(pra.head, 'success')
+        pra.post_comment('hansen remindme:b=firstmessage remindme:c="second message"', config['role_other']['token'])
+        pra.post_comment('hansen r+ rebase-ff', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with prod:
+        prod.post_status('staging.a', 'success')
+    env.run_crons()
+
+    branches = env['runbot_merge.branch'].search([], order='name')
+    pra_id = to_pr(env, pra)
+    assert pra_id.state == 'merged'
+    assert pra_id.fw_reminder_ids.mapped(attrgetter('partner_id.name', 'branch_id', 'message')) == [
+        (users['other'], branches[1], "firstmessage"),
+        (users['other'], branches[2], "second message"),
+    ]
+
+    prb_id = pra_id.forwardport_ids
+    prb = prod.get_pr(prb_id.number)
+    with prod:
+        prod.post_status(prb.head, 'success')
+        prb.post_comment('hansen remindme:b="initial message"', config['role_self_reviewer']['token'])
+        prb.post_comment("hansen remindme:c='other message'", config['role_self_reviewer']['token'])
+        prb.post_comment("hansen remindme:x='some message'", config['role_self_reviewer']['token'])
+    env.run_crons()
+
+    assert pra_id.fw_reminder_ids.mapped(attrgetter('partner_id.name', 'branch_id', 'message')) == [
+        (users['other'], branches[1], "firstmessage"),
+        (users['other'], branches[2], "second message"),
+        (users['self_reviewer'], branches[2], "other message"),
+    ]
+    assert prb.comments == [
+        seen(env, prb, users),
+        (users['user'], """\
+This PR targets b and is part of the forward-port chain. Further PRs will be created up to c.
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+"""),
+        (users['user'], f"@{users['other']} firstmessage"),
+        (users['self_reviewer'], 'hansen remindme:b="initial message"'),
+        (users['self_reviewer'], "hansen remindme:c='other message'"),
+        (users['self_reviewer'], "hansen remindme:x='some message'"),
+        (users['user'], f"@{users['self_reviewer']} pr is already ported to 'b', I can't remind you for that"),
+        (users['user'], f"@{users['self_reviewer']} unknown or invalid branch 'x'"),
+    ]
+
+    prc_id = pra_id.forwardport_ids - prb_id
+    prc = prod.get_pr(prc_id.number)
+
+    assert prc.comments == [
+        seen(env, prc, users),
+        (users['user'], f"""\
+@{users['user']} @{users['reviewer']} this PR targets c and is the last of the forward-port chain containing:
+* {prb_id.display_name}
+
+To merge the full chain, use
+> @hansen r+
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+"""),
+        (users['user'], f'@{users['other']} second message\n@{users['self_reviewer']} other message'),
+    ]

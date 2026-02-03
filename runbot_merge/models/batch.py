@@ -395,6 +395,16 @@ class Batch(models.Model):
         for pr, new_pr in zip(prs, new_batch):
             new_pr._fp_conflict_feedback(pr, conflicts)
 
+            if messages := ((pr.source_id or pr).fw_reminder_ids.filtered(lambda r: r.branch_id == target)):
+                self.env['runbot_merge.pull_requests.feedback'].create({
+                    'repository': pr.repository.id,
+                    'pull_request': new_pr.number,
+                    'message': "\n".join(
+                        f"@{m.partner_id.github_login} {m.message}"
+                        for m in messages
+                    ),
+                })
+
             labels = ['forwardport']
             if has_conflicts:
                 labels.append('conflict')

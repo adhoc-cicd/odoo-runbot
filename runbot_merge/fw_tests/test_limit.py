@@ -279,6 +279,7 @@ Currently available commands:
 |`alone`|stages this PR only with other PRs of the same priority|
 |`cancel=staging`|automatically cancels the current staging when this PR becomes ready|
 |`check`|fetches or refreshes PR metadata, resets mergebot state|
+|`remindme:<branch>=<message>`|When the PR gets forward-ported to <branch>, ping you with <message>. <message> can be quoted if it needs spaces.|
 
 Note: this help text is dynamic and will change with the state of the PR.
 """.format_map(users)),

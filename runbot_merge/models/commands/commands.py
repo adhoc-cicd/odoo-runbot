@@ -6,21 +6,47 @@ from typing import List, Optional, Union, Tuple
 
 def tokenize(line: str) -> Iterator[str]:
     cur = ''
+    line = iter(line)
     for c in line:
-        if c == '-' and not cur:
-            yield '-'
-        elif c in ' \t+=,':
-            if cur:
-                yield cur
-            cur = ''
-            if not c.isspace():
-                yield c
-        else:
-            cur += c
+        match c:
+            case '"' | "'":
+                if cur:
+                    raise CommandError("Can't start a quoted string in the middle of a word")
+                yield parse_string(c, line)
+            case '-' if not cur:
+                yield '-'
+            case ' ' | '\t' | '+' | '=' | ','| ':':
+                if cur:
+                    yield cur
+                cur = ''
+                if not c.isspace():
+                    yield c
+            case _:
+                cur += c
 
     if cur:
         yield cur
 
+def parse_string(stop: str, it: Iterator[str]) -> str:
+    chars = ''
+    escape = False
+    for c in it:
+        match c:
+            case '\\' if escape:
+                escape = False
+            case '\\':
+                escape = True
+                continue
+            case c if escape:
+                # escape is only valid for stop chars
+                if c != stop:
+                    chars += '\\'
+            case c if c == stop:
+                break
+
+        chars += c
+
+    return "".join(chars)
 
 def normalize(it: Iterator[str]) -> Iterator[str]:
     """Converts shorthand tokens to expanded version
@@ -239,6 +265,23 @@ class Close:
         yield str(cls()), "closes this forward-port"
 
 
+@dataclass
+class RemindMe:
+    branch: str
+    message: str
+
+    def __str__(self) -> str:
+        return f"remindme:{self.branch}={self.message!r}"
+
+    @classmethod
+    def help(cls, _: Container[str]) -> Iterator[tuple[str, str]]:
+        yield (
+            'remindme:<branch>=<message>',
+            "When the PR gets forward-ported to <branch>, ping you with "
+            "<message>. <message> can be quoted if it needs spaces."
+        )
+
+
 class Help:
     def __str__(self) -> str:
         return 'help'
@@ -269,6 +312,7 @@ Command = Union[
     Override,
 
     Check,
+    RemindMe,
 ]
 
 
@@ -412,3 +456,13 @@ class Parser:
 
     def parse_help(self) -> Help:
         return Help()
+
+    def parse_remindme(self) -> RemindMe:
+        self.assert_next(':')
+        if not (branch := next(self.it, None)):
+            raise CommandError("please provide a branch to remind you on")
+        self.assert_next('=')
+        if not (message := next(self.it, None)):
+            raise CommandError("please provide a message to remind you of")
+
+        return RemindMe(branch, message)

@@ -347,6 +347,7 @@ Currently available commands for @{user}:
 {skip}\
 |`cancel=staging`|automatically cancels the current staging when this PR becomes ready|
 |`check`|fetches or refreshes PR metadata, resets mergebot state|
+|`remindme:<branch>=<message>`|When the PR gets forward-ported to <branch>, ping you with <message>. <message> can be quoted if it needs spaces.|
 
 Note: this help text is dynamic and will change with the state of the PR.\
 """
@@ -362,6 +363,7 @@ Currently available commands for @{user}:
 |`fw=default`|forward-ports this PR normally|
 |`up to <branch>`|only ports this PR forward to the specified branch (included)|
 |`check`|fetches or refreshes PR metadata, resets mergebot state|
+|`remindme:<branch>=<message>`|When the PR gets forward-ported to <branch>, ping you with <message>. <message> can be quoted if it needs spaces.|
 
 Note: this help text is dynamic and will change with the state of the PR.\
 """
@@ -371,6 +373,7 @@ Currently available commands for @{user}:
 |command||
 |-|-|
 |`help`|displays this help|
+|`remindme:<branch>=<message>`|When the PR gets forward-ported to <branch>, ping you with <message>. <message> can be quoted if it needs spaces.|
 
 Note: this help text is dynamic and will change with the state of the PR.\
 """
