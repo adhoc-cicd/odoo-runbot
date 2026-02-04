@@ -214,6 +214,21 @@ class CancelStaging:
         yield "cancel=staging", "automatically cancels the current staging when this PR becomes ready"
 
 
+class Reset(enum.Enum):
+    AUTO = enum.auto()
+    SPLITS = enum.auto()
+    STAGING = enum.auto()
+
+    def __str__(self) -> str:
+        return f'reset={self.name.lower()}'
+
+    @classmethod
+    def help(cls, _: Container[str]) -> Iterator[tuple[str, str]]:
+        yield str(cls.AUTO), "deletes splits and cancels staging if it didn't run too long"
+        yield str(cls.SPLITS), "deletes splits"
+        yield str(cls.STAGING), "deletes splits and cancels staging unconditionally"
+
+
 class SkipChecks:
     def __str__(self) -> str:
         return 'skipchecks'
@@ -305,6 +320,7 @@ Command = Union[
     MergeMethod,
     Delegate,
 
+    Reset,
     Priority,
     SkipChecks,
     CancelStaging,
@@ -466,3 +482,11 @@ class Parser:
             raise CommandError("please provide a message to remind you of")
 
         return RemindMe(branch, message)
+
+    def parse_reset(self) -> Reset:
+        self.assert_next('=')
+        f = next(self.it, '')
+        try:
+            return Reset[f.upper()]
+        except KeyError:
+            raise CommandError(f"unknown reset category {f or None!r}") from None

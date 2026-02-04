@@ -306,16 +306,21 @@ def test_help(env, repo, config, users, partners):
         (users['other'], "hansen help"),
         (users['reviewer'], "hansen r+ help"),
         (users['reviewer'], "hansen help"),
-        (users['user'], REVIEWER.format(user=users['reviewer'], skip="")),
+        (users['user'], REVIEWER.format(user=users['reviewer'], skip="", reset="")),
         (users['user'], RANDO.format(user=users['self_reviewer'])),
         (users['user'], AUTHOR.format(user=users['user'])),
         (users['user'], RANDO.format(user=users['other'])),
         (users['user'],
-         REVIEWER.format(user=users['reviewer'], skip='')
+         REVIEWER.format(user=users['reviewer'], skip='', reset='')
          + "\n\nWarning: in invoking help, every other command has been ignored."),
         (users['user'], REVIEWER.format(
             user=users['reviewer'],
             skip='|`skipchecks`|bypasses both statuses and review|\n',
+            reset="""\
+|`reset=auto`|deletes splits and cancels staging if it didn't run too long|
+|`reset=splits`|deletes splits|
+|`reset=staging`|deletes splits and cancels staging unconditionally|
+"""
         )),
     ]
 
@@ -340,6 +345,7 @@ Currently available commands for @{user}:
 |`squash`|squashes the PR as a single commit on the target branch, using the PR description as message|
 |`delegate+`|grants approval rights to the PR author|
 |`delegate=<...>`|grants approval rights on this PR to the specified github users|
+{reset}\
 |`nice`|only stages the PR if there's room in the batch after `default` PRs|
 |`default`|stages the PR normally|
 |`priority`|tries to stage this PR first, then adds `default` PRs if the staging has room|

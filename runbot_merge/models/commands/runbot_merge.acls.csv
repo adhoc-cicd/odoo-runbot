@@ -23,3 +23,6 @@ cancelstaging,CancelStaging,rel.is_admin,add,
 override,Override,rel.can_override,add,*
 check,Check,rel.is_author,add,
 remindme,RemindMe,"",add,
+reset-auto,Reset.AUTO,rel.super_admin,add,
+reset-staging,Reset.STAGING,rel.super_admin,add,
+reset-splits,Reset.SPLITS,rel.super_admin,add,

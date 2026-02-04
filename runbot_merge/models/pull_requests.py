@@ -11,6 +11,7 @@ import logging
 import operator
 import re
 import shutil
+import statistics
 import subprocess
 import tempfile
 import time
@@ -1045,8 +1046,6 @@ For your own safety I've ignored *everything in your entire comment*.
                                 message = "Forcing all forward ports."
                             else:
                                 message = "Not waiting for merge to create followup forward-ports."
-                        case _:
-                            msg = f"you don't have the right to {command}."
                     if message:
                         # TODO: feedback?
                         if self.source_id:
@@ -1113,6 +1112,35 @@ For your own safety I've ignored *everything in your entire comment*.
                                 'message': message,
                             })]
                         })
+                case commands.Reset():
+                    self.env['runbot_merge.split'].search([('target', '=', self.target.id)]).unlink()
+                    match command:
+                        case commands.Reset.SPLITS:
+                            continue
+                        case commands.Reset.AUTO:
+                            # heuristic: a staging which has run for more than
+                            # 40% of the average of the last 10 successful
+                            # stagings would be a waste of resources to cancel
+                            if latest_stagings := self.env['runbot_merge.stagings'].search([
+                                ('active', '=', False),
+                                ('target', '=', self.target.id),
+                                ('state', '=', 'success'),
+                            ], order='id desc', limit=10):
+                                d = statistics.mean(s.staging_duration for s in latest_stagings)
+                                print(
+                                    "\n\n\n",
+                                    latest_stagings,
+                                    "average", d,
+                                    "threshold", d * 0.4,
+                                    "current", self.target.active_staging_id.staging_duration,
+                                    "\n\n\n",
+                                    flush=True
+                                )
+                                if self.target.active_staging_id.staging_duration > (d * 0.4):
+                                    continue
+                        case commands.Reset.STAGING:
+                            pass
+                    self.target.active_staging_id.cancel("on %s by %s", self.display_name, login)
                 # NO!
                 case _:
                     msg = f"you can't {command}."
