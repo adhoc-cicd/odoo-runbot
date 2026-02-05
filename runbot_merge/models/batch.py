@@ -103,6 +103,7 @@ class Batch(models.Model):
     # partially detached so that's a PR-level concern)
     parent_path = fields.Char(index=True, unaccent=False)
     parent_id = fields.Many2one("runbot_merge.batch")
+    source = fields.Many2one("runbot_merge.batch", compute="_compute_source")
     genealogy_ids = fields.Many2many(
         "runbot_merge.batch",
         compute="_compute_genealogy",
@@ -114,9 +115,11 @@ class Batch(models.Model):
         for batch in self:
             batch.staging_ids = batch.batch_staging_ids.runbot_merge_stagings_id
 
-    @property
-    def source(self):
-        return self.browse(map(int, self.parent_path.split('/', 1)[:1]))
+    @api.depends('parent_path')
+    def _compute_source(self):
+        for b in self:
+            source_id, _sep, _rest = b.parent_path.partition('/')
+            b.source = self.browse(int(source_id))
 
     def descendants(self, include_self: bool = False) -> Iterator[Batch]:
         # in DB both will prefix-match on the literal prefix then apply a
