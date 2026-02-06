@@ -199,6 +199,7 @@
     <template id="stagings" name="mergebot branch stagings">
         <t t-set="repo_statuses" t-value="branch.project_id.repo_ids.having_branch(branch).status_ids"/>
         <ul class="list-unstyled stagings">
+            <t t-set="prefetch_ids" t-value="tuple(id for staging in branch.latest_stagings for batch in staging.snapshot for id in batch['prs'])"/>
             <t t-foreach="branch.latest_stagings" t-as="staging">
                 <t t-set="success" t-value="staging.state == 'success'"/>
                 <t t-set="failure" t-value="staging.state == 'failure'"/>
@@ -222,7 +223,7 @@
                     <ul class="list-unstyled">
                         <li t-foreach="staging.snapshot" t-as="batch" class="batch" t-att-data-batch-id="batch['id']">
                             <t t-out="batch['name']"/>
-                            <t t-foreach="staging.env['runbot_merge.pull_requests'].browse(batch['prs'])" t-as="pr">
+                            <t t-foreach="staging.env['runbot_merge.pull_requests'].browse(batch['prs']).with_prefetch(prefetch_ids)" t-as="pr">
                                 <t t-call="runbot_merge.link-pr"/>
                             </t>
                         </li>
