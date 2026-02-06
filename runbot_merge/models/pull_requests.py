@@ -2749,22 +2749,26 @@ class Stagings(models.Model):
         """ Fetches statuses associated with the various heads, returned as
         (repo, context, state, url)
         """
-        heads = {h.commit_id: h.repository_id for h in self.mapped('heads')}
-        all_heads = self.mapped('head_ids')
-
+        self.env.cr.execute("""
+        SELECT st.id, jsonb_agg(jsonb_build_array(r.name, coalesce(st.statuses_cache::json::jsonb->c.sha, '{}')))
+        FROM runbot_merge_stagings st
+        LEFT JOIN runbot_merge_stagings_heads head ON (head.staging_id = st.id)
+        LEFT JOIN runbot_merge_repository r ON (r.id = head.repository_id)
+        LEFT JOIN runbot_merge_commit c ON (c.id = head.commit_id)
+        WHERE st.id = any(%s)
+        GROUP BY st.id
+        """, [self.ids])
+        sys = dict(self.env.cr.fetchall())
         for st in self:
-            statuses = json.loads(st.statuses_cache)
-
-            commits = st.head_ids.with_prefetch(all_heads._prefetch_ids)
             st.statuses = [
                 Status(
-                    heads[commit].name,
+                    repo,
                     context,
                     status.get('state') or 'pending',
                     status.get('target_url') or ''
                 )
-                for commit in commits
-                for context, status in statuses.get(commit.sha, {}).items()
+                for repo, st in sys[st.id]
+                for context, status in st.items()
             ]
 
     @api.model_create_multi
