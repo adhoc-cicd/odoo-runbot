@@ -1,3 +1,4 @@
+/* region light/dark selector */
 function setColorScheme(t) {
     const classes = document.documentElement.classList;
     classes.remove('light', 'dark');
@@ -33,6 +34,17 @@ window.addEventListener("click", (e) => {
     }
 });
 
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", (e) => {
+        setColorScheme(window.localStorage.getItem('color-scheme'));
+    });
+} else {
+    setColorScheme(window.localStorage.getItem('color-scheme'));
+}
+
+/* endregion */
+
+/* region cross-staging batch highlighting */
 window.addEventListener("mouseover", (e) => {
     const batch = e.target.closest('li.batch');
     if (!batch) return;
@@ -55,11 +67,86 @@ window.addEventListener("mouseout", (e) => {
         }
     }
 });
+/* endregion */
 
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", (e) => {
-        setColorScheme(window.localStorage.getItem('color-scheme'));
-    });
-} else {
-    setColorScheme(window.localStorage.getItem('color-scheme'));
+/* region dropdowns */
+// If there's an open dropdown and we click outside the dropdown, close the dropdown.
+window.addEventListener("click", e => {
+    const dropdown = document.querySelector('details[name="dropdown"][open]');
+    if (dropdown && !dropdown.contains(e.target)) {
+        dropdown.removeAttribute('open');
+    }
+});
+
+window.addEventListener("click", e => {
+    const toggle = e.target.closest('a.dropdown-toggle');
+    if (toggle) {
+        toggle.classList.toggle('show');
+    } else {
+        const openToggle = document.querySelector('.dropdown-toggle.show');
+        if (openToggle) {
+            openToggle.classList.remove('show');
+        }
+    }
+});
+
+window.addEventListener("click", e => {
+    const title = e.target.tagName !== 'A' && e.target.closest('section>section>h2');
+    if (title) {
+        title.classList.toggle('fold');
+    }
+});
+
+/**
+ * Only implement flipping up if there's no space below, not the left/right
+ * toggling and sliding.
+ *
+ * TODO: use popper.js instead to get more flexible behaviour?
+ */
+function placeDropdown(details) {
+    const viewportHeight = document.documentElement.clientHeight;
+
+    const detailsRect = details.getBoundingClientRect();
+    const dropDown = details.querySelector(':scope > div');
+    const dropdownRect = dropDown.getBoundingClientRect()
+
+    // Amount of clipping in each direction (negative if dropdown is fully inside the viewport)
+    const clippingBottom = (detailsRect.bottom + dropdownRect.height) - viewportHeight;
+    // fastpath
+    if (clippingBottom <= 0 && !dropDown.style.inset) {
+        return;
+    }
+
+    const clippingTop = -(detailsRect.top - dropdownRect.height);
+    let inset;
+    if (clippingBottom <= 0 || clippingBottom <= clippingTop) {
+        inset = `${detailsRect.height}px auto auto 0`;
+    } else {
+        inset = `auto auto ${detailsRect.height}px 0`;
+    }
+    dropDown.style.inset = inset;
 }
+window.addEventListener("toggle", e => {
+    if (e.newState !== 'open') {
+        return;
+    }
+    if (!e.target.matches('details[name="dropdown"]')) {
+        return;
+    }
+
+    placeDropdown(e.target);
+}, {capture: true});
+
+window.addEventListener('scroll', _ => {
+    const openDetails = document.querySelector('details[name="dropdown"][open]');
+    if (openDetails) {
+        placeDropdown(openDetails);
+    }
+});
+window.addEventListener('resize', _ => {
+    const openDetails = document.querySelector('details[name="dropdown"][open]');
+    if (openDetails) {
+        placeDropdown(openDetails);
+    }
+});
+/* endregion */

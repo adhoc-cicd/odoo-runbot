@@ -38,7 +38,12 @@
             'runbot_merge/static/scss/runbot_merge_backend.scss',
         ],
         'runbot_merge.assets': [
-            'runbot_merge/static/src/**/*.scss',
+            'runbot_merge/static/src/**/*.js',
+        ],
+        'runbot_merge.assets_frontend': [
+            'web/static/src/libs/fontawesome/css/font-awesome.css',
+            'web/static/fonts/fonts.scss',
+            'runbot_merge/static/src/**/*.css',
             'runbot_merge/static/src/**/*.js',
         ],
     },

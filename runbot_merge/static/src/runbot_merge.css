@@ -1,0 +1,445 @@
+:root {
+    --color-background: light-dark(#f8f9fa, #212529);
+    --color-foreground: light-dark(#212529, #a8afb6);
+    /* temporary shims */
+    --light: var(--color-background);
+    --dark: var(--color-foreground);
+
+    --color-primary: light-dark(#276e72, #8dd4dd);
+    --bg-primary: light-dark(#ddedee, #0d3c3f);
+    --color-secondary: light-dark(#685563, #aa97a5);
+    --bg-secondary: light-dark(#e6e6e6, #301c2b);
+    --color-success: light-dark(#28a745, #58d775);
+    --bg-success: light-dark(#daf1df, #11441c);
+    --color-info: light-dark(#17a2b8, #47d2e8);
+    --bg-info: light-dark(#d6f1f5, #02404a);
+    --color-warning: light-dark(#ffc107, #f8ba00);
+    --bg-warning: light-dark(#fbf0d0, #4d3900);
+    --color-danger: light-dark(#dc3545, #ca2333);
+    --bg-danger: light-dark(#f2dede, #602020);
+
+    --bg-scale: -80%;
+    
+    --body-font-size: 0.875rem;
+    --body-line-height: 1.5;
+
+    --gutter-x: 30px;
+    --gutter-y: 0;
+
+    --body-color: var(--color-foreground);
+    --body-bg: var(--color-background);
+    --link-color: var(--color-primary);
+    --link-hover-color: color-mix(in oklch, var(--link-color), var(--color-foreground));
+    --border-color: color-mix(in oklch, var(--body-color) 30%, var(--body-bg));
+}
+
+/* region reset */
+:root {
+    font-family: "Odoo Unicode Support Noto", sans-serif;
+    font-size: var(--body-font-size);
+    line-height: var(--body-line-height);
+
+    color-scheme: dark light;
+    color: var(--body-color);
+    background-color: var(--body-bg);
+}
+/* sets the color scheme based on a userland (JS) toggle */
+:root.dark { color-scheme: dark; }
+:root.light { color-scheme: light; }
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    color: inherit;
+    font: inherit;
+
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    /* have the body take the entire viewport by default */
+    min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    text-wrap: balance;
+    margin-top: 0.66em;
+    margin-bottom: 0.33em;
+}
+h1 { font-size: 2.5rem; }
+h2 { font-size: 2rem; }
+h3 { font-size: 1.75rem; }
+h4 { font-size: 1.5rem; }
+
+ul, ol {
+    padding-left: 2rem;
+}
+ul, ol, dl {
+    margin-bottom: 1rem;
+}
+
+p, li, figcaption {
+    text-wrap: pretty;
+}
+
+button {
+    padding: 0.375rem 1rem;
+}
+
+/* FIXME: btn-link probably doesn't belong in the reset part? */
+a, .btn-link {
+    border: none;
+    display: inline-block;
+    background: inherit;
+
+    text-decoration: none;
+    color: var(--link-color);
+    &:hover, &:focus {
+        color: var(--link-hover-color);
+        text-decoration: underline;
+    }
+}
+/* endregion */
+
+/* region colors */
+.bg-success {
+    background-color: var(--bg-success);
+}
+.bg-warning {
+    background-color: var(--bg-warning);
+}
+.bg-info {
+    background-color: var(--bg-info);
+}
+.bg-danger {
+    background-color: var(--bg-danger);
+}
+
+.alert {
+    clear: both;
+    padding: 1rem;
+    border-radius: 0.25rem;
+
+    background-color: var(--bg-alert);
+    border: 1px solid color-mix(in srgb, var(--color-alert) 70%, var(--color-background));
+    color: color-mix(in srgb, var(--color-alert) 40%, var(--color-foreground));
+    --link-color: color-mix(in srgb, var(--color-alert) 40%, var(--color-foreground));
+
+    &.alert-light {
+        background-color: light-dark(#e5e6e6, #1a2633);
+        border: 1px solid light-dark(#f8f9fa, #050607);
+        color: color-mix(in srgb, var(--color-background) 40%, var(--color-foreground));
+    }
+    &.alert-primary {--bg-alert: var(--bg-primary);--color-alert: var(--color-primary);}
+    &.alert-success {--bg-alert: var(--bg-success);--color-alert: var(--color-success);}
+    &.alert-warning {--bg-alert: var(--bg-warning);--color-alert: var(--color-warning);}
+    &.alert-danger {--bg-alert: var(--bg-danger);--color-alert: var(--color-danger);}
+}
+/* endregion */
+
+main > section {
+    /*
+    fixme: apparently bootstrap sets x=30px, y=0 on .row, but then it also
+           sets a negative margin on the .row so it expands into the body,
+           and then it adds the gutter again (but the row's this time) onto
+           (some?) row elements
+    */
+    /*padding-right: var(--gutter-x, 15px);*/
+    /*padding-left: var(--gutter-x, 15px);*/
+    padding: 0 15px;
+}
+
+.pr-listing {
+    padding: 0;
+    margin: 0 0 10px;
+    & > * {
+        display: inline-block;
+    }
+    ul {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 10px;
+        & > li {
+            display: inline-block;
+            padding: 0 5px;
+        }
+    }
+}
+.splits {
+    background-color: var(--bg-warning);
+}
+.pr-awaiting {
+    opacity: 0.8;
+    background-color: var(--bg-warning);
+}
+.pr-blocked {
+    opacity: 0.6;
+    background-color: var(--bg-danger);
+}
+.pr-failed {
+    opacity: 0.9;
+    background-color: var(--bg-info);
+}
+
+nav {
+    ul {
+        list-style: none;
+        display: flex;
+        padding: 0;
+        margin: 1rem 0 0;
+        justify-content: center;
+    }
+    a {
+        padding: 0.5rem 1rem;
+    }
+}
+
+aside {
+    ul {
+        display: inline;
+        list-style: none;
+        padding: 0;
+        margin: 0 0 10px;
+
+        &>li {
+            display: inline-block;
+            padding: 0 5px;
+        }
+    }
+}
+
+header > nav {
+    padding: 0.5rem 2rem;
+
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+
+    ul {
+        margin: 0;
+        &.top_menu a {
+            color: inherit;
+        }
+        &.extras {
+            display: flex;
+            gap: 0.5rem;
+
+            color: #685563;
+            border-color: #685563;
+            &>li>a {
+                color: inherit;
+                /* sign in pseudo-button */
+                border: 1px solid;
+                border-radius: 0.25rem;
+                &:hover, &:active, &:focus {
+                    text-decoration: none;
+                    background-color: #685563;
+                    color: white;
+                    border-color: #685563;
+                }
+            }
+        }
+    }
+    .theme-toggle {
+        display: inline-flex;
+        button {
+            cursor: pointer;
+            background-color: transparent;
+            border-radius: 0;
+            border: 1px solid;
+            border-right: none;
+            &:hover, &.active {
+                background-color: #685563;;
+                color: white;
+                border-color: #685563;
+            }
+        }
+        button:first-child {
+            border-radius: 0.25rem 0 0 0.25rem;
+        }
+        button:last-child {
+            border-radius: 0 0.25rem 0.25rem 0;
+            border-right: 1px solid #685563;
+        }
+    }
+}
+
+/* region bs dropdown */
+.dropdown {
+    position: relative;
+
+    &>.dropdown-toggle {
+        border: 1px solid transparent;
+        &:after {
+            display: inline-block;
+            margin-left: 0.255em;
+            vertical-align: 0.255em;
+            content: "";
+            border-top: 0.3em solid;
+            border-right: 0.3em solid transparent;
+            border-bottom: 0;
+            border-left: 0.3em solid transparent;
+        }
+    }
+    &>.dropdown-menu {
+        display: none;
+        position: absolute;
+        color: var(--color-foreground);
+        background: var(--color-background);
+        min-width: 100%;
+        padding: 0.5rem 0;
+        margin: 0;
+        text-align: left;
+        border-radius: 0.25rem;
+    }
+    &>.dropdown-toggle.show+.dropdown-menu {
+        display: block;
+    }
+
+    .dropdown-item {
+        color: inherit;
+        display: block;
+        width: 100%;
+        padding: 0.25rem 1rem;
+        &:hover {
+            text-decoration: none;
+            background-color: oklch(from var(--color-foreground) l c h/0.1);
+        }
+    }
+}
+/* endregion */
+
+ul.stagings {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    --pad1: 0.1em;
+    --pad2: 0.5em;
+    display: grid;
+    /* min of a newspaper column + list item padding (desktop), or half the*/
+    /* viewport width minus the page gutter (mobile)*/
+    grid-template-columns: repeat(12, minmax( min(11pc + var(--pad1) + var(--pad2), 49vw - var(--gutter-x) * 0.5), 1fr));
+    grid-template-rows: repeat(2, auto);
+    grid-column-gap: 1px;
+    background-color: var(--border-color);
+    /*
+    This is Not Awesome, but apparently you can not combine auto in one
+    direction and visible in the other, so you can't have the dropdown
+    get out of the stagings at the bottom while having the stagings
+    horizontally scrollable (at least not without JS scrolling).
+     */
+    overflow-x: clip;
+
+    &>li.staging {
+        grid-template-rows: subgrid;
+        display: grid;
+        grid-row: 1/-1;
+
+        &>ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+
+            &>li.batch {
+                line-break: anywhere;
+                padding: 0 var(--pad1) 0 var(--pad2);
+
+                &:first-child {
+                  padding-top: var(--pad1);
+                }
+                &:last-child {
+                  padding-bottom: var(--pad1);
+                }
+                &:not(:last-child) {
+                  border-bottom: 1px solid var(--border-color);
+                }
+                & a:not(:last-of-type) a:after {
+                    content: ",";
+                }
+            }
+        }
+        &>details {
+            margin: 0.5em 0;
+            &>summary {
+                text-indent: 1em hanging;
+            }
+        }
+    }
+}
+
+/* region specific widgets */
+#alerts {
+    text-align: center;
+    &>*:first-child {
+        margin-top: 0.66em;
+    }
+    &>* {
+        margin-bottom: 0.33em;
+    }
+}
+
+details[name="dropdown"] {
+    position: relative;
+    &>summary {
+        padding: 0 var(--pad1, 0) 0 var(--pad2, 0);
+        cursor: pointer;
+        user-select: none;
+    }
+    &>div {
+        position: absolute;
+        z-index: 100;
+        max-height: 70vh;
+        min-width: 10rem;
+        overflow: auto;
+
+        color: var(--color-foreground);
+        background-color: var(--color-background);
+
+        padding: 0.5rem 0;
+        border: 1px solid transparent;
+        border-radius: 0.25rem;
+
+        /*inset: 100% 0 auto auto;*/
+
+        & > * {
+            display: block;
+            width: 100%;
+            padding: 0.25rem 1rem;
+            white-space: nowrap;
+            color: color-mix(in srgb, var(--link-color) 85%, var(--color-background));
+            &:hover {
+                color: color-mix(in srgb, var(--link-color), var(--color-foreground));
+            }
+        }
+    }
+}
+
+section > section {
+    &> h2 {
+        &:after {
+            display: inline-block;
+            margin-left: 0.255em;
+            vertical-align: middle;
+            content: "";
+            border-top: 0.3em solid;
+            border-right: 0.3em solid transparent;
+            border-bottom: 0;
+            border-left: 0.3em solid transparent;
+        }
+        &.fold:after {
+            border-top: 0.3em solid transparent;
+            border-right: 0;
+            border-bottom: 0.3em solid transparent;
+            border-left: 0.3em solid;
+        }
+    }
+    &>h2.fold+ul.stagings>li.staging>ul {
+        display: none;
+    }
+    &>h2.fold+ul.stagings~div {
+        display: none;
+    }
+}
+/* endregion */
