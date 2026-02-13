@@ -597,3 +597,42 @@ def test_many_commits_is_not_late(env, project, repo, config, users):
     pr2_id = to_pr(env, pr2)
     assert pr1_id.staging_id
     assert pr2_id.staging_id
+
+@pytest.mark.expect_log_errors(
+    reason="Trying to update a cron while running it fails with"
+           " lock_not_available",
+)
+def test_cron_xaccess(env):
+    """Because the run and the cron are in different transactions and the cron
+    transaction has an exclusive lock on the cron, a cron run can not disable
+    its cron.
+    """
+    cron = env['ir.cron'].create({
+        'name': "my cron",
+        'state': 'code',
+        'model_id': env.ref('runbot_merge.model_runbot_merge_pull_requests_feedback').id,
+        'numbercall': '-1',
+    })
+    cron.code = f"env['ir.cron'].browse({cron.id})['active'] = False"
+    assert cron.active
+    cron.trigger()
+    env.run_crons()
+    assert cron.active
+
+@pytest.mark.parametrize('code,active', [
+    ("env.context['deactivate'](True)", False),
+    ("env.context['deactivate'](False)", True),
+    ("pass", True),
+])
+def test_cron_autodisable(env, code, active):
+    cron = env['ir.cron'].create({
+        'name': "my cron",
+        'state': 'code',
+        'model_id': env.ref('runbot_merge.model_runbot_merge_pull_requests_feedback').id,
+        'numbercall': '-1',
+        'code': code,
+    })
+    assert cron.active
+    cron.trigger()
+    env.run_crons()
+    assert cron.active == active

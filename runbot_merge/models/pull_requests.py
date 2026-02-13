@@ -26,6 +26,7 @@ import sentry_sdk
 import werkzeug
 import werkzeug.urls
 from markupsafe import Markup
+from requests import HTTPError
 
 from odoo import api, fields, models, tools, Command
 from odoo.addons.base.controllers.rpc import OdooMarshaller
@@ -2489,7 +2490,14 @@ class Feedback(models.Model):
 
                 if message:
                     gh.comment(f.pull_request, message)
-            except Exception:
+            except Exception as e:
+                if isinstance(e, HTTPError) and e.response.status_code == 500:
+                    self.env.context.get('deactivate', lambda _: None)(True)
+                    self.env['mail.thread'].message_notify(
+                        f"Feedback cron failed with {str(e)}, cron has beeen disabled.",
+                        partner_ids=self.env.ref('runbot_merge.group_admin').users.partner_id.ids,
+                    )
+
                 _logger.exception(
                     "Error while trying to %s %s#%s (%s)",
                     'close' if f.close else 'send a comment to',
