@@ -2600,6 +2600,13 @@ class Commit(models.Model):
     """Represents a commit onto which statuses might be posted,
     independent of everything else as commits can be created by
     statuses only, by PR pushes, by branch updates, ...
+
+    Notes:
+
+    `commits` is a large table and `statuses` is by far its largest
+    fraction (currently averaging 850 bytes per, after toast compression),
+    but it's difficult to compress short of dropping status metadata
+    entirely, see commit message for more.
     """
     _name = _description = 'runbot_merge.commit'
     _rec_name = 'sha'
