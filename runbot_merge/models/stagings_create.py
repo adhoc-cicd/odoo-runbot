@@ -204,6 +204,19 @@ For-Commit-Id: {it.head}
         'parent_id': parent_id,
         'losses': list(originals - set(staged.ids)) or None,
     })
+
+    # push all the new objects first via the tmp branches
+    pushers = []
+    for repo, it in staging_state.items():
+        executor = it.repo.with_config(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        executor._config.pop('check', None)
+        executor.runner = subprocess.Popen
+        pid = executor.push('-f', git.source_url(repo), f'{it.head}:refs/heads/tmp.{branch.name}')
+        pushers.append(pid)
+    for pid in pushers:
+        pid.wait()
+
+    # then sync the staging refs (there might be a more efficient command than push but...)
     for repo, it in staging_state.items():
         _logger.info(
             "%s: create staging for %s:%s at %s",
