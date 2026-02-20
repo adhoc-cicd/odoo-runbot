@@ -1,14 +1,23 @@
 import contextvars
+import datetime
+import math
+import time
+from typing import Self, Literal
 
 from odoo import models
 
-
 deactivate = contextvars.ContextVar('deactivate', default=False)
+
 
 class IrCron(models.Model):
     _inherit = 'ir.cron'
 
-    def trigger(self):
+    def _trigger_coalesced(self, *, factor: int) -> Self:
+        at = datetime.datetime.fromtimestamp(
+            math.ceil(time.time() / factor))
+        return self._trigger(at)
+
+    def trigger(self) -> Literal[True]:
         self.check_access_rights('write')
         self._trigger()
         return True
