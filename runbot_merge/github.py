@@ -48,44 +48,64 @@ def _init_gh_logger():
 if odoo.netsvc._logger_init:
     _init_gh_logger()
 
-SimpleUser = TypedDict('SimpleUser', {
-    'login': str,
-    'url': str,
-    'type': Literal['User', 'Organization'],
-})
-Authorship = TypedDict('Authorship', {
-    'name': str,
-    'email': str,
-})
-CommitTree = TypedDict('CommitTree', {
-    'sha': str,
-    'url': str,
-})
-Commit = TypedDict('Commit', {
-    'tree': CommitTree,
-    'url': str,
-    'message': str,
+
+class SimpleUser(TypedDict):
+    login: str
+    url: str
+    type: Literal['User', 'Organization']
+
+
+class Authorship(TypedDict):
+    name: str
+    email: str
+
+
+class CommitTree(TypedDict):
+    sha: str
+    url: str
+
+
+class Commit(TypedDict):
+    tree: CommitTree
+    url: str
+    message: str
     # optional when creating a commit
-    'author': Authorship,
-    'committer': Authorship,
-    'comments_count': int,
-})
-CommitLink = TypedDict('CommitLink', {
-    'html_url': str,
-    'sha': str,
-    'url': str,
-})
-PrCommit = TypedDict('PrCommit', {
-    'url': str,
-    'sha': str,
-    'commit': Commit,
+    author: Authorship
+    committer: Authorship
+    comments_count: int
+
+
+class CommitLink(TypedDict):
+    html_url: str
+    sha: str
+    url: str
+
+
+class PrCommit(TypedDict):
+    url: str
+    sha: str
+    commit: Commit
     # optional when creating a commit (in which case it uses the current user)
-    'author': SimpleUser,
-    'committer': SimpleUser,
-    'parents': List[CommitLink],
+    author: SimpleUser
+    committer: SimpleUser
+    parents: List[CommitLink]
     # not actually true but we're smuggling stuff via that key
-    'new_tree': str,
-})
+    new_tree: str
+
+
+class Issue(TypedDict):
+    pass
+
+
+class Base(TypedDict):
+    label: str
+    ref: str
+    sha: str
+
+
+class PullRequest(TypedDict):
+    commits: int
+    base: Base
 
 
 GH_LOG_PATTERN = """=> {method} {path}{qs}{body}
@@ -319,7 +339,7 @@ class GH(object):
         return status
 
     # fetch various bits of issues / prs to load them
-    def pr(self, number):
+    def pr(self, number) -> tuple[Issue, PullRequest]:
         return (
             self('get', 'issues/{}'.format(number)).json(),
             self('get', 'pulls/{}'.format(number)).json()
