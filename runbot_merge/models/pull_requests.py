@@ -629,7 +629,7 @@ class PullRequests(models.Model):
             else:
                 contacts = pr.author | pr.reviewed_by
 
-            s = ' '.join(f'@{p.github_login}' for p in contacts)
+            s = ' '.join(f'@{p.github_login}' for p in contacts if p.github_login)
             pr.ping = s and (s + ' ')
 
     def _suppress_ping(self):
