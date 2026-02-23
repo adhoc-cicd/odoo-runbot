@@ -295,104 +295,92 @@
     </template>
     <template id="branch_stagings" name="mergebot stagings page">
         <t t-set="repo_statuses" t-value="branch.project_id.repo_ids.having_branch(branch).status_ids"/>
-        <t t-call="website.layout">
-            <div id="wrap"><div class="container-fluid">
-                <section class="row">
-                    <h1 class="col-md-12"><t t-esc="branch.project_id.name"/>: <t t-esc="branch.name"/></h1>
-                </section>
-                <form method="get">
-                    <label for="until">Staged before:</label>
-                    <input type="datetime-local" name="until" t-att-value="until"/>
-                    (UTC)
-                    <label for="state">State:</label>
-                    <select name="state">
-                        <option t-att-selected="'selected' if not state else None"/>
-                        <option t-att-selected="'selected' if state == 'success' else None" value="success">Success</option>
-                        <option t-att-selected="'selected' if state == 'failure' else None" value="failure">Failure</option>
-                    </select>
-                    <button type="submit">Apply</button>
-                </form>
-                <table>
-                    <t t-foreach="stagings" t-as="staging">
-                        <t t-set="success"
-                           t-value="staging.state == 'success'"/>
-                        <t t-set="failure"
-                           t-value="staging.state == 'failure'"/>
-                        <t t-set="pending"
-                           t-value="staging.active and (not staging.state or staging.state == 'pending')"/>
-                        <t t-set="stateclass">
-                            <t t-if="success">bg-success</t>
-                            <t t-if="failure">bg-danger</t>
-                            <t t-if="pending">bg-info</t>
-                            <t t-if="not (success or failure or pending)">
-                                bg-gray-lighter
-                            </t>
+        <t t-call="runbot_merge.layout">
+            <section>
+                <h1 class="col-md-12"><t t-esc="branch.project_id.name"/>: <t t-esc="branch.name"/></h1>
+            </section>
+            <form method="get">
+                <label for="until">Staged before:</label>
+                <input type="datetime-local" name="until" t-att-value="until"/>
+                (UTC)
+                <label for="state">State:</label>
+                <select name="state">
+                    <option t-att-selected="'selected' if not state else None"/>
+                    <option t-att-selected="'selected' if state == 'success' else None" value="success">Success</option>
+                    <option t-att-selected="'selected' if state == 'failure' else None" value="failure">Failure</option>
+                </select>
+                <button type="submit">Apply</button>
+            </form>
+            <table>
+                <t t-foreach="stagings" t-as="staging">
+                    <t t-set="success"
+                       t-value="staging.state == 'success'"/>
+                    <t t-set="failure"
+                       t-value="staging.state == 'failure'"/>
+                    <t t-set="pending"
+                       t-value="staging.active and (not staging.state or staging.state == 'pending')"/>
+                    <t t-set="stateclass">
+                        <t t-if="success">bg-success</t>
+                        <t t-if="failure">bg-danger</t>
+                        <t t-if="pending">bg-info</t>
+                        <t t-if="not (success or failure or pending)">
+                            bg-gray-lighter
                         </t>
-                        <t t-set="title">
-                            <t t-if="staging.state == 'ff_failed'">
-                                Fast Forward Failed
-                            </t>
-                            <t t-elif="staging.state == 'canceled'">
-                                Cancelled<t t-if="staging.reason">: <t t-out="staging.reason.replace('\'', '')"/></t>
-                            </t>
-                            <t t-else="">
-                                <t t-out="(staging.reason or '').replace('\'', '')"/>
-                            </t>
+                    </t>
+                    <t t-set="title">
+                        <t t-if="staging.state == 'ff_failed'">
+                            Fast Forward Failed
                         </t>
-                        <tr t-att-class="stateclass"
-                            style="border-bottom: 1px solid gainsboro; vertical-align: top">
-                            <th t-att-title="title.strip() or None">
-                                <t t-if="not staging.heads">
-                                    <span t-field="staging.staged_at"
-                                          t-options="{'format': 'yyyy-MM-dd\'T\'HH:mm:ssZ'}"/>
-                                </t>
-                                <t t-call="runbot_merge.staging-statuses">
-                                    <span t-field="staging.staged_at"
-                                          t-options="{'format': 'yyyy-MM-dd\'T\'HH:mm:ssZ'}"/>
-                                    in <span t-field="staging.staging_duration" t-options="{
-                                        'widget': 'duration',
-                                        'format': 'narrow',
-                                        'round': 'minute'
-                                    }"/>
-                                </t>
-                            </th>
-                            <td>
-                                <ul class="list-inline list-unstyled mb0">
-                                    <t t-foreach="staging.batch_ids"
-                                       t-as="batch">
-                                        <t t-set="first_pr"
-                                           t-value="batch.prs[-1:]"/>
-                                        <li class="dropdown" t-if="first_pr">
-                                            <button class="btn btn-link dropdown-toggle"
-                                                    type="button"
-                                                    aria-haspopup="true"
-                                                    data-bs-toggle="dropdown"
-                                                    aria-expanded="false"
-                                            >
-                                                <t t-esc="first_pr.label"/>
-                                                <span class="caret"></span>
-                                            </button>
-                                            <div class="dropdown-menu">
+                        <t t-elif="staging.state == 'canceled'">
+                            Cancelled<t t-if="staging.reason">: <t t-out="staging.reason.replace('\'', '')"/></t>
+                        </t>
+                        <t t-else="">
+                            <t t-out="(staging.reason or '').replace('\'', '')"/>
+                        </t>
+                    </t>
+                    <tr t-att-class="stateclass"
+                        style="border-bottom: 1px solid var(--color-foreground); vertical-align: top">
+                        <th t-att-title="title.strip() or None" style="white-space: nowrap">
+                            <t t-if="not staging.heads">
+                                <span t-field="staging.staged_at"
+                                      t-options="{'format': 'yyyy-MM-dd\'T\'HH:mm:ssZ'}"/>
+                            </t>
+                            <t t-call="runbot_merge.staging-statuses">
+                                <span t-field="staging.staged_at"
+                                      t-options="{'format': 'yyyy-MM-dd\'T\'HH:mm:ssZ'}"/>
+                                in <span t-field="staging.staging_duration" t-options="{
+                                    'widget': 'duration',
+                                    'format': 'narrow',
+                                    'round': 'minute'
+                                }"/>
+                            </t>
+                        </th>
+                        <td class="pr-listing">
+                            <ul class="list-inline list-unstyled mb0">
+                                <t t-foreach="staging.batch_ids" t-as="batch">
+                                    <li class="dropdown" t-if="batch.prs">
+                                        <details name="dropdown" style="padding: 0.25rem 1rem">
+                                            <summary t-out="batch.name"/>
+                                            <div>
                                                 <t t-foreach="batch.prs" t-as="pr">
                                                     <t t-call="runbot_merge.link-pr">
-                                                        <t t-set="target">new</t>
-                                                        <t t-set="classes">dropdown-item</t>
+                                                        <t t-set="target">_blank</t>
                                                     </t>
                                                 </t>
                                             </div>
-                                        </li>
-                                    </t>
-                                </ul>
-                            </td>
-                        </tr>
-                    </t>
-                </table>
-                <t t-if="next">
-                    <a t-attf-href="/runbot_merge/{{branch.id}}?until={{next}}&amp;state={{state}}">
-                        Next >
-                    </a>
+                                        </details>
+                                    </li>
+                                </t>
+                            </ul>
+                        </td>
+                    </tr>
                 </t>
-            </div></div>
+            </table>
+            <t t-if="next">
+                <a t-attf-href="/runbot_merge/{{branch.id}}?until={{next}}&amp;state={{state}}">
+                    Next >
+                </a>
+            </t>
         </t>
     </template>
     <template id="changelog" name="mergebot changelog">

@@ -61,6 +61,13 @@ body {
     min-height: 100vh;
 }
 
+table {
+    border-collapse: collapse;
+}
+th {
+    text-align: inherit;
+}
+
 h1, h2, h3, h4, h5, h6 {
     text-wrap: balance;
     margin-top: 0.66em;
