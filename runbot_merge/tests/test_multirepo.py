@@ -1004,6 +1004,7 @@ def test_urgent(env, repo_a, repo_b, config):
 
 class TestBlocked:
     def test_merge_method(self, env, repo_a, config):
+        env.ref('runbot_merge.cron_validate').active = False
         with repo_a:
             repo_a.make_commits(None, Commit('initial', tree={'a0': 'a'}), ref='heads/master')
 

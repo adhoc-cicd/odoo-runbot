@@ -1464,6 +1464,7 @@ commits, I need to know how to merge it:
 * `rebase-merge` to rebase and merge, using the PR as merge commit message
 * `rebase-ff` to rebase and fast-forward
 """.format_map(users)),
+            (users['user'], "@{user} @{reviewer} unable to stage: missing merge method".format_map(users)),
         ]
 
     def test_pr_method_no_review(self, repo, env, users, config):
@@ -2343,6 +2344,7 @@ class TestPRUpdate:
         put it in an error state as technically there's no error, just something
         which went a bit weird.
         """
+        env.ref('runbot_merge.cron_validate').active = False
         with repo:
             [c] = repo.make_commits(None, repo.Commit('m', tree={'a': '0'}), ref='heads/master')
             repo.make_ref('heads/somethingelse', c)

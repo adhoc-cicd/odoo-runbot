@@ -537,7 +537,7 @@ def test_outdated_pr(env, project, repo, config, users):
     assert pr2.comments == [
         (users['reviewer'], "hansen r+"),
         seen(env, pr2, users),
-        (users['user'], f"@{users['user']} @{users['reviewer']} this PR is too old to be staged, please rebase it."),
+        (users['user'], f"@{users['user']} @{users['reviewer']} unable to stage: too old (1 commits behind), please rebase."),
     ]
 
 def test_not_outdated_pr(env, project, repo, config, users):

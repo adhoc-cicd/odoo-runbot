@@ -205,6 +205,7 @@ class Batch(models.Model):
         "prs.status", "prs.reviewed_by", "prs.target",
     )
     def _compute_blocked(self):
+        Validator = self.env['runbot_merge.batch.validate']
         for batch in self:
             if batch.merge_date:
                 batch.blocked = "Merged."
@@ -238,9 +239,12 @@ class Batch(models.Model):
                             'unstaged by %s becoming ready',
                             ', '.join(batch.prs.mapped('display_name')),
                         )
+                    else:
+                        Validator.create({'batch_id': batch.id})
                 batch.blocked = False
                 continue
             batch.unblocked_at = False
+            Validator.search([('batch_id', '=', batch.id)]).unlink()
 
 
     def _port_forward(self):

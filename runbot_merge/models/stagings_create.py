@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import typing
 from collections.abc import Mapping
 from datetime import datetime
 from difflib import Differ
@@ -25,6 +26,7 @@ from odoo.tools import OrderedSet, groupby, Reverse
 from .pull_requests import Branch, Stagings, PullRequests, Repository
 from .batch import Batch
 from .. import exceptions, utils, github, git
+from ..github import PrCommit
 
 WAIT_FOR_VISIBILITY = [10, 10, 10, 10]
 _logger = logging.getLogger(__name__)
@@ -387,44 +389,6 @@ def _stage_batches(branch: Branch, batches: Batch, staging_state: StagingState) 
         if len(staged) >= batch_limit:
             break
 
-        if lateness:
-            skip = False
-            for pr in batch.prs:
-                st = staging_state[pr.repository]
-                r = st.repo.stdout().check(False).rev_list(
-                    '--count',
-                    '--first-parent',
-                    f"{pr.head}..{st.head}",
-                )
-                # something very wrong happened here
-                if r.returncode or not r.stdout:
-                    skip = True
-                    _logger.info("Skipping batch %s: git error\n%s", batch, r.stderr)
-                    pr.with_user(1).message_notify(
-                        body=f"Unable to count the commits between PR and {branch.name}:\n\n{r.stderr}",
-                        partner_ids=branch.env.ref('runbot_merge.group_admin').users.partner_id.ids,
-                    )
-                    break
-                elif int(r.stdout) >= lateness:
-                    skip = True
-                    _logger.info(
-                        "Skipping batch %s: %s is more than %d commits late (%d)",
-                        batch,
-                        pr.display_name,
-                        lateness,
-                        int(r.stdout),
-                    )
-                    if not staged:
-                        pr.error = True
-                        pr.env['runbot_merge.pull_requests.feedback'].create({
-                            'repository': pr.repository.id,
-                            'pull_request': pr.number,
-                            'message': f"{pr.ping}this PR is too old to be staged, please rebase it.",
-                        })
-                    break
-            if skip:
-                continue
-
         try:
             staged |= stage_batch(env, batch, staging_state)
         except exceptions.Skip as e:
@@ -547,72 +511,7 @@ def format_for_difflib(items: Iterator[Tuple[str, object]]) -> Iterator[str]:
 
 Method = Literal['merge', 'rebase-merge', 'rebase-ff', 'squash']
 def stage(pr: PullRequests, info: StagingSlice, related_prs: PullRequests) -> Tuple[Method, str]:
-    # nb: pr_commits is oldest to newest so pr.head is pr_commits[-1]
-    _, prdict = info.gh.pr(pr.number)
-    commits = prdict['commits']
-    method: Method = pr.merge_method or ('rebase-ff' if commits == 1 else None)
-    # if prdict['mergeable'] is None:
-    #     raise exceptions.Skip(
-    #         f"{pr.display_name} mergeable_state={prdict['mergeable_state']!r}"
-    #     )
-    if commits > 50 and method.startswith('rebase'):
-        raise exceptions.Unmergeable(pr, "Rebasing 50 commits is too much.")
-    if commits > 250:
-        raise exceptions.Unmergeable(
-            pr, "Merging PRs of 250 or more commits is not supported "
-                "(https://developer.github.com/v3/pulls/#list-commits-on-a-pull-request)"
-        )
-    pr_commits = info.gh.commits(pr.number)
-    for c in pr_commits:
-        if not (c['commit']['author']['email'] and c['commit']['committer']['email']):
-            raise exceptions.Unmergeable(
-                pr,
-                f"All commits must have author and committer email, "
-                f"missing email on {c['sha']} indicates the authorship is "
-                f"most likely incorrect."
-            )
-
-    # sync and signal possibly missed updates
-    invalid = {}
-    diff = []
-    pr_head = pr_commits[-1]['sha']
-    if pr.head != pr_head:
-        invalid['head'] = pr_head
-        diff.append(('Head', pr.head, pr_head))
-
-    if pr.target.name != prdict['base']['ref']:
-        branch = pr.env['runbot_merge.branch'].with_context(active_test=False).search([
-            ('name', '=', prdict['base']['ref']),
-            ('project_id', '=', pr.repository.project_id.id),
-        ])
-        if not branch:
-            pr.unlink()
-            raise exceptions.Unmergeable(pr, "While staging, found this PR had been retargeted to an un-managed branch.")
-        invalid['target'] = branch.id
-        diff.append(('Target branch', pr.target.name, branch.name))
-
-    if not method:
-        if not pr.method_warned:
-            pr.env.ref('runbot_merge.pr.merge_method')._send(
-                repository=pr.repository,
-                pull_request=pr.number,
-                format_args={'pr': pr, 'methods': ''.join(
-                    '* `%s` to %s\n' % pair
-                    for pair in type(pr).merge_method.selection
-                    if pair[0] != 'squash'
-                )},
-            )
-            pr.method_warned = True
-        raise exceptions.Skip()
-
-    msg = utils.make_message(prdict)
-    if pr.message != msg:
-        invalid['message'] = msg
-        diff.append(('Message', pr.message, msg))
-
-    if invalid:
-        pr.write({**invalid, 'reviewed_by': False, 'head': pr_head})
-        raise exceptions.Mismatch(invalid, diff)
+    method, pr_commits = validate_pr(pr, info)
 
     if pr.reviewed_by and pr.reviewed_by.name == pr.reviewed_by.github_login:
         # XXX: find other trigger(s) to sync github name?
@@ -702,6 +601,96 @@ query ($owner: String!, $name: String!, $pr: Int!) {
             if n['repository']['nameWithOwner'] == pr.repository.name
         )
     return method, new_head
+
+def validate_pr(pr: PullRequests, info: StagingSlice) -> tuple[Method, list[PrCommit]]:
+    if lateness := pr.target.project_id.lateness_limit:
+        st = info
+        r = st.repo.stdout().check(False).rev_list(
+            '--count',
+            '--first-parent',
+            f"{pr.head}..{st.head}",
+        )
+        # something very wrong happened here
+        if r.returncode or not r.stdout:
+            pr.with_user(1).message_notify(
+                body=f"Unable to count the commits between PR and {pr.target.name}:\n\n{r.stderr.decode()}",
+                partner_ids=pr.env.ref('runbot_merge.group_admin').users.partner_id.ids,
+            )
+            raise exceptions.Skip(f"git error\n{r.stderr.decode()}")
+        elif (count := int(r.stdout)) >= lateness:
+            raise exceptions.MergeError(
+                pr,
+                f"too old ({count} commits behind), please rebase.",
+                f"{count} commits behind, {lateness} is limit"
+            )
+
+    _, prdict = info.gh.pr(pr.number)
+    commits = prdict['commits']
+    method: Method = pr.merge_method or ('rebase-ff' if commits == 1 else None)
+    # if prdict['mergeable'] is None:
+    #     raise exceptions.Skip(
+    #         f"{pr.display_name} mergeable_state={prdict['mergeable_state']!r}"
+    #     )
+    if commits > 50 and method.startswith('rebase'):
+        raise exceptions.Unmergeable(pr, "Rebasing 50 commits is too much.")
+    if commits > 250:
+        raise exceptions.Unmergeable(
+            pr, "Merging PRs of 250 or more commits is not supported "
+                "(https://developer.github.com/v3/pulls/#list-commits-on-a-pull-request)"
+        )
+    # nb: pr_commits is oldest to newest so pr.head is pr_commits[-1]
+    pr_commits = info.gh.commits(pr.number)
+    for c in pr_commits:
+        if not (c['commit']['author']['email'] and c['commit']['committer']['email']):
+            raise exceptions.Unmergeable(
+                pr,
+                f"All commits must have author and committer email, "
+                f"missing email on {c['sha']} indicates the authorship is "
+                f"most likely incorrect."
+            )
+
+    # sync and signal possibly missed updates
+    invalid = {}
+    diff = []
+    pr_head = pr_commits[-1]['sha']
+    if pr.head != pr_head:
+        invalid['head'] = pr_head
+        diff.append(('Head', pr.head, pr_head))
+
+    if pr.target.name != prdict['base']['ref']:
+        branch = pr.env['runbot_merge.branch'].with_context(active_test=False).search([
+            ('name', '=', prdict['base']['ref']),
+            ('project_id', '=', pr.repository.project_id.id),
+        ])
+        if not branch:
+            pr.unlink()
+            raise exceptions.Unmergeable(pr, "While staging, found this PR had been retargeted to an un-managed branch.")
+        invalid['target'] = branch.id
+        diff.append(('Target branch', pr.target.name, branch.name))
+
+    if not method:
+        if not pr.method_warned:
+            pr.env.ref('runbot_merge.pr.merge_method')._send(
+                repository=pr.repository,
+                pull_request=pr.number,
+                format_args={'pr': pr, 'methods': ''.join(
+                    '* `%s` to %s\n' % pair
+                    for pair in type(pr).merge_method.selection
+                    if pair[0] != 'squash'
+                )},
+            )
+            pr.method_warned = True
+        raise exceptions.Skip(pr, "missing merge method")
+
+    msg = utils.make_message(prdict)
+    if pr.message != msg:
+        invalid['message'] = msg
+        diff.append(('Message', pr.message, msg))
+
+    if invalid:
+        pr.write({**invalid, 'reviewed_by': False, 'head': pr_head})
+        raise exceptions.Mismatch(invalid, diff)
+    return method, pr_commits
 
 def stage_squash(pr: PullRequests, info: StagingSlice, commits: List[github.PrCommit], related_prs: PullRequests) -> str:
     msg = pr._build_message(pr, related_prs=related_prs)

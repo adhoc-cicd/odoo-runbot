@@ -25,6 +25,7 @@
         'models/crons/forwardport_views.xml',
         'models/commands/runbot_merge.acls.csv',
         'models/commands/views.xml',
+        'models/crons/validate.xml',
     ],
     'assets': {
        'web._assets_primary_variables': [
