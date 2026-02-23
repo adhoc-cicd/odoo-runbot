@@ -22,7 +22,7 @@ class Partner(models.Model):
     _inherit = ['res.partner', 'mail.thread']
 
     email = fields.Char(index=True)
-    github_login = CIText()
+    github_login = CIText(tracking=True)
     delegate_reviewer = fields.Many2many('runbot_merge.pull_requests')
     formatted_email = fields.Char(string="commit email", compute='_rfc5322_formatted')
     review_rights = fields.One2many('res.partner.review', 'partner_id')
