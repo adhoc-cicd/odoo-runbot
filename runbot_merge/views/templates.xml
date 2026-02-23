@@ -31,13 +31,13 @@
                 <a groups="runbot_merge.group_admin"
                    class="dropdown-item" role="menuitem"
                    t-attf-href="/web#id={{staging.id}}&amp;view_type=form&amp;model=runbot_merge.stagings"
-                   target="new">
+                   target="_blank">
                     Open Staging
                 </a>
                 <t t-set="statuses" t-value="{(r, c): (s, t) for r, c, s, t in staging.statuses}"/>
                 <t t-foreach="repo_statuses._for_staging(staging)" t-as="req">
                     <t t-set="st" t-value="statuses.get((req.repo_id.name, req.context)) or (None, None)"/>
-                    <a t-att-href="st[1]" target="new" role="menuitem" t-attf-class="
+                    <a t-att-href="st[1]" target="_blank" role="menuitem" t-attf-class="
                             {{'bg-success' if st[0] == 'success'
                        else 'bg-danger' if st[0] in ('error', 'failure')
                        else 'bg-info' if st[0]

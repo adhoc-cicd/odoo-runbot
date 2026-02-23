@@ -126,15 +126,19 @@ function placeDropdown(details) {
     }
     dropDown.style.inset = inset;
 }
-window.addEventListener("toggle", e => {
-    if (e.newState !== 'open') {
-        return;
-    }
-    if (!e.target.matches('details[name="dropdown"]')) {
-        return;
-    }
 
-    placeDropdown(e.target);
+window.addEventListener("click", e => {
+    const summary = e.target.closest('summary');
+    const details = summary?.parentNode;
+    if (details && !details.hasAttribute('open') && details.getAttribute('name') === 'dropdown') {
+        summary.nextElementSibling.style.visibility = 'hidden';
+    }
+});
+window.addEventListener("toggle", e => {
+    if (e.newState === 'open' && e.target.matches('details[name="dropdown"]')) {
+        placeDropdown(e.target);
+    }
+    e.target.querySelector(':scope>div').style.visibility = '';
 }, {capture: true});
 
 window.addEventListener('scroll', _ => {
