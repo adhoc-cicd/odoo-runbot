@@ -958,14 +958,13 @@ class TestMultiBatches:
         assert st
         assert sp
 
-        assert len(st.batch_ids) == 2
+        assert len(st.batch_ids) == 3
         assert st.mapped('batch_ids.prs') == \
-            prs[0][0] | prs[0][1] | prs[1][1]
+            prs[0][0] | prs[0][1] | prs[1][1] | prs[2][0] | prs[2][1]
 
-        assert len(sp.batch_ids) == 3
+        assert len(sp.batch_ids) == 2
         assert sp.mapped('batch_ids.prs') == \
-            prs[2][0] | prs[2][1] | prs[3][0] | prs[3][1] | prs[4][0]
-
+             prs[3][0] | prs[3][1] | prs[4][0]
 @pytest.mark.usefixtures("reviewer_admin")
 def test_urgent(env, repo_a, repo_b, config):
     """ Either PR of a co-dependent pair being prioritised leads to the entire

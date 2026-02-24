@@ -8,6 +8,7 @@ import datetime
 import itertools
 import json
 import logging
+import math
 import operator
 import re
 import shutil
@@ -3039,7 +3040,7 @@ class Stagings(models.Model):
     def try_splitting(self):
         batches = len(self.batch_ids)
         if batches > 1:
-            midpoint = batches // 2
+            midpoint = math.ceil(batches / 2)
             h, t = self.batch_ids[:midpoint], self.batch_ids[midpoint:]
             # NB: batches remain attached to their original staging
             sh, st = self.env['runbot_merge.split'].create([{

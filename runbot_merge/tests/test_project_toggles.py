@@ -37,11 +37,11 @@ def test_disable_staging(env, project, repo, config):
 @pytest.mark.parametrize('mode,cutoff,second', [
     # default mode, the second staging is the first half of the first staging
     ('default', 2, [0]),
-    # splits are right-biased (the midpoint is rounded down), so for odd
-    # staging sizes the first split is the smaller one
-    ('default', 3, [0]),
+    # splits are left-biased (the midpoint is rounded up), so for odd
+    # staging sizes the first split is the larger one
+    ('default', 3, [0, 1]),
     # if the split results in ((1, 2), 1), largest stages the second
-    ('largest', 3, [1, 2]),
+    ('largest', 3, [0, 1]),
     # if the split results in ((1, 1), 2), largest stages the ready PRs
     ('largest', 2, [2, 3]),
     # even if it's a small minority, ready selects the ready PR(s)
