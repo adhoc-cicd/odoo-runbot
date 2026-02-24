@@ -582,3 +582,42 @@ def test_not_prestage(env, project, repo, users, config):
     # assertion message, so we need to strip it
     payload, _ = e.value.args[0].split('\n', 1)
     assert json.loads(payload)['status'] == '404'
+
+def test_split_depthfirst(env, project, repo, users, config):
+    project.branch_ids.depth_first_splits = True
+    with repo:
+        repo.make_commits(None, Commit('initial', tree={'a': 'a'}), ref='heads/master')
+
+        prs = [
+            _pr(repo, c, [{c: '1'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+            for c in "bcde"
+        ]
+    env.run_crons()
+
+    pr_ids = env['runbot_merge.pull_requests'].browse(
+        to_pr(env, p).id
+        for p in prs
+    )
+
+    assert all(p.staging_id for p in pr_ids)
+    with repo:
+        repo.post_status('staging.master', 'failure')
+    env.run_crons()
+
+    assert all(p.staging_id for p in pr_ids[:2])
+    assert all(not p.staging_id for p in pr_ids[2:])
+
+    with repo:
+        repo.post_status('staging.master', 'failure')
+    env.run_crons()
+
+    # should have re-staged the first PR, not the second child
+    assert pr_ids[0].staging_id, [p.staging_id for p in pr_ids]
+    assert all(not p.staging_id for p in pr_ids[1:])
+
+    with repo:
+        repo.post_status('staging.master', 'success')
+    env.run_crons()
+
+    assert pr_ids[0].state == 'merged'
+    assert pr_ids[1].staging_id

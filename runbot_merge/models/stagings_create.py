@@ -92,8 +92,8 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
         if alone:
             log("staging high-priority PRs %s", batches)
         elif branch.project_id.staging_priority == 'default':
-            if split := branch.split_ids[:1].with_context(staging_split=True):
-                parent_id = split.source_id.id
+            if split := branch.first_split.with_context(staging_split=True):
+                parent_id = split.staging_id.id
                 batches = split.batch_ids.sorted(batch_key)
                 originals = set(split.original_batches)
                 split.unlink()
@@ -106,8 +106,8 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
             if batches:
                 log("staging ready PRs %s (prioritising ready)", batches)
             else:
-                split = branch.split_ids[:1].with_context(staging_split=True)
-                parent_id = split.source_id.id
+                split = branch.first_split.with_context(staging_split=True)
+                parent_id = split.staging_id.id
                 batches = split.batch_ids.sorted(batch_key)
                 originals = set(split.original_batches)
                 split.unlink()

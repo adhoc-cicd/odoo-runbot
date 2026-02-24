@@ -345,6 +345,8 @@ class Branch(models.Model):
 
     staging_enabled = fields.Boolean(default=True)
 
+    depth_first_splits = fields.Boolean(help="Stage splits depth-first")
+    first_split = fields.Many2one('runbot_merge.split', compute='_compute_first_split')
     optimistic_staging_threshold = fields.Integer(
         help="How many batches should be ready for the next staging to be created immediately",
     )
@@ -409,6 +411,14 @@ class Branch(models.Model):
         Stagings = self.env['runbot_merge.stagings'].with_context(active_test=False)
         for branch in self:
             branch.latest_stagings = Stagings.browse(branch_to_stagings.get(branch.id, ()))
+
+    @api.depends('depth_first_splits', 'split_ids.parent_path')
+    def _compute_first_split(self):
+        for b in self:
+            if b.depth_first_splits:
+                b.first_split = b.split_ids.sorted('parent_path')[:1]
+            else:
+                b.first_split = b.split_ids[:1]
 
 
 class SplitOffWizard(models.TransientModel):
@@ -1874,9 +1884,9 @@ For your own safety I've ignored *everything in your entire comment*.
         """
         split: Split = self.batch_id.split_id
         if split:
-            if split.source_id.likely_false_positive:
-                split.source_id.likely_false_positive = False
-                split.source_id.message_post(
+            if split.staging_id.source_id.likely_false_positive:
+                split.staging_id.source_id.likely_false_positive = False
+                split.staging_id.source_id.message_post(
                     body=f"Assuming failure is a true positive due to {self.display_name} being removed from split.",
                 )
 
@@ -2701,11 +2711,14 @@ class Stagings(models.Model):
     _name = 'runbot_merge.stagings'
     _description = "A set of batches being tested for integration"
     _inherit = ['mail.thread']
+    _parent_store = True
 
     id: int
     target = fields.Many2one('runbot_merge.branch', required=True, index=True)
     parent_id = fields.Many2one('runbot_merge.stagings')
-    child_ids = fields.One2many('runbot_merge.stagings', 'parent_id')
+    parent_path = fields.Char(index=True, unaccent=False)
+    source_id = fields.Many2one('runbot_merge.stagings', compute='_compute_source_id', recursive=True, store=True, index=True)
+    child_ids = fields.One2many('runbot_merge.stagings', 'source_id')
     likely_false_positive = fields.Boolean(default=False, tracking=True)
 
     staging_batch_ids = fields.One2many('runbot_merge.staging.batch', 'runbot_merge_stagings_id')
@@ -2762,6 +2775,11 @@ class Stagings(models.Model):
 
     def _search_batch_ids(self, operator, value):
         return [('staging_batch_ids.runbot_merge_batch_id', operator, value)]
+
+    @api.depends('parent_id.source_id')
+    def _compute_source_id(self):
+        for s in self:
+            s.source_id = s.parent_id.source_id or s.parent_id or s
 
     @api.depends('heads', 'statuses_cache')
     def _compute_statuses(self):
@@ -2962,7 +2980,7 @@ class Stagings(models.Model):
             return False
 
         _logger.info("Cancelling staging %s: " + reason, self, *args)
-        self.parent_id.likely_false_positive = False
+        self.source_id.likely_false_positive = False
         self.write({
             'active': False,
             'state': 'cancelled',
@@ -2983,7 +3001,7 @@ class Stagings(models.Model):
            )
 
         if not self.target.split_ids:
-            self.parent_id.likely_false_positive = False
+            self.source_id.likely_false_positive = False
         self.write({
             'active': False,
             'state': 'failure',
@@ -2999,12 +3017,12 @@ class Stagings(models.Model):
             # NB: batches remain attached to their original staging
             sh, st = self.env['runbot_merge.split'].create([{
                 'target': self.target.id,
-                'source_id': (self.parent_id or self).id,
+                'staging_id': self.id,
                 'batch_ids': [Command.link(batch.id) for batch in h],
                 'original_batches': h.ids,
             }, {
                 'target': self.target.id,
-                'source_id': (self.parent_id or self).id,
+                'staging_id': self.id,
                 'batch_ids': [Command.link(batch.id) for batch in t],
                 'original_batches': t.ids,
             }])
@@ -3244,13 +3262,24 @@ class Split(models.Model):
     _name = _description = 'runbot_merge.split'
 
     target = fields.Many2one('runbot_merge.branch', required=True)
-    source_id = fields.Many2one('runbot_merge.stagings', required=True)
+    staging_id = fields.Many2one('runbot_merge.stagings', required=True)
+    # not a real parent path but similar: parent_path sort lexicographically
+    # because the separator `/` is 0x2F while digits are in the range 0x30
+    # to 0x39, inventing a new different schema doesn't seem worth it even
+    # if this one has a slightly different purpose
+    parent_path = fields.Char(compute='_compute_parent_path', store=True, index=True, unaccent=False)
     batch_ids = fields.One2many('runbot_merge.batch', 'split_id', context={'active_test': False})
     original_batches = fields.Json()
 
+    @api.depends('staging_id.parent_path')
+    def _compute_parent_path(self):
+        for s in self:
+            assert s.id
+            s.parent_path = f'{s.staging_id.parent_path}~{s.id}'
+
     def unlink(self):
         if not self.env.context.get('staging_split'):
-            self.source_id.likely_false_positive = False
+            self.staging_id.source_id.likely_false_positive = False
         return super().unlink()
 
 
