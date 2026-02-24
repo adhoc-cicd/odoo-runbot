@@ -621,3 +621,39 @@ def test_split_depthfirst(env, project, repo, users, config):
 
     assert pr_ids[0].state == 'merged'
     assert pr_ids[1].staging_id
+
+@pytest.mark.parametrize('on_fail,cutoff', [
+    # 1 is error, 2, 3, 4 are joined back into a split, 5, 6 are left out
+    ('join', -2),
+    # 1 is error, 2, 3, 4 and 5 are picked by new staging, 6 is left out
+    ('delete', -1)
+])
+def test_solve_case(env, project, repo, users, config, on_fail, cutoff):
+    project.batch_limit = 4
+    # fail handlers make more sense using depth-first splits
+    project.branch_ids.depth_first_splits = True
+    project.branch_ids.on_fail = on_fail
+    with repo:
+        repo.make_commits(None, Commit('initial', tree={'a': 'a'}), ref='heads/master')
+
+        prs = [
+            _pr(repo, c, [{c: '1'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+            for c in "bcdefg"
+        ]
+    env.run_crons()
+
+    pr_ids = env['runbot_merge.pull_requests'].browse(
+        to_pr(env, p).id
+        for p in prs
+    )
+
+    # fail toplevel (4) -> 2 -> 1
+    for _ in range(3):
+        with repo:
+            repo.post_status('staging.master', 'failure')
+        env.run_crons()
+    # at this point, PR 1 should be marked as error, and PRs 2-(4~5) should have
+    # been picked up, with PR 5+~6 being overflow
+    assert pr_ids[0].error
+    assert all([p.staging_id for p in pr_ids[1:cutoff]])
+    assert all([not p.staging_id for p in pr_ids[cutoff:]])

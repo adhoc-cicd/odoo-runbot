@@ -353,6 +353,15 @@ class Branch(models.Model):
     presplit = fields.Boolean(
         help="Pessimistically create splits alongside the staging",
     )
+    on_fail = fields.Selection([
+        ('nothing', 'Keep staging splits'),
+        ('join', "Join splits"),
+        ('delete', "Delete splits"),
+    ],
+        default='nothing',
+        required=True,
+        help="Action to perform when a specific batch has been identified as cause of failure"
+    )
 
     def _auto_init(self):
         res = super()._auto_init()
@@ -3007,6 +3016,24 @@ class Stagings(models.Model):
             'state': 'failure',
             'reason': message,
         })
+        match self.target.on_fail:
+            case 'nothing':
+                pass
+            case 'join' if len(self.target.split_ids) == 1:
+                pass
+            case 'join':
+                batch_ids = self.target.split_ids.batch_ids
+                self.target.split_ids.unlink()
+                self.env['runbot_merge.split'].create({
+                    'target': self.target.id,
+                    'staging_id': self.id,
+                    'batch_ids': batch_ids.ids,
+                    'original_batches': batch_ids.ids,
+                })
+            case 'delete':
+                self.target.split_ids.unlink()
+            case f:
+                _logger.warning("Unknown fail handler %r", f)
         return True
 
     def try_splitting(self):
