@@ -400,6 +400,21 @@ class Batch(models.Model):
                 )
 
         for pr, new_pr in zip(prs, new_batch):
+            prs = (new_pr.forwardport_ids | new_pr.source_id | new_pr.source_id.forwardport_ids)
+            # This will not work for external contributors, but should work
+            # employees as both org members with read access *and* having
+            # write access (because triage is not available and also kinda
+            # shit)
+            gh.post(
+                f'https://github.com/odoo/repos/{new_pr.repository.name}/issues/{new_pr.number}/assignees',
+                json={
+                    'assignees': [
+                        user.github_login
+                        for user in ((prs.author | prs.reviewed_by) - new_pr.author)
+                        if user.github_login  # should be everyone but...
+                    ]
+                }
+            )
             new_pr._fp_conflict_feedback(pr, conflicts)
 
             if messages := ((pr.source_id or pr).fw_reminder_ids.filtered(lambda r: r.branch_id == target)):
