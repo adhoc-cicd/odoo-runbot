@@ -2518,7 +2518,7 @@ class Feedback(models.Model):
                 if isinstance(e, HTTPError) and e.response.status_code == 500:
                     self.env.context.get('deactivate', lambda _: None)(True)
                     self.env['mail.thread'].message_notify(
-                        f"Feedback cron failed with {str(e)}, cron has beeen disabled.",
+                        body=f"Feedback cron failed with {str(e)}, cron has beeen disabled.",
                         partner_ids=self.env.ref('runbot_merge.group_admin').users.partner_id.ids,
                     )
 
