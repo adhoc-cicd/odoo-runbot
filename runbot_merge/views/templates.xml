@@ -184,9 +184,9 @@
                 <section t-foreach="project.branch_ids" t-as="branch"
                          t-if="branch.active"
                          t-att-title="None if branch.staging_enabled else 'staging disabled'"
-                         t-att-style="None if branch.staging_enabled else 'opacity: 50%'"
+                         t-att-class="None if branch.staging_enabled else 'disabled'"
                 >
-                    <h2>
+                    <h2 t-att-class="None if branch.staging_enabled else 'fold'">
                         <a t-attf-href="/runbot_merge/{{branch.id}}">
                             <t t-out="branch.name"/>
                         </a>

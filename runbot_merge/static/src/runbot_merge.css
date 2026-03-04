@@ -429,6 +429,9 @@ details[name="dropdown"] {
 }
 
 section > section {
+    &.disabled {
+        filter: saturate(50%) brightness(80%);
+    }
     &> h2 {
         &:after {
             display: inline-block;
@@ -440,18 +443,20 @@ section > section {
             border-bottom: 0;
             border-left: 0.3em solid transparent;
         }
-        &.fold:after {
-            border-top: 0.3em solid transparent;
-            border-right: 0;
-            border-bottom: 0.3em solid transparent;
-            border-left: 0.3em solid;
+        &.fold {
+            &:after {
+                border-top: 0.3em solid transparent;
+                border-right: 0;
+                border-bottom: 0.3em solid transparent;
+                border-left: 0.3em solid;
+            }
+            &+ul.stagings {
+                &>li.staging>ul,
+                &~div {
+                    display: none;
+                }
+            }
         }
-    }
-    &>h2.fold+ul.stagings>li.staging>ul {
-        display: none;
-    }
-    &>h2.fold+ul.stagings~div {
-        display: none;
     }
 }
 /* endregion */
