@@ -1176,6 +1176,11 @@ For your own safety I've ignored *everything in your entire comment*.
         if not rejections:
             _logger.info("%s (%s) applied %s", login, name, cmdstr)
             self._track_set_author(author, fallback=True)
+            if url := comment.get('reactions', {}).get('url'):
+                self.env['runbot_merge.pull_requests.feedback'].create({
+                    'repository': self.repository.id,
+                    'reaction': url,
+                })
             return 'applied ' + cmdstr
 
         self.env.cr.rollback()
@@ -2470,6 +2475,7 @@ class Feedback(models.Model):
     pull_request = fields.Integer(group_operator=None, index=True)
     message = fields.Char()
     close = fields.Boolean()
+    reaction = fields.Char()
     token_field = fields.Selection(
         [('github_token', "Mergebot"), ('fp_github_token', 'Forwardport Bot')],
         default='github_token',
@@ -2514,6 +2520,9 @@ class Feedback(models.Model):
 
                 if message:
                     gh.comment(f.pull_request, message)
+
+                if f.reaction:
+                    gh('POST', f.reaction, json={'content': 'eyes'})
             except Exception as e:
                 if isinstance(e, HTTPError) and e.response.status_code == 500:
                     self.env.context.get('deactivate', lambda _: None)(True)
