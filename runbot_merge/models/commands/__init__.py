@@ -119,9 +119,7 @@ class ACL(models.Model):
 
         # support for looking up records with by partner and repository, `add` first.
         self.env.cr.execute(SQL(
-            "CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s"
-            " (effect, partner_id, repository_id, command, arg)"
-            " NULLS NOT DISTINCT",
+            "CREATE INDEX IF NOT EXISTS %s ON %s (partner_id, repository_id)",
             SQL.identifier(f"{self._table}_main_index"),
             SQL.identifier(self._table),
         ))
