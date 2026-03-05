@@ -109,6 +109,10 @@ a, .btn-link {
 /* endregion */
 
 /* region colors */
+.disabled {
+    filter: saturate(50%) brightness(80%);
+}
+
 .bg-success {
     background-color: var(--bg-success);
 }
@@ -120,6 +124,10 @@ a, .btn-link {
 }
 .bg-danger {
     background-color: var(--bg-danger);
+}
+
+.bg-gray-lighter {
+    background-color: var(--border-color);
 }
 
 .alert {
@@ -335,7 +343,6 @@ ul.stagings {
     grid-template-columns: repeat(12, minmax( min(11pc + var(--pad1) + var(--pad2), 49vw - var(--gutter-x) * 0.5), 1fr));
     grid-template-rows: repeat(2, auto);
     grid-column-gap: 1px;
-    background-color: var(--border-color);
     /*
     This is Not Awesome, but apparently you can not combine auto in one
     direction and visible in the other, so you can't have the dropdown
@@ -429,9 +436,6 @@ details[name="dropdown"] {
 }
 
 section > section {
-    &.disabled {
-        filter: saturate(50%) brightness(80%);
-    }
     &> h2 {
         &:after {
             display: inline-block;
@@ -460,3 +464,29 @@ section > section {
     }
 }
 /* endregion */
+
+h1:has(+ h2.ministate) {
+    display: inline-block;
+}
+h2.ministate {
+    margin-left: 1ex;
+    display: inline-flex;
+    flex-wrap: wrap;
+    vertical-align: center;
+    gap: 1ex;
+    &>div {
+        display: grid;
+        grid-template-rows: repeat(4, 25%);
+        grid-template-columns: repeat(3, 1ex);
+        height: 1.5em;
+
+        &>a:hover {
+            outline: 1px solid var(--color-foreground);
+            transition: transform 0.5s ease;
+            transform: scale(150%);
+        }
+    }
+}
+.staging:target {
+    outline: 1px solid var(--color-foreground);
+}

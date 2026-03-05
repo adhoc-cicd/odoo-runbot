@@ -164,6 +164,24 @@
             </nav>
             <section t-foreach="projects" t-as="project" t-attf-id="project-{{project.id}}">
                 <h1><t t-out="project.name"/></h1>
+                <h2 class="ministate">
+                    <div t-foreach="project.branch_ids" t-as="branch" t-if="branch.active"
+                         t-att-title="branch.name"
+                         t-att-class="None if branch.staging_enabled else 'disabled'">
+                        <t t-foreach="branch.latest_stagings" t-as="staging">
+                            <t t-set="success" t-value="staging.state == 'success'"/>
+                            <t t-set="failure" t-value="staging.state == 'failure'"/>
+                            <t t-set="pending" t-value="staging.active and (not staging.state or staging.state == 'pending')"/>
+                            <t t-set="stateclass">
+                                <t t-if="success">bg-success <t t-if="staging.active">bg-unmerged</t></t>
+                                <t t-if="failure">bg-danger</t>
+                                <t t-if="pending">bg-info</t>
+                                <t t-if="not (success or failure or pending)">bg-gray-lighter</t>
+                            </t>
+                            <a t-attf-href="#staging-{{staging.id}}" t-att-class="stateclass"/>
+                        </t>
+                    </div>
+                </h2>
                 <aside>
                     key:
                     <ul>
@@ -262,7 +280,10 @@
                         /> at <t t-out="(staging.staging_end or staging.write_date).replace(microsecond=0)"/>Z
                     </t>
                 </t>
-                <li t-attf-class="staging {{stateclass.strip()}}" t-att-title="title.strip() or None">
+                <li t-attf-class="staging {{stateclass.strip()}}"
+                    t-att-title="title.strip() or None"
+                    t-attf-id="staging-{{staging.id}}"
+                >
                     <ul>
                         <li t-foreach="staging.snapshot" t-as="batch" class="batch" t-att-data-batch-id="batch['id']">
                             <t t-out="batch['name']"/>
