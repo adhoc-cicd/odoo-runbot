@@ -70,16 +70,15 @@
                 <t t-set="outstanding" t-value="env['runbot_merge.batch'].search([
                     ('parent_id', '!=', False),
                     ('merge_date', '=', False),
-                    ('blocked', '!=', False),
                     ('create_date', '&lt;', datetime.datetime.now() - relativedelta(days=7)),
-                ])"/>
+                ]).source"/>
                 <div t-if="outstanding" class="alert col-md-12 alert-warning mb-0">
                     <a href="/forwardport/outstanding">
                         <t t-set="own" t-value="
                             sum(
                                 any(
                                     p.reviewed_by == env.user.partner_id or p.author == env.user.partner_id
-                                    for p in b.source.prs
+                                    for p in b.prs
                                 )
                                 for b in outstanding
                             )"/>

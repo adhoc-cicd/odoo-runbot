@@ -166,19 +166,19 @@ class MergebotDashboard(Controller):
         outstanding = Batches.search([
             ('parent_id', '!=', False),
             ('merge_date', '=', False),
-            ('blocked', '!=', False),
             ('create_date', '<', now - DEFAULT_DELTA),
         ])
         outstandings = collections.defaultdict(Batches.browse)
+        for batch in outstanding:
+            outstandings[batch.source] |= batch
+
         outstanding_per_group = collections.Counter()
         outstanding_per_author = collections.Counter()
         outstanding_per_reviewer = collections.Counter()
-        for batch in outstanding:
-            source = batch.source
+        for source in outstanding.source:
             if partner_filter and not any(partner_filter(p) for p in source.prs):
                 continue
 
-            outstandings[source] |= batch
             sources = source.prs
             if authors:
                 outstanding_per_author.update(sources.author)
