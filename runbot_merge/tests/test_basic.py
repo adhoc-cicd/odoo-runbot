@@ -2987,7 +2987,9 @@ class TestUnknownPR:
         fetches = Fetch.search([('repository', '=', repo.name), ('number', '=', pr.number)])
         assert len(fetches) == 1, f"expected one fetch for {pr.number}, found {len(fetches)}"
 
-        env.run_crons('runbot_merge.fetch_prs_cron')
+        env.run_crons('runbot_merge.fetch_prs_cron', context={
+            'current_date': datetime.datetime.now() + datetime.timedelta(minutes=10),
+        })
         env.run_crons()
         assert not Fetch.search([('repository', '=', repo.name), ('number', '=', pr.number)])
 
@@ -3022,7 +3024,9 @@ class TestUnknownPR:
         fetches = Fetch.search([('repository', '=', repo.name), ('number', '=', pr.number)])
         assert len(fetches) == 1, f"expected one fetch for {pr.number}, found {len(fetches)}"
 
-        env.run_crons('runbot_merge.fetch_prs_cron')
+        env.run_crons('runbot_merge.fetch_prs_cron', context={
+            'current_date': datetime.datetime.now() + datetime.timedelta(minutes=10),
+        })
         env.run_crons()
         assert not Fetch.search([('repository', '=', repo.name), ('number', '=', pr.number)])
 

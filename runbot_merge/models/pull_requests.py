@@ -834,6 +834,7 @@ class PullRequests(models.Model):
             'repository': repo.id,
             'number': number,
             'closing': closing,
+            'commits_at': closing and (datetime.datetime.now() + datetime.timedelta(minutes=1)),
             'commenter': commenter,
         })
 
@@ -3362,6 +3363,10 @@ class FetchJob(models.Model):
                     squash=bool(f.commits_at),
                     ping=f.commenter and f'@{f.commenter} ',
                 )
+            except psycopg2.errors.IntegrityError:
+                self.env.cr.execute("ROLLBACK TO SAVEPOINT runbot_merge_before_fetch")
+                f.active = True
+                f.commits_at = datetime.datetime.now() + datetime.timedelta(minutes=1)
             except Exception:
                 self.env.cr.execute("ROLLBACK TO SAVEPOINT runbot_merge_before_fetch")
                 _logger.exception("Failed to load pr %s, skipping it", f.number)
