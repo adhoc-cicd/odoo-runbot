@@ -472,7 +472,11 @@ h2.ministate {
     margin-left: 1ex;
     display: inline-flex;
     flex-wrap: wrap;
-    vertical-align: center;
+    vertical-align: bottom;
+    /* better, but only in Firefox */
+    @supports (vertical-align: center) {
+        vertical-align: center;
+    }
     gap: 1ex;
     &>div {
         display: grid;
