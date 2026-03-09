@@ -453,7 +453,6 @@ def stage_batch(env: api.Environment, batch: Batch, staging: StagingState) -> Ba
     May return an empty recordset on some non-fatal failures.
     """
     new_heads: Dict[PullRequests, str] = {}
-    pr_fields = env['runbot_merge.pull_requests']._fields
     for pr in batch.prs:
         info = staging[pr.repository]
         _logger.info(
@@ -472,22 +471,7 @@ def stage_batch(env: api.Environment, batch: Batch, staging: StagingState) -> Ba
         except github.MergeError as e:
             raise exceptions.MergeError(pr) from e
         except exceptions.Mismatch as e:
-            diff = ''.join(Differ().compare(
-                list(format_for_difflib((n, v) for n, v, _ in e.args[1])),
-                list(format_for_difflib((n, v) for n, _, v in e.args[1])),
-            ))
-            _logger.info("Failed to stage %s: data mismatch", pr.display_name)
-            pr._message_log(body=f"data mismatch before merge:\n{diff}")
-            env.ref('runbot_merge.pr.staging.mismatch')._send(
-                repository=pr.repository,
-                pull_request=pr.number,
-                format_args={
-                    'pr': pr,
-                    'mismatch': ', '.join(pr_fields[f].string for f in e.args[0]),
-                    'diff': diff,
-                    'unchecked': ', '.join(pr_fields[f].string for f in UNCHECKABLE)
-                }
-            )
+            mismatch_warn(e, "data mismatch before merge:\n{diff}")
             return env['runbot_merge.batch']
 
     # update meta to new heads
@@ -495,18 +479,21 @@ def stage_batch(env: api.Environment, batch: Batch, staging: StagingState) -> Ba
         staging[pr.repository].head = head
     return batch
 
-def format_for_difflib(items: Iterator[Tuple[str, object]]) -> Iterator[str]:
-    """ Bit of a pain in the ass because difflib really wants
-    all lines to be newline-terminated, but not all values are
-    actual lines, and also needs to split multiline values.
-    """
-    for name, value in items:
-        yield name + ':\n'
-        value = str(value)
-        if not value.endswith('\n'):
-            value += '\n'
-        yield from value.splitlines(keepends=True)
-        yield '\n'
+
+def mismatch_warn(e: exceptions.Mismatch, message: str) -> None:
+    pr, diff, invalid = e.args
+    _logger.info(f"{pr.display_name} {message.format(pr=pr, diff=diff)}")
+    pr._message_log(body=message.format(pr=pr, diff=diff))
+    pr.env.ref('runbot_merge.pr.staging.mismatch')._send(
+        repository=pr.repository,
+        pull_request=pr.number,
+        format_args={
+            'pr': pr,
+            'mismatch': ', '.join(pr._fields[f].string for f in invalid),
+            'diff': diff,
+            'unchecked': ', '.join(pr._fields[f].string for f in UNCHECKABLE),
+        }
+    )
 
 
 Method = Literal['merge', 'rebase-merge', 'rebase-ff', 'squash']
@@ -689,7 +676,7 @@ def validate_pr(pr: PullRequests, info: StagingSlice) -> tuple[Method, list[PrCo
 
     if invalid:
         pr.write({**invalid, 'reviewed_by': False, 'head': pr_head})
-        raise exceptions.Mismatch(invalid, diff)
+        raise exceptions.Mismatch(pr, diff, invalid)
     return method, pr_commits
 
 def stage_squash(pr: PullRequests, info: StagingSlice, commits: List[github.PrCommit], related_prs: PullRequests) -> str:

@@ -6,7 +6,7 @@ from typing import Self
 from odoo import fields, models, api
 
 from ... import git, exceptions
-from ..stagings_create import StagingSlice, validate_pr
+from ..stagings_create import StagingSlice, validate_pr, mismatch_warn
 
 _logger = logging.getLogger(__name__)
 
@@ -67,6 +67,8 @@ class BatchValidate(models.Model):
         for pr in validations.batch_id.prs:
             try:
                 validate_pr(pr, states[pr.repository.name, pr.target.name])
+            except exceptions.Mismatch as e:
+                mismatch_warn(e, "data mismatch during check:\n{diff}")
             except exceptions.MergeError as e:
                 if len(e.args) > 1 and e.args[1]:
                     reason = e.args[1]
