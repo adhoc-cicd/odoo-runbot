@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">= 3.10
+# dependencies = []
+# ///
+import json
+import re
+import sys
+import typing
+import urllib.error
+import urllib.parse
+import urllib.request
+from subprocess import run, PIPE, DEVNULL
+
+__VERSION__ = "0.1"
+
+
+class PrInfo(typing.TypedDict):
+    display: str
+    repository: str
+    target: str
+    number: int
+    state: str
+    commits_map: dict[str, str]
+    batch: int
+    ref: str
+    head: str
+    parent: str | None
+    child: str | None
+
+
+HELP = """\
+NAME
+\tgit-fw - Apply the changes introduced by some existing PR
+
+SYNOPSYS
+\tgit fw redo <pr>
+\tgit fw (--continue | --skip | --abort | --quit)
+
+DESCRIPTION
+\tGiven a pull request (by github or mergebot URL, or <owner>/<repo>#<number>
+\tshort form), re-execute its forward porting via git-cherry-pick(1),
+\tproviding the ability to interactively fix conflicts then push the result
+\tback onto the forward-port branch.
+
+\tIf used with the git-cherry-pick(1) subcommands, forwards them to the
+\tcurrent cherry-pick.
+"""
+
+
+def main() -> int:
+    match sys.argv[1:]:
+        # case ['do', pr]:
+        #     return do(pr)
+        case ["redo", pr]:
+            return redo(pr)
+        case [("--continue" | "--skip" | "--abort" | "--quit") as subcommand]:
+            r = run(["git", "cherry-pick", subcommand])
+            exit(r.returncode)
+        case ["--version"]:
+            print(f"git-fw version {__VERSION__}")
+            exit(0)
+        case _:
+            print(HELP)
+            exit(0)
+
+
+def redo(pr: str) -> int:
+    repo, number = parse_pr(pr)
+
+    print(f"Resolving {repo}#{number}...")
+    res = info(f"https://mergebot.odoo.com/{repo}/pull/{number}.json")
+    if not res["parent"]:
+        exit("not a forward port")
+    parent = info(res["parent"])
+    repository_url, reflist = ls_remote(
+        res["repository"], res["target"], parent["target"]
+    )
+    refs = dict(reflist)
+    commits_of_interest = [*refs.values(), parent["head"], res["head"]]
+    if cm := parent["commits_map"]:
+        commits_of_interest.append(cm[""])
+    r = run(
+        [
+            "git",
+            "fetch",
+            "--dry-run",
+            "--porcelain",
+            "--no-tags",
+            repository_url,
+            *commits_of_interest,
+        ],
+        stdout=DEVNULL,
+    )
+    if r.returncode:
+        exit("unable to retrieve commits of interest")
+
+    # list the source's commits
+    r = run(
+        [
+            "git",
+            "rev-list",
+            "--reverse",
+            parent["head"],
+            "--not",
+            refs[f"refs/heads/{parent['target']}"],
+        ],
+        stdout=PIPE,
+        encoding="utf-8",
+    )
+    if r.returncode:
+        exit(r.returncode)
+    commits = r.stdout.splitlines(keepends=False)
+    if cm:
+        # remap commits to forward port to those which got merged
+        commits = [cm[c] for c in commits]
+
+    run(["git", "switch", res["ref"]], check=True)
+    merge_base = run(
+        ["git", "merge-base", refs[f"refs/heads/{res['target']}"], res["head"]],
+        stdout=PIPE,
+        encoding="utf-8",
+        check=True,
+    )
+    run(["git", "reset", "--hard", merge_base.stdout.strip()], check=True)
+    return run(["git", "cherry-pick", "-x", f"{commits[0]}~..{commits[-1]}"]).returncode
+
+
+def parse_pr(pr: str) -> tuple[str, str]:
+    if m := re.fullmatch(r"(\w+/\w+)#(\d+)", pr):
+        return m[1], m[2]
+
+    u = urllib.parse.urlsplit(pr)
+    if u.netloc not in ("github.com", "mergebot.odoo.com"):
+        exit(f"invalid domain {u.netloc!r}, should be github.com or mergebot.odoo.com")
+    if m := re.fullmatch(r"/(\w+/\w+)/pull/(\d+)", u.path):
+        return m[1], m[2]
+
+    exit(f"failed to find PR information in {pr!r}")
+
+
+def ls_remote(
+    repository: str, *patterns: str
+) -> tuple[str, typing.Iterator[tuple[str, str]]]:
+    # TODO: maybe support credentials / tokens to be injected in the URL? Not
+    #       sure if that's compatible in any way with ssh
+    for repository_url in [
+        # https seems reliably faster, but doesn't necessarily work if credentials are required
+        f"https://github.com/{repository}",
+        # ssh is slower, but works better with private repos
+        f"git@github.com:{repository}",
+    ]:
+        r = run(
+            ["git", "ls-remote", "-q", repository_url, *patterns],
+            stdout=PIPE,
+            stderr=DEVNULL,
+        )
+        if r.returncode == 0:
+            break
+    else:
+        exit(f"unable to retrieve branches from {repository!r}")
+
+    return repository_url, (
+        (ref, oid)
+        for oid, _, ref in (
+            line.partition("\t")
+            for line in r.stdout.decode().splitlines(keepends=False)
+        )
+    )
+
+
+def info(url: str) -> PrInfo:
+    try:
+        return json.load(urllib.request.urlopen(url))
+    except urllib.error.URLError as e:
+        exit(str(e.reason))
+    except json.JSONDecodeError as e:
+        exit(f"invalid response (not json): {e}")
+
+
+if __name__ == "__main__":
+    exit(main())

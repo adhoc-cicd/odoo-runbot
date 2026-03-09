@@ -83,7 +83,7 @@ CONFLICT (add/add): Merge conflict in h
 
 Either perform the forward-port manually (and push to this branch, proceeding as usual) or close this PR (maybe?).
 
-In the former case, you may want to edit this PR message as well.
+:shipit: you can use [`git-fw`](https://raw.githubusercontent.com/odoo/runbot/refs/heads/17.0/runbot_merge/scripts/git-fw) to re-do the forward-port for you locally.
 
 :warning: after resolving this conflict, you will need to merge it via @{project.github_prefix}.
 

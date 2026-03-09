@@ -16,7 +16,7 @@ from enum import Flag, auto
 from functools import cached_property
 from itertools import chain, product
 from math import ceil
-from typing import Tuple, cast, Mapping, Optional, List
+from typing import cast, Mapping, Optional
 
 import markdown
 import markupsafe
@@ -24,7 +24,7 @@ import werkzeug.exceptions
 import werkzeug.wrappers
 from PIL import Image, ImageDraw, ImageFont
 
-from odoo.http import Controller, route, request
+from odoo.http import Controller, route, request, Response
 from odoo.tools import file_open
 
 HORIZONTAL_PADDING = 20
@@ -87,8 +87,8 @@ class MergebotDashboard(Controller):
             'entries': entries,
         })
 
-    @route('/<org>/<repo>/pull/<int(min=1):pr><any("", ".png"):png>', auth='public', type='http', website=True, sitemap=False)
-    def pr(self, org, repo, pr, png):
+    @route('/<org>/<repo>/pull/<int(min=1):pr><any("", ".png", ".json"):ext>', auth='public', type='http', website=True, sitemap=False)
+    def pr(self, org, repo, pr, ext):
         pr_id = request.env['runbot_merge.pull_requests'].sudo().search([
             ('repository.name', '=', f'{org}/{repo}'),
             ('number', '=', int(pr)),
@@ -104,8 +104,11 @@ class MergebotDashboard(Controller):
             )
             raise werkzeug.exceptions.NotFound()
 
-        if png:
+        if ext == '.png':
             return raster_render(pr_id)
+
+        if ext == '.json':
+            return json_render(pr_id)
 
         st = {}
         if pr_id.statuses:
@@ -206,6 +209,34 @@ class MergebotDashboard(Controller):
             )),
             'link': link,
         })
+
+
+def json_render(pr_id) -> Response:
+    # forwardport_ids is ordered from most recent to older so source
+    # needs to be appended
+    fws = pr_id.source_id.forwardport_ids + pr_id.source_id
+    parent = child = None
+    if fws:
+        idx = fws.ids.index(pr_id.id)
+        parent = fws[idx + 1:idx + 2]
+        child = fws[idx - 1:idx]
+    return request.make_json_response({
+        'display_name': pr_id.display_name,
+        'repository': pr_id.repository.name,
+        'target': pr_id.target.name,
+        'number': pr_id.number,
+        'state': pr_id.state,
+        'commits_map': json.loads(pr_id.commits_map),
+        'batch': pr_id.batch_id.id,
+        'ref': pr_id.refname,
+        'head': pr_id.head,
+        'parent': parent and f'{parent.url}.json',
+        'child': child and f'{child.url}.json',
+        'siblings': [
+            f'{sibling.url}.json'
+            for sibling in (pr_id.batch_ids.prs - pr_id)
+        ],
+    })
 
 
 def raster_render(pr):
@@ -341,7 +372,7 @@ class Checkbox:
 
 @dataclass(frozen=True)
 class Line:
-    spans: List[Text | Checkbox | Lines]
+    spans: list[Text | Checkbox | Lines]
 
     @property
     def width(self) -> int:
@@ -358,7 +389,7 @@ class Line:
 
 @dataclass(frozen=True)
 class Lines:
-    lines: List[Line]
+    lines: list[Line]
 
     @property
     def width(self) -> int:
@@ -591,7 +622,7 @@ def render_inconsistent_batch(batch):
 
 
 
-Color = Tuple[int, int, int]
+Color = tuple[int, int, int]
 TEXT: Color = (102, 102, 102)
 ERROR: Color = (220, 53, 69)
 SUCCESS: Color = (40, 167, 69)
