@@ -1180,7 +1180,10 @@ For your own safety I've ignored *everything in your entire comment*.
             if url := comment.get('reactions', {}).get('url'):
                 self.env['runbot_merge.pull_requests.feedback'].create({
                     'repository': self.repository.id,
-                    'reaction': url,
+                    'pull_request': self.number,
+                    'reaction': url.removeprefix(
+                        f"https://api.github.com/repos/{self.repository.name}/"
+                    ),
                 })
             return 'applied ' + cmdstr
 
@@ -2523,7 +2526,13 @@ class Feedback(models.Model):
                     gh.comment(f.pull_request, message)
 
                 if f.reaction:
-                    gh('POST', f.reaction, json={'content': 'eyes'})
+                    # TODO: remove after deployment, this is to handle
+                    #       feedbacks created before update, which have a
+                    #       "full" URL in db
+                    url = f.reaction.removeprefix(
+                        f"{gh._url}/repos/{repo.name}/"
+                    )
+                    gh('POST', url, json={'content': 'eyes'})
             except Exception as e:
                 if isinstance(e, HTTPError) and e.response.status_code == 500:
                     self.env.context.get('deactivate', lambda _: None)(True)
