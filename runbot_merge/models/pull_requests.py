@@ -2524,13 +2524,7 @@ class Feedback(models.Model):
                     gh.comment(f.pull_request, message)
 
                 if f.reaction:
-                    # TODO: remove after deployment, this is to handle
-                    #       feedbacks created before update, which have a
-                    #       "full" URL in db
-                    url = f.reaction.removeprefix(
-                        f"{gh._url}/repos/{repo.name}/"
-                    )
-                    gh('POST', url, json={'content': 'eyes'})
+                    gh('POST', f.reaction, json={'content': 'eyes'})
             except Exception as e:
                 if isinstance(e, HTTPError) and e.response.status_code == 500:
                     self.env.context.get('deactivate', lambda _: None)(True)
@@ -2538,6 +2532,13 @@ class Feedback(models.Model):
                         body=f"Feedback cron failed with {str(e)}, cron has beeen disabled.",
                         partner_ids=self.env.ref('runbot_merge.group_admin').users.partner_id.ids,
                     )
+                elif isinstance(e, HTTPError) and e.response.status_code == 404 and f.reaction:
+                    _logger.info(
+                        "Comment not found (%s) when trying to send a reaction to %s#%s (%s)",
+                        e, f.repo.name, f.pull_request, f.reaction,
+                    )
+                    to_remove.append(f.id)
+                    continue
 
                 _logger.exception(
                     "Error while trying to %s %s#%s (%s)",
