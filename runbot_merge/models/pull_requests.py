@@ -860,7 +860,11 @@ class PullRequests(models.Model):
             )
             return 'ok'
 
+        fedback = False
         def feedback(message: Optional[str] = None, close: bool = False):
+            nonlocal fedback
+            if message:
+                fedback = True
             self.env['runbot_merge.pull_requests.feedback'].create({
                 'repository': self.repository.id,
                 'pull_request': self.number,
@@ -964,6 +968,7 @@ For your own safety I've ignored *everything in your entire comment*.
                             self.reviewed_by = False
                         if self.batch_id.skipchecks:
                             self.batch_id.skipchecks = False
+                            fedback = True
                             self.env.ref("runbot_merge.command.unapprove.p0")._send(
                                 repository=self.repository,
                                 pull_request=self.number,
@@ -984,6 +989,7 @@ For your own safety I've ignored *everything in your entire comment*.
                         pull_request=self.number,
                         format_args={'new_method': explanation, 'pr': self, 'user': login},
                     )
+                    fedback = True
                     # if the merge method is the only thing preventing (but not
                     # *blocking*) staging, trigger a staging
                     if self.state == 'ready':
@@ -998,6 +1004,7 @@ For your own safety I've ignored *everything in your entire comment*.
                         'repository': self.repository.id,
                         'number': self.number,
                     })
+                    fedback = True
                 case commands.Delegate(users):
                     if not users:
                         delegates = self.author
@@ -1168,7 +1175,7 @@ For your own safety I've ignored *everything in your entire comment*.
         if not rejections:
             _logger.info("%s (%s) applied %s", login, name, cmdstr)
             self._track_set_author(author, fallback=True)
-            if url := comment.get('reactions', {}).get('url'):
+            if not fedback and (url := comment.get('reactions', {}).get('url')):
                 self.env['runbot_merge.pull_requests.feedback'].create({
                     'repository': self.repository.id,
                     'pull_request': self.number,
