@@ -1153,15 +1153,6 @@ For your own safety I've ignored *everything in your entire comment*.
                                 ('state', '=', 'success'),
                             ], order='id desc', limit=10):
                                 d = statistics.mean(s.staging_duration for s in latest_stagings)
-                                print(
-                                    "\n\n\n",
-                                    latest_stagings,
-                                    "average", d,
-                                    "threshold", d * 0.4,
-                                    "current", self.target.active_staging_id.staging_duration,
-                                    "\n\n\n",
-                                    flush=True
-                                )
                                 if self.target.active_staging_id.staging_duration > (d * 0.4):
                                     continue
                         case commands.Reset.STAGING:
