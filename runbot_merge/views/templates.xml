@@ -141,10 +141,10 @@
 
     <template id="theme-toggle" inherit_id="website.placeholder_header_call_to_action">
         <xpath expr="." position="inside">
-            <li class="btn-group btn-group-toggle theme-toggle">
-                <button class="btn btn-outline-secondary fa fa-sun-o"/>
-                <button class="btn btn-outline-secondary fa fa-moon-o"/>
-                <button class="btn btn-outline-secondary fa fa-ban active"/>
+            <li class="theme-toggle">
+                <button class="fa fa-sun-o"/>
+                <button class="fa fa-moon-o"/>
+                <button class="fa fa-ban active"/>
             </li>
         </xpath>
     </template>

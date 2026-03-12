@@ -25,7 +25,7 @@ function setColorScheme(t) {
 
 window.addEventListener("click", (e) => {
     const target = e.target;
-    if (target.matches(".btn-group.theme-toggle button")) {
+    if (target.matches(".theme-toggle button")) {
         setColorScheme(
             target.classList.contains('fa-sun-o') ? 'light' :
                 target.classList.contains('fa-moon-o') ? 'dark' :

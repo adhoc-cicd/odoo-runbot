@@ -249,14 +249,11 @@ header > nav {
             border-color: #685563;
             &>li>a {
                 color: inherit;
-                /* sign in pseudo-button */
-                border: 1px solid;
                 border-radius: 0.25rem;
                 &:hover, &:active, &:focus {
                     text-decoration: none;
                     background-color: #685563;
                     color: white;
-                    border-color: #685563;
                 }
             }
         }
