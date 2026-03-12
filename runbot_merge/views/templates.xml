@@ -122,6 +122,12 @@
                             </t>
                         </ul>
                         <ul class="extras">
+                            <t t-if="'mail.notification' in env['ir.model.access']._get_allowed_models()">
+                                <t t-set="notifications" t-value="env['mail.notification'].search_count([('res_partner_id', '=', env.user.partner_id.id), ('is_read', '=', False)])"/>
+                                <li t-if="notifications">
+                                    <a class="fa fa-lg fa-comments bg-danger" href="/web#action=mail.action_discuss"/>
+                                </li>
+                            </t>
                             <t t-call="portal.placeholder_user_sign_in"/>
                             <t t-call="portal.user_dropdown">
                                 <t t-set="_item_class" t-valuef="dropdown"/>
