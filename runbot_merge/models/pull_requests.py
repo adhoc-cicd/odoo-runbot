@@ -2299,11 +2299,13 @@ For your own safety I've ignored *everything in your entire comment*.
                     'email_to': email,
                     'subject': f"You have {len(prs)} outstanding forward ports",
                     'body': Markup(
-                        "<p>The following forward-ports are more than 6 months old "
-                        "and were either created or approved by you.</p>"
+                        "<p>The following forward-ports are more than 6 months old"
+                        " and were either created or approved by you.</p>"
                         "<p>Please process them appropriately (merge or close them)"
-                        "at the earliest.</p>"
+                        " at the earliest.</p>"
                         "<ul>{}</ul>"
+                        "<h2>Unprocessed forward-ports will eventually be closed"
+                        " automatically.</h2>"
                     ).format(Markup("").join(
                         Markup('<li><a href="{link}">{name}</a></li>').format(
                             name=pr.display_name,
