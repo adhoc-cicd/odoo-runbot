@@ -2780,6 +2780,8 @@ class Stagings(models.Model):
     commit_ids = fields.Many2many('runbot_merge.commit', relation='runbot_merge_stagings_commits', column1='staging_id', column2='commit_id')
     commits = fields.One2many('runbot_merge.stagings.commits', 'staging_id')
 
+    ranges = fields.Many2many('runbot_merge.stagings.range', compute='_compute_ranges')
+
     statuses = fields.Binary(compute='_compute_statuses')
     statuses_cache = fields.Text(default='{}', required=True)
 
@@ -3306,6 +3308,77 @@ class Stagings(models.Model):
         stagings.check_access_rights('read')
         stagings.check_access_rule('read')
         return stagings
+
+    def _compute_ranges(self) -> None:
+        """For each staging, computes the range of commits this staging
+        encompasses for each `commit` (merged head, possibly prospective).
+
+        So gets the corresponding `commit` of the most recent successful
+        preceding staging on the same branch, then returns a tuple of
+        `(repository.name, github_compare_url)` for each head, unless this
+        is the first staging for that repository.
+        """
+        self.env.cr.execute("""
+        WITH input AS (
+            SELECT id, target
+              FROM runbot_merge_stagings
+             WHERE id = any(%s)
+        )
+        SELECT input.id, r.id, c.id, prev_c.id
+          FROM input
+          JOIN runbot_merge_stagings_commits sc ON sc.staging_id = input.id
+          JOIN runbot_merge_repository r ON r.id = sc.repository_id
+          JOIN runbot_merge_commit c ON c.id = sc.commit_id
+        JOIN LATERAL (
+              SELECT sc2.commit_id
+                FROM runbot_merge_stagings s2
+                JOIN runbot_merge_stagings_commits sc2
+                  ON sc2.staging_id = s2.id
+                 AND sc2.repository_id = sc.repository_id
+               WHERE s2.id < input.id
+                 AND s2.state = 'success'
+                 AND s2.target = input.target
+            ORDER BY s2.id DESC
+               LIMIT 1
+        ) prev ON true
+          JOIN runbot_merge_commit prev_c ON prev_c.id = prev.commit_id;
+        """, [self.ids])
+        m = {
+            (sid, rid): (prev, current)
+            for sid, rid, current, prev in self.env.cr.fetchall()
+        }
+        for staging in self:
+            r = self.env['runbot_merge.stagings.range']
+            for commit in staging.commits:
+                repo = commit.repository_id.id
+                if (staging.id, repo) not in m:
+                    continue
+                p, c = m[staging.id, repo]
+                r += r.new({
+                    'staging_id': staging.id,
+                    'repository_id': repo,
+                    'previous_commit_id': p,
+                    'current_commit_id': c,
+                }, ref=f"{staging.id}-{repo}")
+            staging.ranges = r
+
+
+class StagingRange(models.Model):
+    _name = _description = 'runbot_merge.stagings.range'
+    _log_access = False
+
+    staging_id = fields.Many2one('runbot_merge.stagings')
+    repository_id = fields.Many2one('runbot_merge.repository')
+    previous_commit_id = fields.Many2one('runbot_merge.commit')
+    current_commit_id = fields.Many2one('runbot_merge.commit')
+    url = fields.Char(compute='_compute_url')
+
+    @api.depends('repository_id.name', 'previous_commit_id.sha', 'current_commit_id.sha')
+    def _compute_url(self):
+        for r in self:
+            r.url = (f"https://github.com/{r.repository_id.name}/compare/"
+                     f"{r.previous_commit_id.sha}...{r.current_commit_id.sha}")
+
 
 class Split(models.Model):
     _name = _description = 'runbot_merge.split'

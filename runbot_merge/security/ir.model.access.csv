@@ -36,3 +36,4 @@ access_runbot_merge_patch_file,Patcher access to patch file,model_runbot_merge_p
 access_runbot_merge_backport_admin,Admin access to backport wizard,model_runbot_merge_pull_requests_backport,runbot_merge.group_admin,1,1,1,0
 access_runbot_merge_acls,Admin access to ACLs,model_runbot_merge_acls,runbot_merge.group_admin,1,1,1,1
 access_runbot_merge_pull_requests_fw_reminders,Admin access to FW reminders,model_runbot_merge_pull_requests_fw_reminder,runbot_merge.group_admin,1,1,1,0
+access_runbot_merge_stagings_range,(lack of) access to staging ranges,model_runbot_merge_stagings_range,,0,0,0,0

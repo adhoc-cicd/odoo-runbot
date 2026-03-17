@@ -29,11 +29,16 @@
             </summary>
             <div class="staging-statuses">
                 <a groups="runbot_merge.group_admin"
-                   class="dropdown-item" role="menuitem"
+                   role="menuitem"
                    t-attf-href="/web#id={{staging.id}}&amp;view_type=form&amp;model=runbot_merge.stagings"
                    target="_blank">
                     Open Staging
                 </a>
+                <t groups="runbot_merge.group_admin" t-foreach="staging.ranges" t-as="r">
+                    <a role="menuitem" t-att-href="r.url" target="_blank">
+                        Compare: <t t-out="r.repository_id.name"/>
+                    </a>
+                </t>
                 <t t-set="statuses" t-value="{(r, c): (s, t) for r, c, s, t in staging.statuses}"/>
                 <t t-foreach="repo_statuses._for_staging(staging)" t-as="req">
                     <t t-set="st" t-value="statuses.get((req.repo_id.name, req.context)) or (None, None)"/>

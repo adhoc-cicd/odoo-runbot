@@ -379,6 +379,16 @@
                                     </field>
                                 </group>
                             </group>
+                            <group string="ranges">
+                                <field name="ranges" nolabel="1" colspan="2">
+                                    <tree>
+                                        <field name="repository_id"/>
+                                        <field name="previous_commit_id"/>
+                                        <field name="current_commit_id"/>
+                                        <field name="url" widget="url"/>
+                                    </tree>
+                                </field>
+                            </group>
                         </page>
                         <page string="Splits">
                             <field name="child_ids" colspan="4" nolabel="1" readonly="1">
