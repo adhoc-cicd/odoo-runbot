@@ -359,7 +359,7 @@ ul.stagings {
             margin: 0;
 
             &>li.batch {
-                line-break: anywhere;
+                overflow-wrap: anywhere;
                 padding: 0 var(--pad1) 0 var(--pad2);
 
                 &:first-child {
