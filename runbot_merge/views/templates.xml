@@ -415,18 +415,16 @@
         </t>
     </template>
     <template id="changelog" name="mergebot changelog">
-        <t t-call="website.layout">
-            <div id="wrap"><div class="container-fluid">
-                <h1>Changelog</h1>
-                <section t-foreach="entries" t-as="entry">
-                    <h3 t-if="not entry_first" t-esc="entry"/>
-                    <ul>
-                        <li t-foreach="sorted(entry_value)" t-as="item">
-                            <t t-out="item"/>
-                        </li>
-                    </ul>
-                </section>
-            </div></div>
+        <t t-call="runbot_merge.layout">
+            <h1>Changelog</h1>
+            <section t-foreach="entries" t-as="entry">
+                <h3 t-if="not entry_first" t-esc="entry"/>
+                <ul>
+                    <li t-foreach="sorted(entry_value)" t-as="item">
+                        <t t-out="item"/>
+                    </li>
+                </ul>
+            </section>
         </t>
     </template>
 

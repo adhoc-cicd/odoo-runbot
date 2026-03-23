@@ -31,15 +31,8 @@
        'web._assets_primary_variables': [
           ('prepend', 'runbot_merge/static/scss/primary_variables.scss'),
        ],
-        'web.assets_frontend': [
-            'runbot_merge/static/scss/revariable.scss',
-            'runbot_merge/static/scss/runbot_merge.scss',
-        ],
         'web.assets_backend': [
             'runbot_merge/static/scss/runbot_merge_backend.scss',
-        ],
-        'runbot_merge.assets': [
-            'runbot_merge/static/src/**/*.js',
         ],
         'runbot_merge.assets_frontend': [
             'web/static/src/libs/fontawesome/css/font-awesome.css',
