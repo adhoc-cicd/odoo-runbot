@@ -488,8 +488,8 @@
     <template id="view_pull_request_info_open">
         <!-- nb: replicates `blocked`, maybe that should be split into various criteria? -->
         <div class="alert alert-info">
-        <p t-if="pr.blocked" class="alert-danger">Blocked</p>
-        <p t-else="" class="alert-success">Ready (waiting for staging)</p>
+        <p t-if="pr.blocked" class="text-danger bg-danger">Blocked</p>
+        <p t-else="" class="text-success bg-success">Ready (waiting for staging)</p>
         <ul class="todo">
             <li t-att-class="'ok' if pr.squash or pr.merge_method else 'fail'">
                 Merge method
@@ -529,41 +529,39 @@
     </template>
 
     <template id="view_pull_request">
-        <t t-call="website.layout">
-            <div id="wrap"><div class="container-fluid">
-                <t t-call="runbot_merge.alerts"/>
-                <h1>
-                    <a t-att-href="pr.github_url" t-field="pr.display_name">
-                    </a>
-                    <a t-attf-href="/web#view_type=form&amp;model=runbot_merge.pull_requests&amp;id={{pr.id}}"
-                        class="btn btn-sm btn-secondary align-top float-end"
-                        groups="runbot_merge.group_admin">View in backend</a>
-                </h1>
-                <h6>Created by <span t-field="pr.author.display_name"/></h6>
-                <t t-set="tmpl">
-                    <t t-if="pr.state in ('merged', 'closed', 'error')"><t t-esc="pr.state"/></t>
-                    <t t-elif="pr.staging_id">staging</t>
-                    <t t-else="">open</t>
+        <t t-call="runbot_merge.layout">
+            <t t-call="runbot_merge.alerts"/>
+            <h1>
+                <a t-att-href="pr.github_url" t-field="pr.display_name">
+                </a>
+                <a t-attf-href="/web#view_type=form&amp;model=runbot_merge.pull_requests&amp;id={{pr.id}}"
+                    class="btn btn-sm btn-secondary align-top float-end"
+                    groups="runbot_merge.group_admin">View in backend</a>
+            </h1>
+            <h6>Created by <span t-field="pr.author.display_name"/></h6>
+            <t t-set="tmpl">
+                <t t-if="pr.state in ('merged', 'closed', 'error')"><t t-esc="pr.state"/></t>
+                <t t-elif="pr.staging_id">staging</t>
+                <t t-else="">open</t>
+            </t>
+            <t t-call="runbot_merge.view_pull_request_info_{{tmpl.strip()}}"/>
+            <dl class="runbot-merge-fields">
+                <dt>label</dt>
+                <dd><span t-field="pr.label"/></dd>
+                <dt>head</dt>
+                <dd><a t-attf-href="{{pr.github_url}}/commits/{{pr.head}}"><span t-field="pr.head"/></a></dd>
+                <t t-if="pr.state == 'merged'">
+                    <dt>merged</dt>
+                    <dd>
+                        <span t-field="pr.merge_date" t-options="{'widget': 'relative'}"
+                              t-att-title="pr.merge_date"/>
+                        by <span t-field="pr.reviewed_by.display_name"
+                                 t-attf-title="@{{pr.reviewed_by.github_login}}"/>
+                    </dd>
                 </t>
-                <t t-call="runbot_merge.view_pull_request_info_{{tmpl.strip()}}"/>
-                <dl class="runbot-merge-fields">
-                    <dt>label</dt>
-                    <dd><span t-field="pr.label"/></dd>
-                    <dt>head</dt>
-                    <dd><a t-attf-href="{{pr.github_url}}/commits/{{pr.head}}"><span t-field="pr.head"/></a></dd>
-                    <t t-if="pr.state == 'merged'">
-                        <dt>merged</dt>
-                        <dd>
-                            <span t-field="pr.merge_date" t-options="{'widget': 'relative'}"
-                                  t-att-title="pr.merge_date"/>
-                            by <span t-field="pr.reviewed_by.display_name"
-                                     t-attf-title="@{{pr.reviewed_by.github_login}}"/>
-                        </dd>
-                    </t>
-                </dl>
-                <t t-call="runbot_merge.dashboard-table"/>
-                <p t-field="pr.message_html"/>
-            </div></div>
+            </dl>
+            <t t-call="runbot_merge.dashboard-table"/>
+            <p t-field="pr.message_html"/>
         </t>
     </template>
 

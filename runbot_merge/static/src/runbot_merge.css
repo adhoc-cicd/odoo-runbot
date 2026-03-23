@@ -67,6 +67,11 @@ table {
 th {
     text-align: inherit;
 }
+thead, tbody, tfoot, tr, td, th {
+    border-color: inherit;
+    border-style: solid;
+    border-width: 0;
+}
 
 h1, h2, h3, h4, h5, h6 {
     text-wrap: balance;
@@ -83,6 +88,9 @@ ul, ol {
 }
 ul, ol, dl {
     margin-bottom: 1rem;
+}
+p {
+    margin-bottom: 16px;
 }
 
 p, li, figcaption {
@@ -116,14 +124,26 @@ a, .btn-link {
 .bg-success {
     background-color: var(--bg-success);
 }
+.text-success {
+    color: var(--color-success);
+}
 .bg-warning {
     background-color: var(--bg-warning);
+}
+.text-warning {
+    color: var(--color-warning);
 }
 .bg-info {
     background-color: var(--bg-info);
 }
+.text-info {
+    color: var(--color-info);
+}
 .bg-danger {
     background-color: var(--bg-danger);
+}
+.text-danger {
+    color: var(--color-danger);
 }
 
 .bg-gray-lighter {
@@ -134,6 +154,7 @@ a, .btn-link {
     clear: both;
     padding: 1rem;
     border-radius: 0.25rem;
+    margin-bottom: 1rem;
 
     background-color: var(--bg-alert);
     border: 1px solid color-mix(in srgb, var(--color-alert) 70%, var(--color-background));
@@ -141,14 +162,18 @@ a, .btn-link {
     --link-color: color-mix(in srgb, var(--color-alert) 40%, var(--color-foreground));
 
     &.alert-light {
-        background-color: light-dark(#e5e6e6, #1a2633);
+        --bg-alert: light-dark(#e5e6e6, #1a2633);
         border: 1px solid light-dark(#f8f9fa, #050607);
-        color: color-mix(in srgb, var(--color-background) 40%, var(--color-foreground));
+        --color-alert: color-mix(in srgb, var(--color-background) 40%, var(--color-foreground));
     }
     &.alert-primary {--bg-alert: var(--bg-primary);--color-alert: var(--color-primary);}
+    &.alert-info {--bg-alert: var(--bg-info);--color-alert: var(--color-info);}
     &.alert-success {--bg-alert: var(--bg-success);--color-alert: var(--color-success);}
     &.alert-warning {--bg-alert: var(--bg-warning);--color-alert: var(--color-warning);}
     &.alert-danger {--bg-alert: var(--bg-danger);--color-alert: var(--color-danger);}
+    &.active {
+        background-color: color-mix(in oklch, var(--bg-alert) 85%, var(--color-alert));
+    }
 }
 /* endregion */
 
@@ -326,6 +351,36 @@ header > nav {
     }
 }
 /* endregion */
+/* region misc for backend button */
+.float-end {
+    float: right;
+}
+.btn {
+    border: 1px solid transparent;
+    line-height: 1.5;
+    text-align: center;
+    vertical-align: middle;
+    cursor: pointer;
+    &:hover { text-decoration: none; }
+}
+.btn-sm {
+  padding: 0.0625rem 0.5rem;
+  font-size: 0.765625rem;
+  border-radius: 0.3rem;
+}
+.btn-secondary {
+    color: var(--color-foreground);
+    background-color: var(--bg-secondary);
+    border-color: var(--bg-secondary);
+    &:hover {
+        background-color: color-mix(
+            in oklch,
+            var(--bg-secondary) 80%,
+            var(--color-background)
+        )
+    }
+}
+/* endregion */
 
 ul.stagings {
     list-style: none;
@@ -460,6 +515,19 @@ section > section {
         }
     }
 }
+
+ul.todo {
+    list-style-type: '☐ ';
+    & > li.ok {
+        list-style-type: '☑ ';
+    }
+    & > li.fail {
+        list-style-type: '☒ ';
+        background-color: var(--bg-danger);
+        color: color-mix(in srgb, var(--color-danger) 40%, var(--color-foreground));
+        --link-color: color-mix(in srgb, var(--color-danger) 40%, var(--color-foreground));
+    }
+}
 /* endregion */
 
 h1:has(+ h2.ministate) {
@@ -490,4 +558,72 @@ h2.ministate {
 }
 .staging:target {
     outline: 1px solid var(--color-foreground);
+}
+
+/* region boostrap tables */
+.table {
+    --table-fg: var(--color-foreground);
+    --table-bg: transparent;
+    --table-border-color: var(--border-color);
+    --table-accent-bg: transparent;
+
+    width: 100%;
+    margin-bottom: 1rem;
+    &>thead {
+        vertical-align: bottom;
+    }
+    &>:not(caption) > * > * {
+        padding: 0.75rem;
+        background-color: var(--table-bg);
+        border-bottom-width: 1px;
+        box-shadow: inset 0 0 0 9999px var(--table-accent-bg);
+    }
+}
+
+.table-sm > :not(caption) > * > * {
+    padding: 0.3rem;
+}
+
+.table-bordered > :not(caption) > * {
+    border-width: 1px 0;
+    border-color: var(--table-border-color);
+    & > * {
+        border-width: 0 1px;
+        border-color: var(--table-border-color);
+    }
+    td { min-width: 20px; }
+}
+
+.table-active {
+    --table-accent-bg: rgba(0, 0, 0, 0.1);
+}
+.table-success {
+    --table-bg: var(--bg-success);
+    &.table-active {
+        --table-bg: color-mix(in oklch, var(--bg-success) 85%, var(--color-success));
+    }
+}
+.table-warning {
+    --table-bg: var(--bg-warning);
+    &.table-active {
+        --table-bg: color-mix(in oklch, var(--bg-warning) 85%, var(--color-warning));
+    }
+}
+.table-danger {
+    --table-bg: var(--bg-danger);
+    &.table-active {
+        --table-bg: color-mix(in oklch, var(--bg-danger) 85%, var(--color-danger));
+    }
+}
+/* endregion */
+
+
+dl.runbot-merge-fields {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: 16% 84%;
+}
+
+.staging-statuses {
+  cursor: wait;
 }
