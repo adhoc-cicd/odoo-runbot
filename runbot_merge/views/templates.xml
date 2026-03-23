@@ -745,98 +745,96 @@ action = batches
     </template>
 
     <template id="outstanding" name="Outstanding forward ports">
-        <t t-call="website.layout">
-            <div id="wrap" class="oe_structure oe_empty"><div class="container-fluid">
-                <div class="alert bg-light outstanding-partners">
-                    <t t-foreach="groups" t-as="group">
-                        <span>
-                            <t t-if="group == current_group">
-                                <span class="bg-primary text-bg-primary">
-                                    <t t-out="group.display_name"/>
-                                    (<t t-out="outstanding_per_group[group]"/>)
-                                </span>
-                                <a t-att-href="link()" class="btn fa fa-times p-0"/>
-                            </t>
-                            <t t-else="">
-                                <a t-att-href="link(group=group.id, partner=0)">
-                                    <t t-out="group.display_name"/>
-                                    (<t t-out="outstanding_per_group[group]"/>)
-                                </a>
-                            </t>
-                        </span>
-                    </t>
-                </div>
-                <div class="alert bg-light outstanding-partners">
-                    <t t-foreach="culprits" t-as="culprit">
-                        <t t-set="approved" t-value="outstanding_per_reviewer[culprit]"/>
-                        <t t-set="created" t-value="outstanding_per_author[culprit]"/>
-                        <a t-att-href="link(partner=culprit.id)"
-                           t-attf-title="approved {{approved}}, created {{created}}"
-                           t-att-class="'bg-primary text-bg-primary' if culprit == env.user.partner_id else None"
-                        ><t t-out="culprit.name"/>:
-                            <t t-if="approved" t-out="approved"/>
-                            <t t-if="approved and created"> + </t>
-                            <t t-if="created" t-out="created"/>
-                        </a>
-                    </t>
-                </div>
-                <t t-if="not single">
-                    by
-                    <span class="btn-group btn-group-toggle">
-                        <a t-att-href="link(authors=1, reviewers=1)"
-                           t-attf-class="btn btn-sm btn-secondary {{'active' if authors and reviewers else ''}}">
-                            both
-                        </a>
-                        <a t-att-href="link(authors=1, reviewers=0)"
-                           t-attf-class="btn btn-sm btn-secondary {{'active' if authors and not reviewers else ''}}">
-                            creators
-                        </a>
-                        <a t-att-href="link(reviewers=1, authors=0)"
-                           t-attf-class="btn btn-sm btn-secondary {{'active' if reviewers and not authors else ''}}">
-                            reviewers
-                        </a>
+        <t t-call="runbot_merge.layout">
+            <div class="alert bg-light outstanding-partners">
+                <t t-foreach="groups" t-as="group">
+                    <span>
+                        <t t-if="group == current_group">
+                            <span class="bg-primary text-bg-primary">
+                                <t t-out="group.display_name"/>
+                                (<t t-out="outstanding_per_group[group]"/>)
+                            </span>
+                            <a t-att-href="link()" class="btn fa fa-times p-0"/>
+                        </t>
+                        <t t-else="">
+                            <a t-att-href="link(group=group.id, partner=0)">
+                                <t t-out="group.display_name"/>
+                                (<t t-out="outstanding_per_group[group]"/>)
+                            </a>
+                        </t>
                     </span>
                 </t>
-                <h1>List of batches with outstanding forward ports</h1>
-                <h2 t-if="single">
-                    for <span t-field="single.display_name" t-attf-title="@{{single.github_login}}"/>
-                    <a t-att-href="link(partner=0)" title="All Users" class="btn fa fa-times"/>
+            </div>
+            <div class="alert bg-light outstanding-partners">
+                <t t-foreach="culprits" t-as="culprit">
+                    <t t-set="approved" t-value="outstanding_per_reviewer[culprit]"/>
+                    <t t-set="created" t-value="outstanding_per_author[culprit]"/>
+                    <a t-att-href="link(partner=culprit.id)"
+                       t-attf-title="approved {{approved}}, created {{created}}"
+                       t-att-class="'bg-primary text-bg-primary' if culprit == env.user.partner_id else None"
+                    ><t t-out="culprit.name"/>:
+                        <t t-if="approved" t-out="approved"/>
+                        <t t-if="approved and created"> + </t>
+                        <t t-if="created" t-out="created"/>
+                    </a>
+                </t>
+            </div>
+            <t t-if="not single">
+                by
+                <span class="btn-group btn-group-toggle">
+                    <a t-att-href="link(authors=1, reviewers=1)"
+                       t-attf-class="btn btn-sm btn-secondary {{'active' if authors and reviewers else ''}}">
+                        both
+                    </a>
+                    <a t-att-href="link(authors=1, reviewers=0)"
+                       t-attf-class="btn btn-sm btn-secondary {{'active' if authors and not reviewers else ''}}">
+                        creators
+                    </a>
+                    <a t-att-href="link(reviewers=1, authors=0)"
+                       t-attf-class="btn btn-sm btn-secondary {{'active' if reviewers and not authors else ''}}">
+                        reviewers
+                    </a>
+                </span>
+            </t>
+            <h1>List of batches with outstanding forward ports</h1>
+            <h2 t-if="single">
+                for <span t-field="single.display_name" t-attf-title="@{{single.github_login}}"/>
+                <a t-att-href="link(partner=0)" title="All Users" class="btn fa fa-times"/>
 
-                    <span class="btn-group btn-group-toggle">
-                        <a t-att-href="link(authors=1, reviewers=1)"
-                           t-attf-class="btn btn-sm btn-secondary {{'active' if authors and reviewers else ''}}">
-                            both
-                        </a>
-                        <a t-att-href="link(authors=1, reviewers=0)"
-                           t-attf-class="btn btn-sm btn-secondary {{'active' if authors and not reviewers else ''}}">
-                            created
-                        </a>
-                        <a t-att-href="link(reviewers=1, authors=0)"
-                           t-attf-class="btn btn-sm btn-secondary {{'active' if reviewers and not authors else ''}}">
-                            reviewed
-                        </a>
-                    </span>
-                </h2>
+                <span class="btn-group btn-group-toggle">
+                    <a t-att-href="link(authors=1, reviewers=1)"
+                       t-attf-class="btn btn-sm btn-secondary {{'active' if authors and reviewers else ''}}">
+                        both
+                    </a>
+                    <a t-att-href="link(authors=1, reviewers=0)"
+                       t-attf-class="btn btn-sm btn-secondary {{'active' if authors and not reviewers else ''}}">
+                        created
+                    </a>
+                    <a t-att-href="link(reviewers=1, authors=0)"
+                       t-attf-class="btn btn-sm btn-secondary {{'active' if reviewers and not authors else ''}}">
+                        reviewed
+                    </a>
+                </span>
+            </h2>
 
-                <dl><t t-foreach="outstanding" t-as="x">
-                    <t t-if="not single or single in x.prs.reviewed_by or single in x.prs.author">
-                        <dt>
-                            <t t-call="runbot_merge.print-batch">
-                                <t t-set="b" t-value="x"/>
-                            </t>
-                        </dt>
-                        <dd>
-                            <ul>
-                                <li t-foreach="x_value" t-as="p">
-                                    <t t-call="runbot_merge.print-batch">
-                                        <t t-set="b" t-value="p"/>
-                                    </t>
-                                </li>
-                            </ul>
-                        </dd>
-                    </t>
-                </t></dl>
-            </div></div>
+            <dl><t t-foreach="outstanding" t-as="x">
+                <t t-if="not single or single in x.prs.reviewed_by or single in x.prs.author">
+                    <dt>
+                        <t t-call="runbot_merge.print-batch">
+                            <t t-set="b" t-value="x"/>
+                        </t>
+                    </dt>
+                    <dd>
+                        <ul>
+                            <li t-foreach="x_value" t-as="p">
+                                <t t-call="runbot_merge.print-batch">
+                                    <t t-set="b" t-value="p"/>
+                                </t>
+                            </li>
+                        </ul>
+                    </dd>
+                </t>
+            </t></dl>
         </t>
     </template>
 

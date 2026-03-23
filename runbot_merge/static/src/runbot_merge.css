@@ -121,6 +121,13 @@ a, .btn-link {
     filter: saturate(50%) brightness(80%);
 }
 
+.bg-primary {
+    background-color: var(--bg-primary);
+}
+.text-bg-primary {
+
+}
+
 .bg-success {
     background-color: var(--bg-success);
 }
@@ -161,10 +168,13 @@ a, .btn-link {
     color: color-mix(in srgb, var(--color-alert) 40%, var(--color-foreground));
     --link-color: color-mix(in srgb, var(--color-alert) 40%, var(--color-foreground));
 
-    &.alert-light {
+    &.alert-light, &.bg-light {
         --bg-alert: light-dark(#e5e6e6, #1a2633);
         border: 1px solid light-dark(#f8f9fa, #050607);
         --color-alert: color-mix(in srgb, var(--color-background) 40%, var(--color-foreground));
+    }
+    &.bg-light {
+        border: none;
     }
     &.alert-primary {--bg-alert: var(--bg-primary);--color-alert: var(--color-primary);}
     &.alert-info {--bg-alert: var(--bg-info);--color-alert: var(--color-info);}
@@ -363,6 +373,18 @@ header > nav {
     cursor: pointer;
     &:hover { text-decoration: none; }
 }
+.btn-group {
+    display: inline-flex;
+
+    &>:not(:first-child) {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+    }
+    &>:not(:last-child) {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+}
 .btn-sm {
   padding: 0.0625rem 0.5rem;
   font-size: 0.765625rem;
@@ -370,14 +392,19 @@ header > nav {
 }
 .btn-secondary {
     color: var(--color-foreground);
-    background-color: var(--bg-secondary);
-    border-color: var(--bg-secondary);
-    &:hover {
-        background-color: color-mix(
+    --btn-secondary-bgcolor: color-mix(
+        in oklch,
+        var(--bg-secondary) 80%,
+        var(--color-foreground)
+    );
+    background-color: var(--btn-secondary-bgcolor);
+    border-color: var(--btn-secondary-bgcolor);
+    &:hover, &.active {
+        --btn-secondary-bgcolor: color-mix(
             in oklch,
-            var(--bg-secondary) 80%,
-            var(--color-background)
-        )
+            var(--bg-secondary) 85%,
+            var(--bg-secondary)
+        );
     }
 }
 /* endregion */
@@ -617,7 +644,6 @@ h2.ministate {
 }
 /* endregion */
 
-
 dl.runbot-merge-fields {
     display: grid;
     gap: 0.5rem;
@@ -626,4 +652,16 @@ dl.runbot-merge-fields {
 
 .staging-statuses {
   cursor: wait;
+}
+
+.list-inline {
+    padding-left: 0;
+    list-style: none;
+}
+
+.outstanding-partners > * {
+    white-space: nowrap;
+    padding-left: 0.25rem;
+    padding-top: 0.25rem;
+    border-left: 1px solid color-mix(in srgb, currentColor 15%, transparent);
 }
