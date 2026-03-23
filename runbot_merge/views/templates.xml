@@ -328,7 +328,7 @@
         <t t-set="repo_statuses" t-value="branch.project_id.repo_ids.having_branch(branch).status_ids"/>
         <t t-call="runbot_merge.layout">
             <section>
-                <h1 class="col-md-12"><t t-esc="branch.project_id.name"/>: <t t-esc="branch.name"/></h1>
+                <h1><t t-esc="branch.project_id.name"/>: <t t-esc="branch.name"/></h1>
             </section>
             <form method="get">
                 <label for="until">Staged before:</label>
@@ -387,7 +387,7 @@
                             </t>
                         </th>
                         <td class="pr-listing">
-                            <ul class="list-inline list-unstyled mb0">
+                            <ul>
                                 <t t-foreach="staging.batch_ids" t-as="batch">
                                     <li class="dropdown" t-if="batch.prs">
                                         <details name="dropdown" style="padding: 0.25rem 1rem">
