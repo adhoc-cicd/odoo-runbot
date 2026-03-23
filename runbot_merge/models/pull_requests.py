@@ -943,14 +943,14 @@ For your own safety I've ignored *everything in your entire comment*.
                     msg = "draft PRs can not be approved."
                 case commands.Approve() if self.source_id:
                     if selected := [p for p in self._iter_ancestors() if p.number in command]:
-                        msgs = []
+                        msgs = set()
                         for pr in selected:
                             # ignore already reviewed PRs, unless it's the one
                             # being r+'d, this means ancestors in error will not
                             # be warned about
                             if pr == self or not pr.reviewed_by:
                                 if m := pr._approve(author, login):
-                                    msgs.append(m)
+                                    msgs.add(m)
                         if msgs:
                             msg = "\n".join(msgs)
                     else:

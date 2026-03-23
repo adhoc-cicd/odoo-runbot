@@ -1596,3 +1596,54 @@ def f():
 >>>\x3e>>> $$
 """)
     }
+
+
+def test_approve_fw_no_email(env, make_repo, users, config, partners):
+    """Even if there are multiple outstanding forward ports getting approved,
+    each error should be posted only once, no need to tell the user that we
+    don't know their email for every forward port we attempted to approve.
+    """
+    repo, _ = make_basic(env, config, make_repo, statuses='default')
+    with repo:
+        [c] = repo.make_commits('a', Commit('first', tree={'x': '42'}))
+        pr_a = repo.make_pr(target='a', head=c)
+        repo.post_status(pr_a.head, 'success')
+        pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    with repo:
+        repo.post_status('staging.a', 'success')
+    env.run_crons()
+    pr_a_id, pr_b_id = env['runbot_merge.pull_requests'].search([], order='number')
+    with repo:
+        repo.post_status(pr_b_id.head, 'success')
+    env.run_crons()
+    _, _, pr_c_id = env['runbot_merge.pull_requests'].search([], order='number')
+
+    user_partner = env['res.partner'].search([('github_login', '=', users['user'])])
+    assert user_partner.email is False
+    pr_c = repo.get_pr(pr_c_id.number)
+    with repo:
+        pr_c.post_comment('hansen r+', config['role_user']['token'])
+    env.run_crons()
+
+    assert pr_c.comments == [
+        seen(env, pr_c, users),
+        (users['user'], f"""\
+@{users['user']} @{users['reviewer']} this PR targets c and is the last of the forward-port chain containing:
+* {pr_b_id.display_name}
+
+To merge the full chain, use
+> @hansen r+
+
+More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
+"""),
+        (users['user'], 'hansen r+'),
+        (users['user'], f"@{users['user']} I must know your email before you can review PRs. Please contact an administrator."),
+    ]
+    user_partner.fetch_github_email()
+    assert user_partner.email
+    with repo:
+        pr_c.post_comment('hansen r+', config['role_user']['token'])
+    env.run_crons()
+    assert pr_c_id.state == 'approved'
