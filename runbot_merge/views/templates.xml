@@ -314,6 +314,7 @@
                     </ul>
                     <t t-call="runbot_merge.staging-statuses">
                         Staged <span t-field="staging.staged_at" t-options="{'widget': 'relative'}"/>
+                        <wbr/>
                         (duration <span t-field="staging.staging_duration" t-options="{
                             'widget': 'duration',
                             'format': 'short',
