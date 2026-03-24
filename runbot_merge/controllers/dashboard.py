@@ -234,7 +234,7 @@ def json_render(pr_id) -> Response:
         'child': child and f'{child.url}.json',
         'siblings': [
             f'{sibling.url}.json'
-            for sibling in (pr_id.batch_ids.prs - pr_id)
+            for sibling in (pr_id.batch_id.prs - pr_id)
         ],
     })
 
