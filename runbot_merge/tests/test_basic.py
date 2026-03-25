@@ -158,7 +158,7 @@ def test_trivial_flow(env, repo, page, users, config, project, partners, status_
     }
 
     p = html.fromstring(page('/runbot_merge'))
-    s = p.cssselect('.staging details[name="dropdown"] a')
+    s = p.cssselect('.staging div.staging-statuses a')
     assert len(s) == 2, "not logged so only *required* statuses"
     for e, status in zip(s, ['legal/cla', 'ci/runbot']):
         assert set(e.classes) == {'bg-success'}
