@@ -64,7 +64,7 @@
                                         </t>
                                     </td>
                                 </tr>
-                                <tr t-if="not bundle.sticky and not bundle.is_base">
+                                <tr groups="base.group_user" t-if="not bundle.sticky and not bundle.is_base">
                                     <td>Configuration</td>
                                     <td>
                                         <t t-set="current_mode" t-value="'custom'"/>
