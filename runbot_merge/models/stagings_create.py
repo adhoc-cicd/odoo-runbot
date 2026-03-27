@@ -23,7 +23,7 @@ from werkzeug.datastructures import Headers
 
 from odoo import api, models, fields, Command, addons
 from odoo.tools import OrderedSet, groupby, Reverse
-from .pull_requests import Branch, Stagings, PullRequests, Repository
+from .pull_requests import Branch, Stagings, PullRequests, Repository, Split
 from .batch import Batch
 from .. import exceptions, utils, github, git
 from ..github import PrCommit
@@ -65,6 +65,22 @@ def batch_key(batch: Batch) -> tuple:
     )
     return -priority, batch.unblocked_at or datetime.max, batch.id
 
+def prepare_split(
+        split: Split,
+        priority: Literal['splits', 'ready', 'largest'],
+) -> tuple[Batch, int, set[int]]:
+    batches = split.batch_ids.sorted(batch_key)
+    parent_id = split.staging_id.id
+    originals = set(split.original_batches or ())
+    split.with_context(staging_split=True).unlink()
+    _logger.info(
+        "staging split PRs %s (prioritising %s)",
+        ', '.join(batches.mapped('prs.display_name')),
+        priority,
+    )
+    return batches, parent_id, originals
+
+
 def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Stagings]:
     """ Tries to create a staging if the current branch does not already
     have one. Returns None if the branch already has a staging or there
@@ -84,6 +100,7 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
 
     parent_id = False
     originals = set()
+    split = None
     if batches:
         log("staging retried PRs %s", batches)
     else:
@@ -92,12 +109,8 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
         if alone:
             log("staging high-priority PRs %s", batches)
         elif branch.project_id.staging_priority == 'default':
-            if split := branch.first_split.with_context(staging_split=True):
-                parent_id = split.staging_id.id
-                batches = split.batch_ids.sorted(batch_key)
-                originals = set(split.original_batches)
-                split.unlink()
-                log("staging split PRs %s (prioritising splits)", batches)
+            if split := branch.first_split:
+                batches, parent_id, originals = prepare_split(split, 'splits')
             else:
                 # priority, normal; priority = sorted ahead of normal, so always picked
                 # first as long as there's room
@@ -106,26 +119,21 @@ def try_staging(branch: Branch, batches: Optional[Batch] = None) -> Optional[Sta
             if batches:
                 log("staging ready PRs %s (prioritising ready)", batches)
             else:
-                split = branch.first_split.with_context(staging_split=True)
-                parent_id = split.staging_id.id
-                batches = split.batch_ids.sorted(batch_key)
-                originals = set(split.original_batches)
-                split.unlink()
-                log("staging split PRs %s (prioritising ready)", batches)
+                split = branch.first_split
+                batches, parent_id, originals = prepare_split(split, 'ready')
         else:
             assert branch.project_id.staging_priority == 'largest'
-            maxsplit = max(branch.split_ids, key=lambda s: len(s.batch_ids), default=branch.env['runbot_merge.split'])
-            _logger.info("largest split = %d, ready = %d", len(maxsplit.batch_ids), len(batches))
+            split = max(branch.split_ids, key=lambda s: len(s.batch_ids), default=branch.env['runbot_merge.split'])
+            _logger.info("largest split = %d, ready = %d", len(split.batch_ids), len(batches))
             # bias towards splits if len(ready) = len(batch_ids)
-            if len(maxsplit.batch_ids) >= len(batches):
-                batches = maxsplit.batch_ids.sorted(batch_key)
-                originals = set(maxsplit.original_batches)
-                maxsplit.unlink()
-                log("staging split PRs %s (prioritising largest)", batches)
+            if len(split.batch_ids) >= len(batches):
+                batches, parent_id, originals = prepare_split(split, 'largest')
             else:
                 log("staging ready PRs %s (prioritising largest)", batches)
 
     if not batches:
+        if split:  # in case of empty split, re-run staging Soon©
+            branch.env.ref('runbot_merge.staging_cron')._trigger()
         return None
 
     original_heads, staging_state = staging_setup(branch, batches)

@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 import requests
 
@@ -636,3 +638,32 @@ def test_cron_autodisable(env, code, active):
     cron.trigger()
     env.run_crons()
     assert cron.active == active
+
+def test_empty_split(env, project, repo, users, config):
+    b = env['runbot_merge.batch'].create({
+        'target': project.branch_ids.id,
+        'merge_date': datetime.datetime.now(),
+    })
+    st = env['runbot_merge.stagings'].create({
+        'target': project.branch_ids.id,
+        'active': False,
+        'state': 'failure',
+        'staging_end': datetime.datetime.now(),
+        'staging_batch_ids': [(0, 0, {'runbot_merge_batch_id': b.id})]
+    })
+    env['runbot_merge.split'].create({
+        'target': project.branch_ids.id,
+        'staging_id': st.id,
+        'batch_ids': [],
+        'original_batches': [],
+    })
+    with repo:
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
+
+        repo.make_commits(m, Commit('thing1', tree={}), ref='heads/other1')
+        pr1 = repo.make_pr(target='master', head='other1')
+        repo.post_status(pr1.head, 'success')
+        pr1.post_comment('hansen r+', config['role_reviewer']['token'])
+    env.run_crons()
+
+    assert to_pr(env, pr1).staging_id
