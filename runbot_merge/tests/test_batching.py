@@ -657,3 +657,16 @@ def test_solve_case(env, project, repo, users, config, on_fail, cutoff):
     assert pr_ids[0].error
     assert all([p.staging_id for p in pr_ids[1:cutoff]])
     assert all([not p.staging_id for p in pr_ids[cutoff:]])
+
+def test_join_last(env, project, repo, users, config):
+    project.branch_ids.on_fail = 'join'
+    with repo:
+        repo.make_commits(None, Commit('x', tree={'a': 'a'}), ref='heads/master')
+        pr = _pr(repo, 'y', [{'c': '1'}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'])
+    env.run_crons()
+
+    with repo:
+        repo.post_status('staging.master', 'failure')
+    env.run_crons()
+
+    assert to_pr(env, pr).error

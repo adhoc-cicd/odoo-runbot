@@ -3043,7 +3043,7 @@ class Stagings(models.Model):
         match self.target.on_fail:
             case 'nothing':
                 pass
-            case 'join' if len(self.target.split_ids) == 1:
+            case 'join' if len(self.target.split_ids) <= 1:
                 pass
             case 'join':
                 batch_ids = self.target.split_ids.batch_ids
