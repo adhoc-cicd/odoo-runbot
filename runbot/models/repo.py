@@ -560,7 +560,7 @@ class Repo(models.Model):
                 fmt = "%00".join(["%(" + field + ")" for field in fields])
                 refs_desc = 'refs/*/heads/*'
                 if self.allow_slashes:
-                    refs_desc += ' refs/*/heads/**'
+                    refs_desc = 'refs/*/heads/**'
                 cmd = ['for-each-ref', '--format', fmt, '--sort=-committerdate', refs_desc]
                 if any(remote.fetch_pull for remote in self.remote_ids):
                     cmd.append('refs/*/pull/*')
