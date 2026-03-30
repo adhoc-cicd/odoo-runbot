@@ -1,3 +1,4 @@
+import pytest
 import requests
 
 GEORGE = {
@@ -107,6 +108,43 @@ def test_duplicates(env, port):
         'github_login': 'bar',
         'sub': '43'
     }]) == [0, 0]
+
+def test_change_login(env, port):
+    """When a `github_login` is updated on an employee, first the original
+    github_login is deprovisioned then the new login is provisioned.
+
+    This causes confusion in the ranks, because deprovisioning removes the
+    two factors we use to find existing partners.
+    """
+    assert provision_user(port, [{
+        'name': "foo",
+        'email': 'foo@example.com',
+        'github_login': 'foo',
+        'sub': '42'
+    }]) == [1, 0]
+
+    requests.post(f'http://localhost:{port}/runbot_merge/disable_users', json={
+        'jsonrpc': '2.0',
+        'id': None,
+        'method': 'call',
+        'params': {'github_logins': ['foo']},
+    }).raise_for_status()
+
+    assert provision_user(port, [{
+        'name': "foo",
+        'email': 'foo@example.com',
+        'github_login': 'bar',
+        'sub': '42'
+    }]) == [0, 1]
+
+    u = env['res.users'].search([('login', '=', 'foo@example.com')])
+    assert u
+    assert u.active
+    internal = env.ref('base.group_user')
+    assert (u.groups_id & internal) == internal
+    assert u.partner_id.active
+    assert u.partner_id.github_login == 'bar'
+
 
 def test_no_email(env, port):
     """ Provisioning system should ignore email-less entries

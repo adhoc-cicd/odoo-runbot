@@ -55,6 +55,17 @@ class MergebotReviewerProvisioning(Controller):
                 # unique, and should not be able to collide with emails
                 partners[p.github_login.casefold()] = p
 
+        existing_users = Users.with_context(active_test=False).search([
+            ('partner_id', 'not in', existing_partners.ids),
+            '|', ('login', 'in', [u['email'] for u in users]),
+                 ('oauth_uid', 'in', [s for u in users if (s := u.get('sub'))]),
+        ])
+        _logger.info("Found %d existing matching users.", len(existing_users))
+        users_map = {}
+        for u in existing_users:
+            users_map[u.login] = u
+            users_map[u.oauth_uid] = u
+
         portal = env.ref('base.group_portal')
         internal = env.ref('base.group_user')
         odoo_provider = env.ref('auth_oauth.provider_openerp')
@@ -68,7 +79,12 @@ class MergebotReviewerProvisioning(Controller):
                 new['oauth_uid'] = new.pop('sub')
 
             # prioritise by github_login as that's the unique-est point of information
-            current = partners.get(new['github_login'].casefold()) or partners.get(new['email']) or Partners
+            current = partners.get(new['github_login'].casefold()) \
+                   or partners.get(new['email']) \
+                   or (users_map.get(new['email'])
+                       or users_map.get(new.get('oauth_uid'))
+                       or Users
+                   ).partner_id
             if not current.active:
                 to_activate |= current
 
@@ -127,6 +143,7 @@ class MergebotReviewerProvisioning(Controller):
                     new['partner_id'] = current.id
                 to_create.append(new)
 
+
         created = len(to_create)
         if to_create:
             # only create 100 users at a time to avoid request timeout
@@ -152,7 +169,16 @@ class MergebotReviewerProvisioning(Controller):
         '/runbot_merge/remove_reviewers', # deprecated URL
     ], type='json', auth='public', methods=['POST'])
     def disable_users(self, github_logins, **kwargs):
+        _logger.info("deprovisioning %s: %s")
         partners = request.env['res.partner'].sudo().search([('github_login', 'in', github_logins)])
+        _logger.info(
+            "deprovisioning %s: %s",
+            github_logins,
+            [
+                f"{p.display_name} ({', '.join(p.mapped('user_ids.login'))})"
+                for p in partners
+            ]
+        )
         partners.write({
             'email': False,
             'parent_id': False,
