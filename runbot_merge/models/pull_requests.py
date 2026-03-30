@@ -1356,6 +1356,16 @@ For your own safety I've ignored *everything in your entire comment*.
             )
         if not (self.squash or self.merge_method):
             self.env.ref('runbot_merge.check_merge_method')._trigger()
+        if self.project.request_missing_statuses:
+            statuses = json.loads(self.statuses_full)
+            if any(
+                st.context not in statuses
+                for st in self.repository.status_ids._for_pr(self)
+                if st.prs == 'required'
+            ):
+                self.env['runbot_merge.pull_requests.status.request'].create({
+                    'pull_request_id': self.id,
+                })
         return None
 
     def _pr_acl(self, user) -> ACL:

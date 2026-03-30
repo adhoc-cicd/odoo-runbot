@@ -64,6 +64,7 @@
                                     <field name="use_mergiraf" widget="boolean_toggle"/>
                                     <field name="lateness_limit"/>
                                     <field name="uniquifier" widget="boolean_toggle"/>
+                                    <field name="request_missing_statuses" widget="boolean_toggle"/>
                                 </group>
                             </group>
                         </page>

@@ -26,6 +26,7 @@
         'models/commands/runbot_merge.acls.csv',
         'models/commands/views.xml',
         'models/crons/validate.xml',
+        'models/crons/status_request.xml',
     ],
     'assets': {
        'web._assets_primary_variables': [

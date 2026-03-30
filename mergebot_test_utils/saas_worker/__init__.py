@@ -3,9 +3,14 @@ import logging
 import threading
 
 import psycopg2
+import requests.sessions
 
 import odoo
-from odoo import models
+from odoo import models, fields
+
+from . import auth_util
+
+requests.sessions.Session = auth_util.SaasSession
 
 _logger = logging.getLogger(__name__)
 
@@ -49,3 +54,11 @@ class IrCron(models.Model):
         finally:
             if hasattr(t, 'dbname'):
                 del t.dbname
+
+
+class SaasCalls(models.Model):
+    _name = _description = 'saas.calls'
+
+    method = fields.Char()
+    url = fields.Char()
+    body = fields.Binary(attachment=False)

@@ -80,6 +80,10 @@ class Project(models.Model):
     warn_mergiraf = fields.Boolean(compute='_compute_warn_mergiraf')
 
     fw_nice = fields.Boolean(help="Lower priority of forward-ports")
+    request_missing_statuses = fields.Boolean(
+        help="If some required statuses have never been received on a PR,"
+             " request them from the runbot."
+    )
 
     @api.depends('use_mergiraf')
     def _compute_warn_mergiraf(self):
