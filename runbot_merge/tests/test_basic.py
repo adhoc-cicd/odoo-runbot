@@ -1448,8 +1448,12 @@ class TestMergeMethod:
                 Commit('B1', tree={'b': '1'}),
             )
             prx = repo.make_pr(title='title', body='body', target='master', head=b1)
-            repo.post_status(prx.head, 'success')
             prx.post_comment('hansen r+', config['role_reviewer']['token'])
+        # wait hook and run crons before status to works around a race in
+        # runbot mode (with high parallelism)
+        env.run_crons()
+        with repo:
+            repo.post_status(prx.head, 'success')
         env.run_crons()
 
         assert not to_pr(env, prx).staging_id
