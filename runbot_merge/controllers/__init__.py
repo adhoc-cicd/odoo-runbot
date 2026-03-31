@@ -75,7 +75,7 @@ class MergebotController(Controller):
     @route('/runbot_merge/stagings/<int:staging>', auth='none', type='http', methods=['GET'])
     def prs_for_staging(self, staging):
         staging = request.env(user=1)['runbot_merge.stagings'].browse(staging).sudo()
-        if not staging.exists:
+        if not staging.exists():
             raise NotFound()
 
         return request.make_json_response(staging_dict(staging))

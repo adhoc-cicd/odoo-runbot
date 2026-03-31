@@ -2152,7 +2152,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 committer=committer[:2],
             )
             assert commit.returncode == 0,\
-                f"commit failed\n\n{commit.stdout.decode()}\n\n{commit.stderr.decode}"
+                f"commit failed\n\n{commit.stdout.decode()}\n\n{commit.stderr.decode()}"
             hh = commit.stdout.strip()
 
             return (h, out, err, [c['sha'] for c in commits]), hh
