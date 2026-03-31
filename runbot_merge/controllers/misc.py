@@ -20,10 +20,10 @@ class MergebotController(Controller):
 
         target = request.env["runbot_merge.branch"].sudo().search([
             ("name", "=", branch),
-            ("project_id", "=", project)
+            ("project_id.name", "=", project)
         ])
         if not target:
-            return {"error": "Target branch %s:%s not found" % (branch, target)}
+            return {"error": f"Target branch {project}:{branch} not found"}
 
         patch = request.env["runbot_merge.patch"].sudo().create({
             "repository": repository_id.id,
