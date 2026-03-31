@@ -205,7 +205,7 @@ All substitutions are tentatively applied sequentially to the input.
                 'changes': {
                     'base': {'ref': {'from': pr_id.target.name}},
                     'title': {'from': pr_id.message.splitlines()[0]},
-                    'body': {'from', ''.join(pr_id.message.splitlines(keepends=True)[2:])},
+                    'body': {'from': ''.join(pr_id.message.splitlines(keepends=True)[2:])},
                 },
                 'sender': {'login': self.project_id.github_prefix},
             }).get_data(True)
