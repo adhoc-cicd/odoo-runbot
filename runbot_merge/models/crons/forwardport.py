@@ -271,7 +271,7 @@ class ForwardPortTasks(models.Model):
             owner, _ = remote_target.split('/', 1)
             message = source.message + f"\n\nForward-Port-Of: {pr.display_name}"
 
-            title, body = re.match(r'(?P<title>[^\n]+)\n*(?P<body>.*)', message, flags=re.DOTALL).groups()
+            title, body = re.fullmatch(r'(?P<title>[^\n]+)\n*(?P<body>.*)', message, flags=re.DOTALL).groups()
             r = gh.post(f'https://api.github.com/repos/{pr.repository.name}/pulls', json={
                 'base': target.name,
                 'head': f'{owner}:{ref}',
