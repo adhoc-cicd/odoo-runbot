@@ -457,7 +457,7 @@ class Batch(models.Model):
         scheduled = self.browse(())
         for batch in self:
             fw_policy = batch.source.fw_policy
-            force_fw = force_fw or fw_policy == 'skipmerge'
+            forcefw = force_fw or fw_policy == 'skipmerge'
             prs = ', '.join(batch.prs.mapped('display_name'))
 
             _logger.info('Checking if forward-port %s (%s)', batch, prs)
@@ -472,10 +472,10 @@ class Batch(models.Model):
             # same thing as all the PRs having a source, kinda, but cheaper,
             # it's not entirely true as technically the user could have added a
             # PR to the forward ported batch
-            if not (batch.parent_id and (force_fw or all(p.parent_id for p in batch.prs))):
+            if not (batch.parent_id and (forcefw or all(p.parent_id for p in batch.prs))):
                 _logger.info('-> no parent %s (%s)', batch, prs)
                 continue
-            if not force_fw and fw_policy not in ('skipci', 'skipmerge') \
+            if not forcefw and fw_policy not in ('skipci', 'skipmerge') \
                     and (invalid := batch.prs.filtered(lambda p: p.status != 'success')):
                 _logger.info(
                     '-> wrong state %s (%s)',
