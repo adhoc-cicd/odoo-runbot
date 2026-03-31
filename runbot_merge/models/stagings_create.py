@@ -274,7 +274,7 @@ For-Commit-Id: {it.head}
             with contextlib.closing(branch.env.cr.savepoint()):
                 staged_split = stage_batches(branch, split, staging_state_split)
             if not staged_split:
-                _logger.warning("Failed to stage presplit %d of %s")
+                _logger.warning("Failed to stage presplit %d of %s", i, st)
                 break
             if staged_split != split:
                 _logger.warning("Failed to fully stage presplit %d of %s", i, st)
