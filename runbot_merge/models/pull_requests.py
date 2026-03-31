@@ -2548,7 +2548,7 @@ class Feedback(models.Model):
                 elif isinstance(e, HTTPError) and e.response.status_code == 404 and f.reaction:
                     _logger.info(
                         "Comment not found (%s) when trying to send a reaction to %s#%s (%s)",
-                        e, f.repo.name, f.pull_request, f.reaction,
+                        e, f.repository.name, f.pull_request, f.reaction,
                     )
                     to_remove.append(f.id)
                     continue
