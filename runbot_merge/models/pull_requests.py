@@ -3258,6 +3258,7 @@ class Stagings(models.Model):
         #       error sources?
         # TODO: maybe ff commits in repository importance order as well?
         for i, c in enumerate(self.commits):
+            original_err = None
             for pause in [0.1, 0.3, 0.5, 0.9, 0]: # last one must be 0/falsy of we lose the exception
                 try:
                     gh[c.repository_id.name].fast_forward(
@@ -3265,19 +3266,14 @@ class Stagings(models.Model):
                         c.commit_id.sha
                     )
                 except exceptions.FastForwardError as e:
-                    # If this is the first staging commit, nothing has happened
-                    # maybe, technically github could have both accepted and
-                    # errored if the incident is bad enough) so just signal an
-                    # FF error
-                    if not i:
-                        raise
-                    if i and pause:
+                    original_err = original_err or e
+                    if pause:
                         time.sleep(pause)
                         continue
                     raise exceptions.InconsistentIntegration(
                         self.commits[:i],
                         self.commits[i:],
-                    ) from e
+                    ) from original_err
                 else:
                     break
 
