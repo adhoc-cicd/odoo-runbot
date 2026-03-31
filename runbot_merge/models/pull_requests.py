@@ -679,7 +679,7 @@ class PullRequests(models.Model):
         for pr in self:
             match pr.message.split('\n\n', 1):
                 case [title]:
-                    pr.message_html = Markup('<h3>%s<h3>') % title
+                    pr.message_html = Markup('<h3>%s</h3>') % title
                 case [title, description]:
                     pr.message_html = Markup('<h3>%s</h3>\n%s') % (
                         title,
