@@ -339,7 +339,6 @@ class Project(models.Model):
 
             logger = _logger.getChild('project').getChild(p.name)
             logger.debug("branches updated %s -> %s", bbefore, bafter)
-            print(f"\n\nbranches updated {bbefore} -> {bafter}\n", flush=True)
 
             # Last possibility: branch was inserted but not at end, get all
             # branches before and all branches after
