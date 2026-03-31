@@ -496,6 +496,7 @@ class Batch(models.Model):
                     prs,
                     ', '.join(next_target.mapped('name')),
                 )
+                continue
 
             if n := self.with_context(active_test=False).search([
                 ('target', '=', next_target.id),
