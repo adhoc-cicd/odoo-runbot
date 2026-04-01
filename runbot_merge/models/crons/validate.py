@@ -44,7 +44,7 @@ class BatchValidate(models.Model):
             if pr.repository not in to_fetch:
                 to_fetch[pr.repository] = {
                     'repo': git.get_local(pr.repository).stdout().with_config(text=True),
-                    'branches': {pr.target.name},
+                    'branches': {f"refs/heads/{pr.target.name}"},
                     'heads': {pr.head},
                 }
                 continue
