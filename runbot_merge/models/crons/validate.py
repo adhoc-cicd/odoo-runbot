@@ -31,7 +31,7 @@ class BatchValidate(models.Model):
         if blocked := validations.filtered(lambda v: v.batch_id.blocked):
             _logger.warning(
                 "Found unexpected blocked batches in the validation queue: %s",
-                ", ".join(blocked.batch_id)
+                blocked.batch_id,
             )
             validations -= blocked
             blocked.unlink()
