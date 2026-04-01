@@ -626,7 +626,7 @@ def validate_pr(pr: PullRequests, info: StagingSlice) -> tuple[Method, list[PrCo
     #     raise exceptions.Skip(
     #         f"{pr.display_name} mergeable_state={prdict['mergeable_state']!r}"
     #     )
-    if commits > 50 and method.startswith('rebase'):
+    if commits > 50 and method and method.startswith('rebase'):
         raise exceptions.Unmergeable(pr, "Rebasing 50 commits is too much.")
     if commits > 250:
         raise exceptions.Unmergeable(
