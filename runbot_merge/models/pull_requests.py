@@ -1010,10 +1010,10 @@ For your own safety I've ignored *everything in your entire comment*.
                         delegates = self.author
                     else:
                         delegates = self.env['res.partner']
-                        for login in users:
-                            delegates |= delegates.search([('github_login', '=', login)]) or delegates.create({
-                                'name': login,
-                                'github_login': login,
+                        for l in users:
+                            delegates |= delegates.search([('github_login', '=', l)]) or delegates.create({
+                                'name': l,
+                                'github_login': l,
                             })
                     delegates.write({'delegate_reviewer': [(4, self.id, 0)]})
                 case commands.Priority():
