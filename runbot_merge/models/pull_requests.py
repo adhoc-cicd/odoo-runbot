@@ -1961,9 +1961,9 @@ For your own safety I've ignored *everything in your entire comment*.
             sout = serr = ''
             newline_ellipsis = '\n[...]'
             if out.strip():
-                sout = f"\nstdout:\n```\n{utils.shorten(out, 8096, newline_ellipsis)}\n```\n"
+                sout = f"\nstdout:\n```\n{utils.shorten(out, 8192, newline_ellipsis)}\n```\n"
             if err.strip():
-                serr = f"\nstderr:\n```\n{utils.shorten(err, 8069, newline_ellipsis)}\n```\n"
+                serr = f"\nstderr:\n```\n{utils.shorten(err, 8192, newline_ellipsis)}\n```\n"
 
             lines = ''
             if len(hh) > 1:
