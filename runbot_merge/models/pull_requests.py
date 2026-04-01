@@ -38,7 +38,7 @@ from odoo.tools.safe_eval import safe_eval
 
 from .commands import commands, AccessFailure, Rel
 from .. import github, exceptions, controllers, utils, git
-from .utils import enum, readonly, dfm
+from .utils import readonly, dfm, EnumSelection
 
 Conflict = tuple[str, str, str, list[str]]
 
@@ -59,7 +59,7 @@ class StatusConfiguration(models.Model):
     context = fields.Char(required=True)
     repo_id = fields.Many2one('runbot_merge.repository', required=True, ondelete='cascade')
     branch_filter = fields.Char(help="branches this status applies to")
-    prs = fields.Selection([
+    prs = EnumSelection([
         ('required', 'Required'),
         ('optional', 'Optional'),
         ('ignored', 'Ignored'),
@@ -67,24 +67,8 @@ class StatusConfiguration(models.Model):
         default='required',
         required=True,
         string="Applies to pull requests",
-        column_type=enum(_name, 'prs'),
     )
     stagings = fields.Boolean(string="Applies to stagings", default=True)
-
-    def _auto_init(self):
-        for field in self._fields.values():
-            if not isinstance(field, fields.Selection) or field.column_type[0] == 'varchar':
-                continue
-
-            t = field.column_type[1]
-            self.env.cr.execute("SELECT 1 FROM pg_type WHERE typname = %s", [t])
-            if not self.env.cr.rowcount:
-                self.env.cr.execute(
-                    f"CREATE TYPE {t} AS ENUM %s",
-                    [tuple(s for s, _ in field.selection)]
-                )
-
-        super()._auto_init()
 
     def _for_branch(self, branch):
         assert branch._name == 'runbot_merge.branch', \
@@ -473,7 +457,7 @@ class PullRequests(models.Model):
         store=True,
     )
 
-    state = fields.Selection([
+    state = EnumSelection([
         ('opened', 'Opened'),
         ('closed', 'Closed'),
         ('validated', 'Validated'),
@@ -489,7 +473,6 @@ class PullRequests(models.Model):
         store=True,
         index=True,
         tracking=True,
-        column_type=enum(_name, 'state'),
     )
     open = fields.Boolean(compute='_compute_open', search='_search_open')
 
@@ -523,12 +506,12 @@ class PullRequests(models.Model):
         help="A draft PR can not be merged",
     )
     squash = fields.Boolean(default=False, tracking=True)
-    merge_method = fields.Selection([
+    merge_method = EnumSelection([
         ('merge', "merge directly, using the PR as merge commit message"),
         ('rebase-merge', "rebase and merge, using the PR as merge commit message"),
         ('rebase-ff', "rebase and fast-forward"),
         ('squash', "squash"),
-    ], default=False, tracking=True, column_type=enum(_name, 'merge_method'))
+    ], default=False, tracking=True)
     method_warned = fields.Boolean(default=False)
 
     reviewed_by = fields.Many2one('res.partner', index=True, tracking=True)
@@ -542,11 +525,11 @@ class PullRequests(models.Model):
         help="Compilation of the full status of the PR (commit statuses + overrides), as JSON",
         store=True,
     )
-    status = fields.Selection([
+    status = EnumSelection([
         ('pending', 'Pending'),
         ('failure', 'Failure'),
         ('success', 'Success'),
-    ], compute='_compute_statuses', store=True, inverse=readonly, readonly=True, column_type=enum(_name, 'status'))
+    ], compute='_compute_statuses', store=True, inverse=readonly, readonly=True)
     previous_failure = fields.Char(default='{}')
 
     batch_id = fields.Many2one('runbot_merge.batch', index=True)
@@ -1530,18 +1513,6 @@ For your own safety I've ignored *everything in your entire comment*.
             )
 
     def _auto_init(self):
-        for field in self._fields.values():
-            if not isinstance(field, fields.Selection) or field.column_type[0] == 'varchar':
-                continue
-
-            t = field.column_type[1]
-            self.env.cr.execute("SELECT 1 FROM pg_type WHERE typname = %s", [t])
-            if not self.env.cr.rowcount:
-                self.env.cr.execute(
-                    f"CREATE TYPE {t} AS ENUM %s",
-                    [tuple(s for s, _ in field.selection)]
-                )
-
         super()._auto_init()
         # incorrect index: unique(number, target, repository).
         tools.drop_index(self._cr, 'runbot_merge_unique_pr_per_target', self._table)

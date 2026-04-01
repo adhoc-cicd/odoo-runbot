@@ -8,7 +8,7 @@ from odoo.addons.base.models.res_partner import Partner
 from odoo.api import Environment
 from odoo.tools import SQL, lazy_property
 from .commands import Command
-from ..utils import enum
+from ..utils import EnumSelection
 
 if typing.TYPE_CHECKING:
     from ..pull_requests import PullRequests
@@ -87,11 +87,7 @@ class ACL(models.Model):
     command = fields.Selection(list(commands_list()), required=True)
     arg = fields.Char()
 
-    effect = fields.Selection(
-        [("add", "Add"), ("remove", "Remove")],
-        required=True,
-        column_type=enum(_name, 'state'),
-    )
+    effect = EnumSelection([("add", "Add"), ("remove", "Remove")], required=True)
 
     predicate = fields.Char(
         help="Command predicate, receives a `rel` object exposing the `author`"
@@ -103,18 +99,6 @@ class ACL(models.Model):
     repository_id = fields.Many2one('runbot_merge.repository')
 
     def _auto_init(self):
-        for field in self._fields.values():
-            if not isinstance(field, fields.Selection) or field.column_type[0] == 'varchar':
-                continue
-
-            t = field.column_type[1]
-            self.env.cr.execute("SELECT 1 FROM pg_type WHERE typname = %s", [t])
-            if not self.env.cr.rowcount:
-                self.env.cr.execute(
-                    f"CREATE TYPE {t} AS ENUM %s",
-                    [tuple(s for s, _ in field.selection)]
-                )
-
         super()._auto_init()
 
         # support for looking up records with by partner and repository, `add` first.

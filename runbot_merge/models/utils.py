@@ -1,20 +1,57 @@
 import logging
 from contextvars import ContextVar
-from typing import Tuple
 from xml.etree.ElementTree import Element
 
 import markdown.inlinepatterns
 import markdown.treeprocessors
 from markupsafe import escape, Markup
 
-
-def enum(model: str, field: str) -> Tuple[str, str]:
-    n = f'{model.replace(".", "_")}_{field}_type'
-    return n, n
+from odoo import fields, models
+from odoo.tools import SQL
 
 
 def readonly(_):
     raise TypeError("Field is readonly")
+
+
+class Base(models.AbstractModel):
+    _inherit = 'base'
+
+    def _auto_init(self) -> None:
+        cr = self.env.cr
+        for f in self._fields.values():
+            if not isinstance(f, EnumSelection):
+                continue
+            t, _ = f.column_type
+            cr.execute("SELECT FROM pg_type WHERE typname = %s", [t])
+            if not cr.rowcount:
+                cr.execute(SQL(
+                    "CREATE TYPE %s AS ENUM %s",
+                    SQL.identifier(t),
+                    tuple(s for s, _ in f.selection),
+                ))
+
+        super()._auto_init()
+
+
+class EnumSelection(fields.Selection):
+    @property
+    def column_type(self) -> tuple[str, str]:
+        n = f'{self.model_name.replace(".", "_")}_{self.name}_type'
+        return n, n
+
+    def update_db_column(self, model, column) -> None:
+        cr = model._cr
+        t, _ = self.column_type
+        cr.execute("SELECT FROM pg_type WHERE typname = %s", [t])
+        if not cr.rowcount:
+            cr.execute(SQL(
+                "CREATE TYPE %s AS ENUM %s",
+                SQL.identifier(t),
+                tuple(s for s, _ in self.selection),
+            ))
+
+        super().update_db_column(model, column)
 
 
 DFM_CONTEXT_REPO = ContextVar("dfm_context", default="")

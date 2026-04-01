@@ -11,7 +11,7 @@ from psycopg2 import sql
 
 from odoo import models, fields, api
 from .pull_requests import ForwardPortError, PullRequests
-from .utils import enum
+from .utils import EnumSelection
 from .. import git
 
 _logger = logging.getLogger(__name__)
@@ -87,14 +87,12 @@ class Batch(models.Model):
         default=False, tracking=True,
         help="Cancels current staging on target branch when becoming ready"
     )
-    priority = fields.Selection([
+    priority = EnumSelection([
         ('nice', "Nice"),
         ('default', "Default"),
         ('priority', "Priority"),
         ('alone', "Alone"),
-    ], default='default', group_operator=None, required=True, tracking=True,
-        column_type=enum(_name, 'priority'),
-    )
+    ], default='default', group_operator=None, required=True, tracking=True)
 
     blocked = fields.Char(store=True, compute="_compute_blocked", tracking=True)
     unblocked_at = fields.Datetime(store=True, compute="_compute_blocked", tracking=True)
@@ -147,18 +145,6 @@ class Batch(models.Model):
                 .search([("parent_path", "=like", f"{sid}/%")], order="parent_path")\
 
     def _auto_init(self):
-        for field in self._fields.values():
-            if not isinstance(field, fields.Selection) or field.column_type[0] == 'varchar':
-                continue
-
-            t = field.column_type[1]
-            self.env.cr.execute("SELECT FROM pg_type WHERE typname = %s", [t])
-            if not self.env.cr.rowcount:
-                self.env.cr.execute(
-                    f"CREATE TYPE {t} AS ENUM %s",
-                    [tuple(s for s, _ in field.selection)]
-                )
-
         super()._auto_init()
 
         self.env.cr.execute("""
