@@ -190,7 +190,7 @@ class Runbot(Controller):
             'title': 'Bundle %s' % bundle.name,
             'page_info_state': bundle.last_batch._get_global_result(),
             'expand_custom': expand_custom,
-            'needs_update': bundle.last_batch and bundle.last_batch.needs_update(),
+            'needs_update': bundle.last_batch and bundle.last_batch.sudo().needs_update(),
         }
 
         return request.render('runbot.bundle', context)
