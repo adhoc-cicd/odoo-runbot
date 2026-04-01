@@ -667,7 +667,7 @@ class PullRequests(models.Model):
     @api.depends('parent_id.root_id')
     def _compute_root(self):
         for p in self:
-            p.root_id = reduce(lambda _, p: p, self._iter_ancestors())
+            p.root_id = reduce(lambda _, p: p, p._iter_ancestors())
 
     @api.depends('message')
     def _compute_message_title(self):
