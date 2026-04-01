@@ -767,11 +767,10 @@ def stage_merge(pr: PullRequests, info: StagingSlice, commits: List[github.PrCom
         external_parents = len(merge)
         if external_parents > 1:
             raise exceptions.Unmergeable(
+                pr,
                 "The PR head can only have one parent from the base branch "
-                "(not part of the PR itself), found %d: %s" % (
-                    external_parents,
-                    ', '.join(merge)
-                ))
+                f"(not part of the PR itself), found {external_parents:d}: {', '.join(merge)}"
+            )
         if external_parents == 1:
             [base_commit] = merge
 
