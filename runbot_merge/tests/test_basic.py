@@ -740,13 +740,13 @@ def test_ff_failure(env, repo, config, page):
         repo.post_status('staging.master', 'success')
     env.run_crons()
 
-    assert st.reason == 'update is not a fast forward'
+    assert st.reason == 'rejected (non-fast-forward)'
     # check that it's added as title on the staging
     doc = html.fromstring(page('/runbot_merge'))
     _new, prev = doc.cssselect('li.staging')
 
     assert 'bg-gray-lighter' in prev.classes, "ff failure is ~ cancelling"
-    assert 'fast forward failed (update is not a fast forward)' in prev.get('title')
+    assert 'fast forward failed (rejected (non-fast-forward))' in prev.get('title')
 
     assert to_pr(env, prx).staging_id, "merge should not have succeeded"
     assert repo.commit('staging.master').id != staging.id,\

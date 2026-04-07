@@ -3123,7 +3123,6 @@ class Stagings(models.Model):
         logger.info("Checking active staging %s (state=%s)", self, self.state)
         project = self.target.project_id
         if self.state == 'success':
-            gh = {repo.name: repo.github() for repo in project.repo_ids.having_branch(self.target)}
             self.env.cr.execute('''
             SELECT 1 FROM runbot_merge_pull_requests
             WHERE id in %s
@@ -3133,7 +3132,7 @@ class Stagings(models.Model):
                 with sentry_sdk.start_span(description="merge staging") as span:
                     span.set_tag("staging", self.id)
                     span.set_tag("branch", self.target.name)
-                    self._safety_dance(gh)
+                    self._safety_dance()
             except exceptions.FastForwardError as e:
                 logger.warning(
                     "Could not fast-forward successful staging on %s:%s: %s",
@@ -3203,7 +3202,7 @@ class Stagings(models.Model):
     def is_timed_out(self):
         return fields.Datetime.from_string(self.timeout_limit) < datetime.datetime.now()
 
-    def _safety_dance(self, gh):
+    def _safety_dance(self):
         """ Reverting updates doesn't work if the branches are protected
         (because a revert is basically a force push). So we can update
         REPO_A, then fail to update REPO_B for some reason, and we're hosed.
@@ -3215,38 +3214,48 @@ class Stagings(models.Model):
         to REPO_B during the staging we catch it. If we're really unlucky
         they could still push after the dry run but...
         """
-        tmp_target = 'tmp.' + self.target.name
+        def push(rr, url, refspec) -> str | None:
+            r = rr.push('--porcelain', url, refspec)
+            if r.returncode:
+                if m := re.search(r'^[+*!=-]\t.*:.*\t\[(.*)]\s*(.*)$', r.stdout, re.MULTILINE):
+                    if m[2]:
+                        return f"{m[1]} {m[2]}"
+                    return m[1]
+                return r.stderr
+            return None
+
+        repos = {}
         # first force-push the current targets to all tmps
-        for repo_name in self.heads.repository_id.mapped('name'):
-            g = gh[repo_name]
-            g.set_ref(tmp_target, g.head(self.target.name))
+        for head in self.heads:
+            repo = head.repository_id
+            repo_url, r = repos[repo] = (
+                git.source_url(repo),
+                git.get_local(repo).stdout().with_config(encoding="utf-8", check=False),
+            )
+            # can't push an object you don't have locally...
+            branch_head = next((
+                h for h in r.fetch_heads(repo, f"refs/heads/{self.target.name}", head.commit_id.sha)
+                if h != head.commit_id.sha
+            ), head.commit_id.sha)
+            if (reason := push(r, repo_url, f"+{branch_head}:refs/heads/tmp.{self.target.name}")) is not None:
+                raise exceptions.FastForwardError(repo.name) \
+                    from Exception(reason)
         # then attempt to FF the tmp to the staging commits
-        for c in self.heads:
-            gh[c.repository_id.name].fast_forward(tmp_target, c.commit_id.sha)
+        for head in self.heads:
+            repo_url, r = repos[head.repository_id]
+            if (reason := push(r, repo_url, f"{head.commit_id.sha}:refs/heads/tmp.{self.target.name}")) is not None:
+                raise exceptions.FastForwardError(head.repository_id.name) \
+                    from Exception(reason)
         # there is still a race condition here, but it's way
         # lower than "the entire staging duration"...
-        # TODO: skip for "nil" staging commits (iso current head) to limit GH
-        #       error sources?
         # TODO: maybe ff commits in repository importance order as well?
         for i, c in enumerate(self.commits):
-            original_err = None
-            for pause in [0.1, 0.3, 0.5, 0.9, 0]: # last one must be 0/falsy of we lose the exception
-                try:
-                    gh[c.repository_id.name].fast_forward(
-                        self.target.name,
-                        c.commit_id.sha
-                    )
-                except exceptions.FastForwardError as e:
-                    original_err = original_err or e
-                    if pause:
-                        time.sleep(pause)
-                        continue
-                    raise exceptions.InconsistentIntegration(
-                        self.commits[:i],
-                        self.commits[i:],
-                    ) from original_err
-                else:
-                    break
+            repo_url, repo = repos[c.repository_id]
+            if (reason := push(repo, repo_url, f"{c.commit_id.sha}:refs/heads/{self.target.name}")) is not None:
+                raise exceptions.InconsistentIntegration(
+                    self.commits[:i],
+                    self.commits[i:],
+                ) from Exception(reason)
 
     @api.returns('runbot_merge.stagings')
     def for_heads(self, *heads):
