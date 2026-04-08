@@ -174,7 +174,15 @@ vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
 def handle_pr(env, event):
     pr = event['pull_request']
-    squash = pr['commits'] == 1
+    squash = False
+    check_commits = lambda _: None
+    match pr['commits']:
+        case 0:
+            check_commits = lambda pr_obj: env['runbot_merge.pull_requests.check_commits'].create({
+                'pull_request_id': pr_obj.id,
+            })
+        case 1:
+            squash = True
     r = pr['base']['repo']['full_name']
 
     if event['action'] in [
@@ -193,6 +201,7 @@ def handle_pr(env, event):
             ('squash', '!=', squash),
         ]):
             pr.squash = squash
+            check_commits(pr)
 
         return Response(
             status=200,
@@ -268,6 +277,7 @@ def handle_pr(env, event):
         if updates:
             # copy because it updates the `updates` dict internally
             pr_obj.write(dict(updates))
+            check_commits(pr_obj)
             return Response(
                 status=200,
                 mimetype="text/plain",
@@ -323,6 +333,7 @@ def handle_pr(env, event):
             env['res.partner'].create({'name': author_name, 'github_login': author_name})
         try:
             pr_obj = env['runbot_merge.pull_requests']._from_gh(pr)
+            check_commits(pr_obj)
             return Response(status=201, mimetype="text/plain", response=f"Tracking PR as {pr_obj.display_name}")
         except psycopg2.errors.UniqueViolation:
             env.cr.rollback()
@@ -375,11 +386,13 @@ def handle_pr(env, event):
             'head': pr['head']['sha'],
             'squash': squash,
         })
+        check_commits(pr_obj)
         return Response(mimetype="text/plain", response=f'Updated to {pr_obj.head}')
 
     if event['action'] not in ('closed', 'reopened'):
         if pr_obj.squash != squash:
             pr_obj.squash = squash
+            check_commits(pr_obj)
 
     if event['action'] == 'ready_for_review':
         pr_obj.draft = False
@@ -427,6 +440,7 @@ def handle_pr(env, event):
                 'head': pr['head']['sha'],
                 'squash': pr['commits'] == 1,
             })
+            check_commits(pr_obj)
 
             return Response(mimetype="text/plain", response=f'Reopened {pr_obj.display_name}')
 

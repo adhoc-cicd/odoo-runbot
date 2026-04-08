@@ -667,3 +667,88 @@ def test_empty_split(env, project, repo, users, config):
     env.run_crons()
 
     assert to_pr(env, pr1).staging_id
+
+def test_create_commits_count(
+        port, env, project, repo, users, config,
+):
+    with repo:
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
+
+        [c] = repo.make_commits(m, Commit('thing1', tree={}), ref='heads/other1')
+        with repo.disable_hooks():
+            pr = repo.make_pr(target='master', head=c)
+    env.run_crons()
+
+    with pytest.raises(TimeoutError):
+        to_pr(env, pr)
+
+    r = requests.post(
+        f"http://localhost:{port}/runbot_merge/hooks",
+        headers={
+            "X-Github-Event": "pull_request",
+        },
+        json={
+            'action': 'opened',
+            'sender': {'login': users['user']},
+            'repository': {'full_name': repo.name},
+            'pull_request': {
+                'number': pr.number,
+                'state': 'open',
+                'user': {'login': users['user']},
+                'head': {'sha': c, 'label': f'{repo.owner}:other1'},
+                'base': {'ref': 'master', 'repo': {'full_name': repo.name}},
+                'title': "c",
+                'commits': 0,
+                'draft': False,
+            }
+        }
+    )
+    r.raise_for_status()
+
+    pr_id = to_pr(env, pr)
+    assert not pr_id.squash
+    env.run_crons()
+    assert pr_id.squash
+
+def test_sync_commits_count(port, env, project, repo, users, config) -> None:
+    with repo:
+        [m] = repo.make_commits(None, Commit('initial', tree={'m': 'm'}), ref='heads/master')
+
+        [c] = repo.make_commits(m, Commit('thing1', tree={}), ref='heads/other1')
+        pr = repo.make_pr(target='master', head=c)
+    env.run_crons()
+
+    # simulate github being stupid
+    r = requests.post(
+        f"http://localhost:{port}/runbot_merge/hooks",
+        headers={
+            "X-Github-Event": "pull_request",
+        },
+        json={
+            'action': 'labeled',
+            'sender': {
+                'login': users['user'],
+            },
+            'repository': {
+                'full_name': repo.name,
+            },
+            'pull_request': {
+                'number': pr.number,
+                'head': {'sha': c},
+                'title': "c",
+                'commits': 0,
+                'base': {
+                    'ref': 'xxx',
+                    'repo': {
+                        'full_name': repo.name,
+                    },
+                }
+            }
+        }
+    )
+    r.raise_for_status()
+
+    pr_id = to_pr(env, pr)
+    assert not pr_id.squash
+    env.run_crons()
+    assert pr_id.squash
