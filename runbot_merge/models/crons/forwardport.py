@@ -264,7 +264,7 @@ class ForwardPortTasks(models.Model):
             # NOTE: ports the new source everywhere instead of porting each
             #       PR to the next step as it does not *stop* on conflict
             repo = git.get_local(source.repository)
-            conflict, head = source._create_port_branch(repo, target, forward=True)
+            conflict, head, n = source._create_port_branch(repo, target, forward=True)
             repo.push(git.fw_url(pr.repository), f'{head}:refs/heads/{ref}')
 
             remote_target = repository.fp_remote_target
@@ -297,7 +297,8 @@ class ForwardPortTasks(models.Model):
                 merge_method=pr.merge_method,
                 source_id=source_id.id,
                 parent_id=False if report_conflicts else pr.id,
-                detach_reason="{1}\n{2}".format(*conflict).strip() if report_conflicts else None
+                detach_reason="{1}\n{2}".format(*conflict).strip() if report_conflicts else None,
+                squash=n==1,
             )
             _logger.info("Created forward-port PR %s", new_pr.display_name)
 
@@ -372,7 +373,7 @@ class UpdateQueue(models.Model):
                 )
 
                 repo = git.get_local(previous.repository)
-                conflicts, new_head = previous._create_port_branch(repo, child.target, forward=True)
+                conflicts, new_head, n = previous._create_port_branch(repo, child.target, forward=True)
 
                 if conflicts:
                     _, out, err, _ = conflicts
@@ -394,17 +395,12 @@ class UpdateQueue(models.Model):
                         },
                     )
 
-                target_head = repo.fetchone(previous.repository, child.target.name)
-                commits_count = int(repo.stdout().rev_list(
-                    f'{target_head}..{new_head}',
-                    count=True
-                ).stdout.decode().strip())
                 old_head = child.head
                 # update child's head to the head we're going to push
                 child.with_context(ignore_head_update=True).write({
                     'head': new_head,
                     # 'state': 'opened',
-                    'squash': commits_count == 1,
+                    'squash': n == 1,
                 })
                 updates[child.repository].append((child.refname, old_head, new_head))
 

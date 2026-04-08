@@ -319,9 +319,10 @@ class Batch(models.Model):
         _logger.info("Forward-porting %s to %s (using branch %r)", self, target.name, new_branch)
 
         conflicts = {}
+        commits_count = {}
         for pr in prs:
             repo = git.get_local(pr.repository)
-            conflicts[pr], head = pr._create_port_branch(repo, target, forward=True)
+            conflicts[pr], head, commits_count[pr] = pr._create_port_branch(repo, target, forward=True)
             r = repo.check(False).push(git.fw_url(pr.repository), f"{head}:refs/heads/{new_branch}")
             if r.returncode:
                 self._delete_fw_branches(conflicts.keys(), new_branch)
@@ -374,6 +375,7 @@ class Batch(models.Model):
                         for _, out, err, _ in filter(None, conflicts.values())
                     )
                 ),
+                squash=commits_count[pr]==1,
             )
             _logger.info("Created forward-port PR %s", new_pr)
             new_batch |= new_pr

@@ -2059,7 +2059,7 @@ For your own safety I've ignored *everything in your entire comment*.
         logger.info("Fetched head of %s (%s)", root.display_name, root.head)
 
         try:
-            return None, root._cherry_pick(source, target_branch, target_head)
+            return None, *root._cherry_pick(source, target_branch, target_head)
         except CherrypickError as e:
             h, out, err, commits = e.args
 
@@ -2126,9 +2126,9 @@ For your own safety I've ignored *everything in your entire comment*.
                 f"commit failed\n\n{commit.stdout.decode()}\n\n{commit.stderr.decode()}"
             hh = commit.stdout.strip()
 
-            return (h, out, err, [c['sha'] for c in commits]), hh
+            return (h, out, err, [c['sha'] for c in commits]), hh, 1
 
-    def _cherry_pick(self, repo: git.Repo, branch: Branch, head: str) -> str:
+    def _cherry_pick(self, repo: git.Repo, branch: Branch, head: str) -> tuple[str, int]:
         """ Cherrypicks ``self`` into ``branch``
 
         :return: the HEAD of the forward-port is successful
@@ -2233,7 +2233,7 @@ For your own safety I've ignored *everything in your entire comment*.
                 head = cc.stdout.strip()
                 logger.info('%s -> %s', commit_sha, head)
 
-            return head
+            return head, len(commits)
 
     def _make_fp_message(self, commit):
         cmap = json.loads(self.commits_map)

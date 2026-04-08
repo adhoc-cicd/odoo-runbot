@@ -89,7 +89,7 @@ class PullRequestBackport(models.TransientModel):
 
         old_map = self.pr_id.commits_map
         self.pr_id.commits_map = "{}"
-        conflict, head = self.pr_id._create_port_branch(repo, self.target, forward=False)
+        conflict, head, n = self.pr_id._create_port_branch(repo, self.target, forward=False)
         self.pr_id.commits_map = old_map
 
         if conflict:
@@ -122,6 +122,7 @@ class PullRequestBackport(models.TransientModel):
             # the backport's own forwardport should stop right before the
             # original PR by default
             limit_id=branches[source_idx - 1],
+            squash=n==1,
         )
         _logger.info("Created backport %s for %s", backport.display_name, self.pr_id.display_name)
 
