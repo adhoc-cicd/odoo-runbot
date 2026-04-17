@@ -45,7 +45,7 @@ class RunbotBadge(Controller):
             state = 'testing'
         else:
             state = 'failed'
-            if all(build.global_result == 'ok' for build in self):
+            if all(build.global_result == 'ok' for build in builds):
                 state = 'success'
 
         etag = request.httprequest.headers.get('If-None-Match')
