@@ -455,8 +455,8 @@ class Runbot(Controller):
             'build_count asc': 'Number seen: Low to High',
             'responsible asc': 'Assignee: A - Z',
             'responsible desc': 'Assignee: Z - A',
-            'module_name asc': 'Module name: A - Z',
-            'module_name desc': 'Module name: Z -A',
+            'team_id asc': 'Team',
+            'name asc': 'Name',
         }
 
         sort_order = sort if sort in sort_order_choices else 'last_seen_date desc'
