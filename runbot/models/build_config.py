@@ -597,7 +597,7 @@ class ConfigStep(models.Model):
                 docker_params['cpu_limit'] = min(self.cpu_limit, max_timeout)
 
             config_data = {**kwargs.get('config_data', {}), **build.params_id.config_data}
-            if config_data.get('cpu_limit_factor'):
+            if docker_params['cpu_limit'] and config_data.get('cpu_limit_factor'):
                 docker_params['cpu_limit'] = int(docker_params['cpu_limit'] * min(float(config_data['cpu_limit_factor']), 2))
 
             container_cpus = float(self.container_cpus or self.env['ir.config_parameter'].sudo().get_param('runbot.runbot_containers_cpus', 0))
@@ -849,7 +849,7 @@ class ConfigStep(models.Model):
         if config_data.get('coverage_test_context', self.coverage_test_context):
             env_variables.append("COVERAGE_DYNAMIC_CONTEXT=test_function")
 
-        cpu_limit = None
+        cpu_limit = self.cpu_limit
         if config_data.get('cpu_limit'):
             cpu_limit = min(self.cpu_limit, int(config_data['cpu_limit']))
         return dict(cmd=cmd, ro_volumes=exports, cpu_limit=cpu_limit, env_variables=env_variables)
